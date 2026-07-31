@@ -13,12 +13,15 @@
 //!   `switch`, so a new variant is a TypeScript compile error rather than a missing string
 //!   at runtime.
 
+use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
 use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::apps::EndpointReport;
 use crate::baselines::BaselineGroup;
+use crate::discovery::FlowStatus;
 
 /// How many samples of a target's history the sparkline carries.
 ///
@@ -188,4 +191,288 @@ impl GroupView {
             targets,
         }
     }
+}
+
+/// Transport an application reaches an endpoint over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TransportView {
+    /// TCP.
+    Tcp,
+    /// UDP.
+    Udp,
+}
+
+impl From<Transport> for TransportView {
+    fn from(transport: Transport) -> Self {
+        match transport {
+            Transport::Tcp => Self::Tcp,
+            Transport::Udp => Self::Udp,
+        }
+    }
+}
+
+/// Whether the application is currently using an endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum LivenessView {
+    /// Observed recently.
+    Active,
+    /// Not observed for a while, but still remembered and still measured.
+    Idle,
+}
+
+impl From<Liveness> for LivenessView {
+    fn from(liveness: Liveness) -> Self {
+        match liveness {
+            Liveness::Active => Self::Active,
+            Liveness::Idle => Self::Idle,
+        }
+    }
+}
+
+/// How often an endpoint is being probed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ProbingView {
+    /// At the normal interval.
+    Active,
+    /// At the long interval — idle, or ranked past the per-application cap. Still measured,
+    /// never dropped.
+    Demoted,
+}
+
+impl From<Probing> for ProbingView {
+    fn from(probing: Probing) -> Self {
+        match probing {
+            Probing::Active => Self::Active,
+            Probing::Demoted => Self::Demoted,
+        }
+    }
+}
+
+/// Whether per-process flow events are available, as the UI must explain it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum FlowStatusView {
+    /// A tracing session is open: UDP endpoints and byte counters are being discovered.
+    Active,
+    /// This account may not open a tracing session.
+    ///
+    /// The ordinary state on Windows until the user performs the one-time setup, and the
+    /// one the UI has to explain: TCP endpoints are still found, UDP ones are not, and no
+    /// throughput is counted anywhere. An absent endpoint is not an absent flow.
+    NotPermitted,
+    /// No flow source exists on this platform, or it failed for another reason.
+    Unavailable,
+}
+
+impl From<FlowStatus> for FlowStatusView {
+    fn from(status: FlowStatus) -> Self {
+        match status {
+            FlowStatus::Active => Self::Active,
+            FlowStatus::NotPermitted => Self::NotPermitted,
+            // A state this build has no word for must not read as "everything is fine".
+            _ => Self::Unavailable,
+        }
+    }
+}
+
+/// One endpoint of one monitored application.
+///
+/// Per endpoint and never rolled up. Within one application some endpoints stay clean
+/// while others lose packets or go unreachable, commonly at the same moment because they
+/// sit in different networks — a login service on a CDN, voice on one provider, the game
+/// server on another. An application collapsed to its worst endpoint reads as "the game is
+/// broken" when the game is fine; collapsed to its best, it hides the failure the user came
+/// to find.
+// Named independent facts, not transposable arguments — the same reasoning as
+// `crate::apps::EndpointReport`, which this mirrors.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EndpointView {
+    /// Identity, unique within the application and stable for as long as it is tracked.
+    pub key: String,
+    /// Where it is, as `address:port`.
+    pub address: String,
+    /// How the application reaches it. Part of the identity: one server can be a TCP lobby
+    /// and a UDP match at once, with two independent fates.
+    pub transport: TransportView,
+    /// The verdict.
+    pub health: HealthView,
+    /// Whether the application is still using it.
+    pub liveness: LivenessView,
+    /// Whether it is probed at the normal interval or the long one.
+    pub probing: ProbingView,
+    /// Bytes exchanged recently, or `null` where nothing counts them.
+    ///
+    /// `null` and `0` are different answers: without a flow source there are no counters at
+    /// all, and showing zero throughput for a busy game would be a lie the user cannot see
+    /// through. A count rather than a rate — see [`crate::apps::AppMonitor::traffic_window`].
+    ///
+    /// Carried as a float because a 64-bit integer cannot cross into JavaScript intact; a
+    /// byte count stays exact in a float far past any figure this window can hold.
+    pub recent_bytes: Option<f64>,
+    /// The local address its probes egress from, so they follow the application's own
+    /// route through any tunnel or accelerator.
+    pub egress: Option<String>,
+    /// Whether another monitored application reaches this endpoint by a different route, so
+    /// one probe cannot represent both. Disclosed, never averaged away.
+    pub egress_conflict: bool,
+    /// Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
+    /// rather than a round trip to the server.
+    pub tunnelled: bool,
+    /// Whether any probe kind can still measure it honestly.
+    pub measurable: bool,
+    /// Which kind is measuring it now.
+    pub probe_kind: Option<ProbeKindView>,
+    /// Whether a probe kind has been *proven* filtered here.
+    pub filtering_confirmed: bool,
+    /// Mean round-trip time over the window, in milliseconds.
+    pub rtt_ms: Option<f64>,
+    /// Jitter over the window, in milliseconds.
+    pub jitter_ms: Option<f64>,
+    /// Packet loss over the window, as a percentage.
+    pub loss_pct: Option<f64>,
+    /// Seconds before now for each point of the series — negative, ascending.
+    pub series_age_secs: Vec<f64>,
+    /// Round-trip time at each point, or `null` where the probe did not come back.
+    pub series_rtt_ms: Vec<Option<f64>>,
+}
+
+impl EndpointView {
+    /// Renders one endpoint report for the UI.
+    #[must_use]
+    pub fn of(report: &EndpointReport) -> Self {
+        let transport = TransportView::from(report.key.transport);
+        Self {
+            key: format!("{}/{}", transport_slug(transport), report.key.address),
+            address: report.key.address.to_string(),
+            transport,
+            health: report.health.into(),
+            liveness: report.liveness.into(),
+            probing: report.probing.into(),
+            // Lossless: a byte count needs 53 bits to exceed a float's exact range, which
+            // is eight petabytes in half a minute.
+            #[allow(clippy::cast_precision_loss)]
+            recent_bytes: report.recent_bytes.map(|bytes| bytes as f64),
+            egress: report.source.map(|source| source.to_string()),
+            egress_conflict: report.egress_conflict,
+            tunnelled: report.tunnelled,
+            measurable: report.measurable,
+            probe_kind: report.probe_kind.map(ProbeKindView::from),
+            filtering_confirmed: report.filtering_confirmed,
+            rtt_ms: report.stats.rtt.map(|rtt| rtt.mean_ms),
+            jitter_ms: report.stats.rtt.and_then(|rtt| rtt.jitter_ms),
+            loss_pct: report.stats.loss_pct,
+            series_age_secs: report.series_age_secs.clone(),
+            series_rtt_ms: report.series_rtt_ms.clone(),
+        }
+    }
+}
+
+/// The stable part of an endpoint's key, independent of any translation.
+const fn transport_slug(transport: TransportView) -> &'static str {
+    match transport {
+        TransportView::Tcp => "tcp",
+        TransportView::Udp => "udp",
+    }
+}
+
+/// Where an endpoint sits in the order the page shows.
+///
+/// Severity first, so the broken few are visible without hunting through a long list. An
+/// endpoint nothing gets through to outranks a degraded one; both outrank an endpoint whose
+/// probes are merely filtered, because filtering is an absence of knowledge rather than a
+/// failure, and being told "no" is knowledge.
+const fn severity(health: HealthView) -> u8 {
+    match health {
+        HealthView::Unreachable => 0,
+        HealthView::Degraded => 1,
+        HealthView::Blocked => 2,
+        HealthView::Unknown => 3,
+        HealthView::Ok => 4,
+    }
+}
+
+/// One monitored application and everything it is talking to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppView {
+    /// The process being followed.
+    pub pid: u32,
+    /// Its executable name, as it was when monitoring started.
+    pub name: String,
+    /// How many of its endpoints are in each state.
+    ///
+    /// The headline. There is deliberately no single verdict per application: a
+    /// distribution is what the page shows, because partial failure inside one application
+    /// is the normal case under filtering rather than an edge case.
+    pub counts: HealthCountsView,
+    /// Its endpoints, worst first.
+    pub endpoints: Vec<EndpointView>,
+}
+
+impl AppView {
+    /// Renders one application's endpoints, worst first.
+    #[must_use]
+    pub fn of(pid: u32, name: String, reports: &[EndpointReport]) -> Self {
+        let mut counts = HealthCounts::default();
+        for report in reports {
+            counts.record(report.health);
+        }
+
+        let mut endpoints: Vec<EndpointView> = reports.iter().map(EndpointView::of).collect();
+        // Address breaks ties so the list does not reshuffle under the user's cursor every
+        // time two endpoints agree about their health.
+        endpoints.sort_by(|left, right| {
+            severity(left.health)
+                .cmp(&severity(right.health))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+
+        Self {
+            pid,
+            name,
+            counts: counts.into(),
+            endpoints,
+        }
+    }
+}
+
+/// One running process the user could choose to monitor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessView {
+    /// Identifier to monitor it by.
+    pub pid: u32,
+    /// Executable file name. Not unique — several copies of one game can run at once,
+    /// which is exactly why the identifier is the identity and this is only a label.
+    pub name: String,
+}
+
+/// Why the running processes could not be listed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ProcessListProblem {
+    /// This build has no process enumerator for the host operating system.
+    UnsupportedPlatform,
+    /// The operating system refused the enumeration.
+    Refused,
+}
+
+/// The processes the picker may offer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessListView {
+    /// Running processes, by name and then by identifier.
+    ///
+    /// Unfiltered on purpose. Offering only processes that already hold a socket would hide
+    /// a game the user wants to start watching *before* it connects, which is precisely
+    /// when the first endpoints are worth catching.
+    pub processes: Vec<ProcessView>,
+    /// What went wrong, if anything. An empty list with no problem means the machine really
+    /// is running nothing.
+    pub problem: Option<ProcessListProblem>,
 }

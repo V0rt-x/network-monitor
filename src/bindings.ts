@@ -19,6 +19,15 @@ export const commands = {
 	 */
 	setSettings: (settings: Settings) => __TAURI_INVOKE<SettingsView>("set_settings", { settings }),
 	/**
+	 *  Lists the processes the user could choose to monitor.
+	 * 
+	 *  Read-only and handle-free: the sweep reports identity without opening a process, so an
+	 *  anti-cheat system has nothing to see. Called when the picker opens and when the user
+	 *  refreshes it — never on a timer, because a process list is a snapshot the moment it is
+	 *  taken and polling one would spend budget to be no less stale.
+	 */
+	listProcesses: () => __TAURI_INVOKE<ProcessListView>("list_processes"),
+	/**
 	 *  Starts discovering and probing one running process's remote endpoints.
 	 * 
 	 *  The process identifier crosses the boundary as a plain number because that is what the
@@ -52,11 +61,49 @@ export const commands = {
 
 /** Events */
 export const events = {
+	appEndpoints: makeEvent<AppEndpoints>("app-endpoints"),
 	coreHeartbeat: makeEvent<CoreHeartbeat>("core-heartbeat"),
 	networkHealth: makeEvent<NetworkHealth>("network-health"),
 };
 
 /* Types */
+/**
+ *  What every monitored application is talking to, and how each of those paths is doing.
+ * 
+ *  Emitted on the same beat as [`NetworkHealth`], and like it, not at all while the window
+ *  is hidden. Sent even when nothing is monitored: the page still has to say whether flow
+ *  events are available, which decides whether an empty list means "this application has no
+ *  UDP endpoints" or "this machine cannot see UDP endpoints at all".
+ */
+export type AppEndpoints = {
+	/**  Length of the window every figure is computed over, in seconds. */
+	windowSecs: number,
+	/**  Span the byte counts accumulate over, in seconds. */
+	trafficWindowSecs: number,
+	/**  Whether per-process flow events are available, and if not, why. */
+	flowStatus: FlowStatusView,
+	/**  The monitored applications, in the order they were chosen. */
+	apps: AppView[],
+};
+
+/**  One monitored application and everything it is talking to. */
+export type AppView = {
+	/**  The process being followed. */
+	pid: number,
+	/**  Its executable name, as it was when monitoring started. */
+	name: string,
+	/**
+	 *  How many of its endpoints are in each state.
+	 * 
+	 *  The headline. There is deliberately no single verdict per application: a
+	 *  distribution is what the page shows, because partial failure inside one application
+	 *  is the normal case under filtering rather than an edge case.
+	 */
+	counts: HealthCountsView,
+	/**  Its endpoints, worst first. */
+	endpoints: EndpointView[],
+};
+
 /**  Which baseline a target belongs to. */
 export type BaselineGroup = 
 /**  Expected to be reachable inside the user's country. */
@@ -93,6 +140,91 @@ export type CoreStatus = {
 	/**  Readiness of the core. */
 	readiness: CoreReadiness,
 };
+
+/**
+ *  One endpoint of one monitored application.
+ * 
+ *  Per endpoint and never rolled up. Within one application some endpoints stay clean
+ *  while others lose packets or go unreachable, commonly at the same moment because they
+ *  sit in different networks — a login service on a CDN, voice on one provider, the game
+ *  server on another. An application collapsed to its worst endpoint reads as "the game is
+ *  broken" when the game is fine; collapsed to its best, it hides the failure the user came
+ *  to find.
+ */
+export type EndpointView = {
+	/**  Identity, unique within the application and stable for as long as it is tracked. */
+	key: string,
+	/**  Where it is, as `address:port`. */
+	address: string,
+	/**
+	 *  How the application reaches it. Part of the identity: one server can be a TCP lobby
+	 *  and a UDP match at once, with two independent fates.
+	 */
+	transport: TransportView,
+	/**  The verdict. */
+	health: HealthView,
+	/**  Whether the application is still using it. */
+	liveness: LivenessView,
+	/**  Whether it is probed at the normal interval or the long one. */
+	probing: ProbingView,
+	/**
+	 *  Bytes exchanged recently, or `null` where nothing counts them.
+	 * 
+	 *  `null` and `0` are different answers: without a flow source there are no counters at
+	 *  all, and showing zero throughput for a busy game would be a lie the user cannot see
+	 *  through. A count rather than a rate — see [`crate::apps::AppMonitor::traffic_window`].
+	 * 
+	 *  Carried as a float because a 64-bit integer cannot cross into JavaScript intact; a
+	 *  byte count stays exact in a float far past any figure this window can hold.
+	 */
+	recentBytes: number | null,
+	/**
+	 *  The local address its probes egress from, so they follow the application's own
+	 *  route through any tunnel or accelerator.
+	 */
+	egress: string | null,
+	/**
+	 *  Whether another monitored application reaches this endpoint by a different route, so
+	 *  one probe cannot represent both. Disclosed, never averaged away.
+	 */
+	egressConflict: boolean,
+	/**
+	 *  Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
+	 *  rather than a round trip to the server.
+	 */
+	tunnelled: boolean,
+	/**  Whether any probe kind can still measure it honestly. */
+	measurable: boolean,
+	/**  Which kind is measuring it now. */
+	probeKind: ProbeKindView | null,
+	/**  Whether a probe kind has been *proven* filtered here. */
+	filteringConfirmed: boolean,
+	/**  Mean round-trip time over the window, in milliseconds. */
+	rttMs: number | null,
+	/**  Jitter over the window, in milliseconds. */
+	jitterMs: number | null,
+	/**  Packet loss over the window, as a percentage. */
+	lossPct: number | null,
+	/**  Seconds before now for each point of the series — negative, ascending. */
+	seriesAgeSecs: (number | null)[],
+	/**  Round-trip time at each point, or `null` where the probe did not come back. */
+	seriesRttMs: (number | null)[],
+};
+
+/**  Whether per-process flow events are available, as the UI must explain it. */
+export type FlowStatusView = 
+/**  A tracing session is open: UDP endpoints and byte counters are being discovered. */
+"active" | 
+/**
+ *  This account may not open a tracing session.
+ * 
+ *  The ordinary state on Windows until the user performs the one-time setup, and the
+ *  one the UI has to explain: TCP endpoints are still found, UDP ones are not, and no
+ *  throughput is counted anywhere. An absent endpoint is not an absent flow.
+ */
+"notPermitted" | 
+/**  No flow source exists on this platform, or it failed for another reason. */
+"unavailable";
 
 /**  One baseline, taken together. */
 export type GroupView = {
@@ -139,6 +271,13 @@ export type HealthView =
 /**  Not measured enough yet to say anything. */
 "unknown";
 
+/**  Whether the application is currently using an endpoint. */
+export type LivenessView = 
+/**  Observed recently. */
+"active" | 
+/**  Not observed for a while, but still remembered and still measured. */
+"idle";
+
 /**
  *  The general-health picture: both baselines and every target in them.
  * 
@@ -183,6 +322,51 @@ export type ProbeKindView =
 "tcpConnect" | 
 /**  A TLS `ClientHello`, timed to the first answering byte. */
 "tlsHello";
+
+/**  How often an endpoint is being probed. */
+export type ProbingView = 
+/**  At the normal interval. */
+"active" | 
+/**
+ *  At the long interval — idle, or ranked past the per-application cap. Still measured,
+ *  never dropped.
+ */
+"demoted";
+
+/**  Why the running processes could not be listed. */
+export type ProcessListProblem = 
+/**  This build has no process enumerator for the host operating system. */
+"unsupportedPlatform" | 
+/**  The operating system refused the enumeration. */
+"refused";
+
+/**  The processes the picker may offer. */
+export type ProcessListView = {
+	/**
+	 *  Running processes, by name and then by identifier.
+	 * 
+	 *  Unfiltered on purpose. Offering only processes that already hold a socket would hide
+	 *  a game the user wants to start watching *before* it connects, which is precisely
+	 *  when the first endpoints are worth catching.
+	 */
+	processes: ProcessView[],
+	/**
+	 *  What went wrong, if anything. An empty list with no problem means the machine really
+	 *  is running nothing.
+	 */
+	problem: ProcessListProblem | null,
+};
+
+/**  One running process the user could choose to monitor. */
+export type ProcessView = {
+	/**  Identifier to monitor it by. */
+	pid: number,
+	/**
+	 *  Executable file name. Not unique — several copies of one game can run at once,
+	 *  which is exactly why the identifier is the identity and this is only a label.
+	 */
+	name: string,
+};
 
 /**
  *  Everything the user can configure.
@@ -278,6 +462,13 @@ export type TargetView = {
 	/**  Round-trip time at each point, or `null` where the probe did not come back. */
 	seriesRttMs: (number | null)[],
 };
+
+/**  Transport an application reaches an endpoint over. */
+export type TransportView = 
+/**  TCP. */
+"tcp" | 
+/**  UDP. */
+"udp";
 
 /**  Translated words for the tray menu, supplied by the UI. */
 export type TrayLabels = {

@@ -39,11 +39,17 @@ pub mod discovery;
 pub mod monitor;
 pub mod settings;
 
-pub use commands::{core_status, CoreReadiness, CoreStatus, PlatformKind, SettingsView};
+pub use commands::{
+    core_status, list_processes, CoreReadiness, CoreStatus, PlatformKind, SettingsView,
+};
 pub use error::Error;
-pub use events::{CoreHeartbeat, NetworkHealth};
+pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth};
 pub use shell::TrayLabels;
-pub use view::{GroupView, HealthCountsView, HealthView, ProbeKindView, TargetView, SERIES_POINTS};
+pub use view::{
+    AppView, EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView, LivenessView,
+    ProbeKindView, ProbingView, ProcessListProblem, ProcessListView, ProcessView, TargetView,
+    TransportView, SERIES_POINTS,
+};
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -67,6 +73,7 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::core_status,
             commands::get_settings,
             commands::set_settings,
+            commands::list_processes,
             commands::monitor_app,
             commands::forget_app,
             commands::apply_tray_labels,
@@ -75,7 +82,8 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
         ])
         .events(collect_events![
             events::CoreHeartbeat,
-            events::NetworkHealth
+            events::NetworkHealth,
+            events::AppEndpoints
         ])
 }
 

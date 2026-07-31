@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::view::GroupView;
+use crate::view::{AppView, FlowStatusView, GroupView};
 
 /// Liveness signal proving the Rust core is running and the event channel is wired.
 ///
@@ -39,4 +39,23 @@ pub struct NetworkHealth {
     pub window_secs: u32,
     /// The baselines, domestic first.
     pub groups: Vec<GroupView>,
+}
+
+/// What every monitored application is talking to, and how each of those paths is doing.
+///
+/// Emitted on the same beat as [`NetworkHealth`], and like it, not at all while the window
+/// is hidden. Sent even when nothing is monitored: the page still has to say whether flow
+/// events are available, which decides whether an empty list means "this application has no
+/// UDP endpoints" or "this machine cannot see UDP endpoints at all".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct AppEndpoints {
+    /// Length of the window every figure is computed over, in seconds.
+    pub window_secs: u32,
+    /// Span the byte counts accumulate over, in seconds.
+    pub traffic_window_secs: u32,
+    /// Whether per-process flow events are available, and if not, why.
+    pub flow_status: FlowStatusView,
+    /// The monitored applications, in the order they were chosen.
+    pub apps: Vec<AppView>,
 }

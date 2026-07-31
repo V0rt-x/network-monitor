@@ -51,7 +51,7 @@ use nm_core::endpoint::{
 };
 use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
-use nm_core::sample::ProbeSample;
+use nm_core::sample::{ProbeSample, Rtt};
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
@@ -65,6 +65,15 @@ use crate::Error;
 /// stamps, so the whole per-application history stays in the low hundreds of kilobytes
 /// however long the session runs.
 pub const HISTORY_CAPACITY: usize = 120;
+
+/// How many samples of an endpoint's history the sparkline carries.
+///
+/// Fewer than a baseline's, and for two reasons. An endpoint is probed once a second
+/// rather than once every few seconds, so thirty points is half a minute — the same span
+/// the traffic ranking uses, and long enough to see a loss burst. And there can be eighty
+/// of these at the enforced ceiling against the baselines' handful, so the series is the
+/// one part of this payload whose size has to be argued for.
+pub const SERIES_POINTS: usize = 30;
 
 /// Something the probe engine must be told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -499,6 +508,22 @@ impl AppMonitor {
     pub fn endpoint_count(&self, app: AppId) -> usize {
         self.tracker.endpoint_count(app)
     }
+
+    /// The span every figure in an [`EndpointReport`] is computed over.
+    #[must_use]
+    pub const fn window(&self) -> Duration {
+        self.window
+    }
+
+    /// The span [`EndpointReport::recent_bytes`] accumulates over.
+    ///
+    /// Reported alongside the figure rather than divided into it: the count covers between
+    /// one and two of these windows, so turning it into a rate would invent a precision the
+    /// measurement does not have.
+    #[must_use]
+    pub fn traffic_window(&self) -> Duration {
+        self.tracker.policy().traffic_window
+    }
 }
 
 /// One endpoint of one application, as the layer above sees it.
@@ -538,6 +563,14 @@ pub struct EndpointReport {
     pub stats: WindowStats,
     /// The verdict those statistics imply.
     pub health: nm_core::health::Health,
+    /// Seconds before `now` for each point of the series — negative, ascending.
+    ///
+    /// A real time axis rather than sample indices: an idle endpoint is probed ten times
+    /// less often, so evenly spaced points would draw a chart that lies about when things
+    /// happened.
+    pub series_age_secs: Vec<f64>,
+    /// Round-trip time at each point, or [`None`] where the probe did not come back.
+    pub series_rtt_ms: Vec<Option<f64>>,
 }
 
 impl EndpointReport {
@@ -549,8 +582,17 @@ impl EndpointReport {
         thresholds: &HealthThresholds,
     ) -> Self {
         let stats = entry.history.stats_for_window(now, window);
+        let mut series_age_secs = Vec::with_capacity(SERIES_POINTS);
+        let mut series_rtt_ms = Vec::with_capacity(SERIES_POINTS);
+        for sample in entry.history.recent(SERIES_POINTS) {
+            series_age_secs.push(-now.saturating_duration_since(sample.at).as_secs_f64());
+            series_rtt_ms.push(sample.outcome.rtt().map(Rtt::as_millis_f64));
+        }
+
         Self {
             key: tracked.key(),
+            series_age_secs,
+            series_rtt_ms,
             liveness: tracked.liveness(),
             probing: tracked.probing(),
             recent_bytes: tracked.recent_bytes(),

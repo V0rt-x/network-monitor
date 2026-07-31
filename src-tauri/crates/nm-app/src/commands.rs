@@ -24,6 +24,7 @@ use crate::settings::{
 };
 use crate::shell::TrayLabels;
 use crate::state::AppState;
+use crate::view::{ProcessListProblem, ProcessListView, ProcessView};
 use crate::{baselines, shell};
 
 /// Platform backend the core will use, as seen across the IPC boundary.
@@ -167,6 +168,52 @@ pub fn set_settings(
     wanted.autostart = shell::apply_autostart(&app, wanted.autostart);
     let applied = state.update_settings(wanted);
     SettingsView::of(applied, state.problem())
+}
+
+/// Lists the processes the user could choose to monitor.
+///
+/// Read-only and handle-free: the sweep reports identity without opening a process, so an
+/// anti-cheat system has nothing to see. Called when the picker opens and when the user
+/// refreshes it — never on a timer, because a process list is a snapshot the moment it is
+/// taken and polling one would spend budget to be no less stale.
+#[tauri::command]
+#[specta::specta]
+#[must_use]
+pub fn list_processes() -> ProcessListView {
+    let Ok(enumerator) = nm_platform::process::system_enumerator() else {
+        return ProcessListView {
+            processes: Vec::new(),
+            problem: Some(ProcessListProblem::UnsupportedPlatform),
+        };
+    };
+
+    let Ok(processes) = enumerator.processes() else {
+        return ProcessListView {
+            processes: Vec::new(),
+            problem: Some(ProcessListProblem::Refused),
+        };
+    };
+
+    let mut processes: Vec<ProcessView> = processes
+        .into_iter()
+        .map(|process| ProcessView {
+            pid: process.pid.get(),
+            name: process.name,
+        })
+        .collect();
+    // By name, then by identifier: several copies of one executable are common, and a list
+    // that reordered itself between refreshes would be unusable to click in.
+    processes.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.pid.cmp(&right.pid))
+    });
+
+    ProcessListView {
+        processes,
+        problem: None,
+    }
 }
 
 /// Starts discovering and probing one running process's remote endpoints.

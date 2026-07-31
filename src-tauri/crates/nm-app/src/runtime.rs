@@ -24,7 +24,7 @@
 //! out a chart nobody can see. Showing the window emits at once rather than waiting out
 //! the period, so it is never blank. Discovery and probing do not pause with it.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -48,9 +48,11 @@ use tokio::sync::mpsc;
 
 use crate::apps::{AppMonitor, TargetChange};
 use crate::baselines::{self, BaselineGroup, BaselineTarget};
-use crate::discovery::{self, Discovery, Observation};
+use crate::discovery::{self, Discovery, FlowStatus, Observation};
+use crate::events::AppEndpoints;
 use crate::monitor::{health_window, BaselineMonitor};
 use crate::settings::Settings;
+use crate::view::AppView;
 use crate::Error;
 
 /// How often a snapshot is pushed to a visible window.
@@ -119,6 +121,17 @@ pub fn spawn(app: AppHandle<Wry>, settings: Settings, visible: Arc<AtomicBool>) 
     MonitorHandle { commands }
 }
 
+/// One process the user chose to follow.
+///
+/// The name is taken once, when monitoring starts, and kept: it is a label for a process
+/// identifier that is already the identity, and re-reading it every second would mean a
+/// full process sweep per tick for a string that cannot change.
+#[derive(Debug, Clone)]
+struct Watched {
+    pid: Pid,
+    name: String,
+}
+
 /// Why a monitoring session ended.
 enum SessionEnd {
     /// Settings changed; start again with these.
@@ -140,7 +153,9 @@ async fn run(
     visible: Arc<AtomicBool>,
 ) {
     let started = Instant::now();
-    let mut watched: BTreeSet<Pid> = BTreeSet::new();
+    // A list rather than a set: at most five, and the page shows them in the order the user
+    // chose them, which a set ordered by process identifier would scramble.
+    let mut watched: Vec<Watched> = Vec::new();
 
     loop {
         let end = session(
@@ -171,7 +186,7 @@ async fn session(
     commands: &mut mpsc::Receiver<MonitorCommand>,
     visible: &AtomicBool,
     started: Instant,
-    watched: &mut BTreeSet<Pid>,
+    watched: &mut Vec<Watched>,
 ) -> SessionEnd {
     let interval = settings.baseline_interval();
     let policy = AddressPolicy::default();
@@ -219,9 +234,10 @@ async fn session(
     let mut pending: VecDeque<ProbeCommand> = VecDeque::new();
     // Applications the user chose before this session started — a settings change, most
     // likely — are picked up again rather than quietly forgotten.
-    watched.retain(|pid| apps.monitor(discovery::app_of(*pid)).is_ok());
+    watched.retain(|process| apps.monitor(discovery::app_of(process.pid)).is_ok());
     discovery.watch(&pids_of(watched));
 
+    let flow_status = discovery.flow_status();
     let mut ticker = tokio::time::interval(EMIT_PERIOD);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -231,15 +247,15 @@ async fn session(
         tokio::select! {
             command = commands.recv() => match command {
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
-                Some(MonitorCommand::WindowRevealed) => emit(app, &baselines, started),
+                Some(MonitorCommand::WindowRevealed) => {
+                    emit_health(app, &baselines, started);
+                    emit_apps(app, &apps, watched, flow_status);
+                }
                 Some(MonitorCommand::MonitorApp(pid)) => {
-                    if apps.monitor(discovery::app_of(pid)).is_ok() {
-                        watched.insert(pid);
-                        discovery.watch(&pids_of(watched));
-                    }
+                    watch_process(&mut apps, watched, pid, &discovery);
                 }
                 Some(MonitorCommand::ForgetApp(pid)) => {
-                    watched.remove(&pid);
+                    watched.retain(|process| process.pid != pid);
                     discovery.watch(&pids_of(watched));
                     let changes = apps.forget(&mut registry, discovery::app_of(pid));
                     queue(&mut pending, changes, &refusals);
@@ -255,7 +271,8 @@ async fn session(
                 let changes = apps.sweep(&mut registry, Instant::now());
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
-                    emit(app, &baselines, started);
+                    emit_health(app, &baselines, started);
+                    emit_apps(app, &apps, watched, flow_status);
                 }
             }
         }
@@ -263,8 +280,42 @@ async fn session(
 }
 
 /// The watched processes as the discovery sources want them.
-fn pids_of(watched: &BTreeSet<Pid>) -> Vec<Pid> {
-    watched.iter().copied().collect()
+fn pids_of(watched: &[Watched]) -> Vec<Pid> {
+    watched.iter().map(|process| process.pid).collect()
+}
+
+/// Starts following one process, if it exists and there is room for it.
+///
+/// The name is read here, from the same read-only sweep the picker uses. A process
+/// identifier that no longer names anything is refused rather than monitored: a dead
+/// process would hold one of the five slots and never produce an endpoint.
+fn watch_process(
+    apps: &mut AppMonitor,
+    watched: &mut Vec<Watched>,
+    pid: Pid,
+    discovery: &Discovery,
+) {
+    if watched.iter().any(|process| process.pid == pid) {
+        return;
+    }
+    let Some(name) = process_name(pid) else {
+        return;
+    };
+    if apps.monitor(discovery::app_of(pid)).is_err() {
+        return;
+    }
+    watched.push(Watched { pid, name });
+    discovery.watch(&pids_of(watched));
+}
+
+/// The executable name of a running process, or [`None`] if it is not running.
+fn process_name(pid: Pid) -> Option<String> {
+    let enumerator = nm_platform::process::system_enumerator().ok()?;
+    let processes = enumerator.processes().ok()?;
+    processes
+        .into_iter()
+        .find(|process| process.pid == pid)
+        .map(|process| process.name)
 }
 
 /// Records one sighting from discovery.
@@ -395,12 +446,41 @@ fn fold_in(baselines: &mut BaselineMonitor, apps: &mut AppMonitor, completed: &C
     }
 }
 
-/// Pushes a snapshot to the window.
-fn emit(app: &AppHandle<Wry>, monitor: &BaselineMonitor, started: Instant) {
+/// Pushes the general-health snapshot to the window.
+fn emit_health(app: &AppHandle<Wry>, monitor: &BaselineMonitor, started: Instant) {
     let uptime = nm_core::time::elapsed_secs(started.elapsed());
     // A failed emit means the window is gone; the next tick finds that out too, and there
     // is nothing to recover.
     let _ = monitor.snapshot(Instant::now(), uptime).emit(app);
+}
+
+/// Pushes every monitored application's endpoints to the window.
+///
+/// Sent even with nothing monitored, because the page still has to say whether flow events
+/// are available: without them there are no UDP endpoints and no byte counters anywhere,
+/// and an empty list must not be mistaken for an application that is quiet.
+fn emit_apps(
+    app: &AppHandle<Wry>,
+    apps: &AppMonitor,
+    watched: &[Watched],
+    flow_status: FlowStatus,
+) {
+    let now = Instant::now();
+    let views = watched
+        .iter()
+        .map(|process| {
+            let reports = apps.endpoints(discovery::app_of(process.pid), now);
+            AppView::of(process.pid.get(), process.name.clone(), &reports)
+        })
+        .collect();
+
+    let payload = AppEndpoints {
+        window_secs: nm_core::time::elapsed_secs(apps.window()),
+        traffic_window_secs: nm_core::time::elapsed_secs(apps.traffic_window()),
+        flow_status: flow_status.into(),
+        apps: views,
+    };
+    let _ = payload.emit(app);
 }
 
 /// The probe engine, built and populated for one session.
