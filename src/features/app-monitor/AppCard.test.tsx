@@ -37,7 +37,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
 const app = (overrides: Partial<AppView> = {}): AppView => ({
   pid: 4242,
   name: 'game.exe',
-  counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, unknown: 0 },
+  counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
   endpoints: [endpoint()],
   ...overrides,
 });
@@ -56,7 +56,14 @@ describe('AppCard', () => {
     render(
       <AppCard
         app={app({
-          counts: { ok: 4, degraded: 2, unreachable: 1, blocked: 0, unknown: 0 },
+          counts: {
+            ok: 4,
+            degraded: 2,
+            unreachable: 1,
+            blocked: 0,
+            carryingTraffic: 0,
+            unknown: 0,
+          },
           endpoints: [
             endpoint({ key: 'a', address: '1.1.1.1:1', health: 'unreachable' }),
             endpoint({ key: 'b', address: '1.1.1.2:2', health: 'degraded' }),
@@ -118,6 +125,43 @@ describe('AppCard', () => {
     expect(screen.getByText('Probes leave from 192.0.2.10')).toBeInTheDocument();
   });
 
+  it('shows a live game server as carrying traffic, never as unreachable', () => {
+    // The state a UDP match server is normally in: nothing listens on a game port but the
+    // game, so no probe answers, while the traffic proves the server is fine.
+    render(
+      <AppCard
+        app={app({
+          counts: {
+            ok: 0,
+            degraded: 0,
+            unreachable: 0,
+            blocked: 0,
+            carryingTraffic: 1,
+            unknown: 0,
+          },
+          endpoints: [
+            endpoint({
+              health: 'carryingTraffic',
+              recentBytes: 630_000,
+              rttMs: null,
+              jitterMs: null,
+              lossPct: null,
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('Carrying traffic').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Unreachable')).not.toBeInTheDocument();
+    // It claims nothing it did not measure.
+    const rtt = screen.getByText('RTT').parentElement;
+    expect(rtt).toHaveTextContent('—');
+    expect(screen.getByText('Traffic (30 s)').parentElement).toHaveTextContent('630 kB');
+  });
+
   it('shows a dash rather than a zero where nothing counted the traffic', () => {
     render(
       <AppCard
@@ -136,7 +180,14 @@ describe('AppCard', () => {
     render(
       <AppCard
         app={app({
-          counts: { ok: 0, degraded: 0, unreachable: 0, blocked: 0, unknown: 0 },
+          counts: {
+            ok: 0,
+            degraded: 0,
+            unreachable: 0,
+            blocked: 0,
+            carryingTraffic: 0,
+            unknown: 0,
+          },
           endpoints: [],
         })}
         trafficWindowSecs={30}

@@ -32,7 +32,7 @@ const target = (overrides: Partial<TargetView> = {}): TargetView => ({
 const group = (overrides: Partial<GroupView> = {}): GroupView => ({
   group: 'foreign',
   verdict: 'ok',
-  counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, unknown: 0 },
+  counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
   rttMs: 24,
   jitterMs: 3,
   lossPct: 0,
@@ -58,7 +58,14 @@ describe('GroupCard', () => {
       <GroupCard
         group={group({
           verdict: 'degraded',
-          counts: { ok: 3, degraded: 0, unreachable: 1, blocked: 0, unknown: 0 },
+          counts: {
+            ok: 3,
+            degraded: 0,
+            unreachable: 1,
+            blocked: 0,
+            carryingTraffic: 0,
+            unknown: 0,
+          },
         })}
       />,
     );
@@ -93,7 +100,14 @@ describe('GroupCard', () => {
           rttMs: null,
           jitterMs: null,
           lossPct: null,
-          counts: { ok: 0, degraded: 0, unreachable: 0, blocked: 0, unknown: 1 },
+          counts: {
+            ok: 0,
+            degraded: 0,
+            unreachable: 0,
+            blocked: 0,
+            carryingTraffic: 0,
+            unknown: 1,
+          },
           targets: [target({ health: 'unknown', rttMs: null, jitterMs: null, lossPct: null })],
         })}
       />,

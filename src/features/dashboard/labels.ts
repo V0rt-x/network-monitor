@@ -64,6 +64,8 @@ export const healthKey = (health: HealthView) => {
       return 'dashboard.health.unreachable' as const;
     case 'blocked':
       return 'dashboard.health.blocked' as const;
+    case 'carryingTraffic':
+      return 'dashboard.health.carryingTraffic' as const;
     case 'unknown':
       return 'dashboard.health.unknown' as const;
   }

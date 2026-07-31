@@ -17,6 +17,7 @@ const DISTRIBUTION = [
   { key: 'unreachable', labelKey: 'dashboard.health.unreachable' },
   { key: 'degraded', labelKey: 'dashboard.health.degraded' },
   { key: 'blocked', labelKey: 'dashboard.health.blocked' },
+  { key: 'carryingTraffic', labelKey: 'dashboard.health.carryingTraffic' },
   { key: 'ok', labelKey: 'dashboard.health.ok' },
   { key: 'unknown', labelKey: 'dashboard.health.unknown' },
 ] as const;

@@ -664,6 +664,17 @@ impl EndpointReport {
         thresholds: &HealthThresholds,
     ) -> Self {
         let stats = entry.history.stats_for_window(now, window);
+        // Passive evidence is folded in here, where the two sources of knowledge finally
+        // meet: the probe engine cannot see the flow counters, and the endpoint tracker
+        // cannot see the probes. A game's match server answers nothing and carries every
+        // packet of the match, and only this join can tell that apart from a dead host.
+        let carrying = tracked.recent_bytes().is_some_and(|bytes| bytes > 0);
+        let health = nm_core::health::with_passive_evidence(
+            thresholds.health_of(&stats),
+            carrying,
+            entry.measurable,
+        );
+
         let mut series_age_secs = Vec::with_capacity(SERIES_POINTS);
         let mut series_rtt_ms = Vec::with_capacity(SERIES_POINTS);
         for sample in entry.history.recent(SERIES_POINTS) {
@@ -684,7 +695,7 @@ impl EndpointReport {
             measurable: entry.measurable,
             probe_kind: entry.probe_kind,
             filtering_confirmed: entry.filtering_confirmed,
-            health: thresholds.health_of(&stats),
+            health,
             stats,
         }
     }

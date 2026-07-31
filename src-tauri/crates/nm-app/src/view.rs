@@ -42,6 +42,8 @@ pub enum HealthView {
     Unreachable,
     /// Every probe was filtered; nothing about the link was measured.
     Blocked,
+    /// Data is crossing it, but no probe answers — the normal state of a game server.
+    CarryingTraffic,
     /// Not measured enough yet to say anything.
     Unknown,
 }
@@ -53,6 +55,7 @@ impl From<Health> for HealthView {
             Health::Degraded => Self::Degraded,
             Health::Unreachable => Self::Unreachable,
             Health::Blocked => Self::Blocked,
+            Health::CarryingTraffic => Self::CarryingTraffic,
             // A core that grows a state the UI has no word for must render as "unknown"
             // rather than as anything reassuring.
             _ => Self::Unknown,
@@ -99,6 +102,8 @@ pub struct HealthCountsView {
     pub unreachable: u32,
     /// Members whose probes are all filtered.
     pub blocked: u32,
+    /// Members proven alive by their traffic, with no probe answering.
+    pub carrying_traffic: u32,
     /// Members not measured enough to judge.
     pub unknown: u32,
 }
@@ -113,6 +118,7 @@ impl From<HealthCounts> for HealthCountsView {
             degraded: narrow(counts.degraded),
             unreachable: narrow(counts.unreachable),
             blocked: narrow(counts.blocked),
+            carrying_traffic: narrow(counts.carrying_traffic),
             unknown: narrow(counts.unknown),
         }
     }
@@ -391,8 +397,12 @@ const fn severity(health: HealthView) -> u8 {
         HealthView::Unreachable => 0,
         HealthView::Degraded => 1,
         HealthView::Blocked => 2,
-        HealthView::Unknown => 3,
-        HealthView::Ok => 4,
+        // Below the states that describe a problem: an endpoint proven alive by its own
+        // traffic is not one the user has to do anything about, however little was measured
+        // of it. Above `Ok`, because something *is* unmeasured.
+        HealthView::CarryingTraffic => 3,
+        HealthView::Unknown => 4,
+        HealthView::Ok => 5,
     }
 }
 

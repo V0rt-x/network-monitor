@@ -16,8 +16,8 @@ use crate::stats::WindowStats;
 
 /// How something is doing, as far as its measurements can honestly say.
 ///
-/// The same five states describe one target and a whole group, so the UI needs one
-/// vocabulary rather than two that have to be kept in step.
+/// The same states describe one target and a whole group, so the UI needs one vocabulary
+/// rather than two that have to be kept in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Health {
@@ -32,6 +32,22 @@ pub enum Health {
     /// Distinct from [`Unreachable`](Self::Unreachable) on purpose: a filtered probe is an
     /// absence of knowledge, not evidence that the endpoint is down.
     Blocked,
+    /// Data is demonstrably crossing this endpoint, but no probe gets an answer.
+    ///
+    /// **The normal state of a game's match server**, not an edge case: nothing listens on
+    /// a game port but the game, so an echo, a connection attempt and a hello are all
+    /// refused or ignored while the game plays perfectly well over it. Reporting that as
+    /// [`Unreachable`](Self::Unreachable) would say "your game server is down" about a
+    /// server the user is currently playing on — the one lie this product must never tell.
+    ///
+    /// It is a separate state rather than a flavour of [`Blocked`](Self::Blocked) because
+    /// `Blocked` promises that filtering has been *proven*, and that promise is what lets
+    /// the UI state it as a fact. Silence is not proof.
+    ///
+    /// The evidence for it is passive and cannot be faked: bytes counted by the operating
+    /// system against this endpoint. It says nothing about latency or loss, and the figures
+    /// stay absent — knowing an endpoint is alive is not knowing how well it is doing.
+    CarryingTraffic,
     /// Not measured enough yet to say anything.
     Unknown,
 }
@@ -47,6 +63,44 @@ impl Health {
     #[must_use]
     pub const fn is_known(self) -> bool {
         !matches!(self, Self::Unknown)
+    }
+
+    /// Whether this state says the endpoint is alive, however little else it says.
+    #[must_use]
+    pub const fn is_alive(self) -> bool {
+        matches!(self, Self::Ok | Self::Degraded | Self::CarryingTraffic)
+    }
+}
+
+/// Folds passive evidence into a verdict the probes reached on their own.
+///
+/// Probes are the only thing that can measure a path, but they are not the only thing that
+/// can prove one exists. Where the operating system has counted bytes crossing an endpoint,
+/// probe silence stops meaning "nothing is there" and starts meaning "nothing answers us" —
+/// which for a game server is the expected state rather than a fault.
+///
+/// Deliberately narrow. It only ever *softens* a verdict that the endpoint is not there:
+///
+/// * [`Health::Unreachable`] becomes [`Health::CarryingTraffic`]. That covers a refusal as
+///   well as silence, and on purpose: a TCP probe to a game port is normally answered with
+///   "no service here", which is a fact about the port our probe chose, not about the path
+///   the game is playing over. Data crossing the endpoint outranks both.
+/// * [`Health::Unknown`] becomes [`Health::CarryingTraffic`] only when there is nothing
+///   left to try. While a probe kind is still being tested, "not measured yet" is the
+///   honest word, and it is about to become something better.
+/// * [`Health::Blocked`] is left alone: proven filtering is a stronger statement than
+///   liveness, and it is the one the user can act on.
+/// * A verdict built on probes that *did* answer is never touched — a measured path says
+///   more than the fact that bytes crossed it.
+#[must_use]
+pub const fn with_passive_evidence(probed: Health, carrying: bool, measurable: bool) -> Health {
+    if !carrying {
+        return probed;
+    }
+    match probed {
+        Health::Unreachable => Health::CarryingTraffic,
+        Health::Unknown if !measurable => Health::CarryingTraffic,
+        other => other,
     }
 }
 
@@ -139,6 +193,8 @@ pub struct HealthCounts {
     pub unreachable: usize,
     /// Members whose probes are all filtered.
     pub blocked: usize,
+    /// Members proven alive by their traffic, with no probe answering.
+    pub carrying_traffic: usize,
     /// Members not measured enough to judge.
     pub unknown: usize,
 }
@@ -151,14 +207,22 @@ impl HealthCounts {
             Health::Degraded => self.degraded += 1,
             Health::Unreachable => self.unreachable += 1,
             Health::Blocked => self.blocked += 1,
-            Health::Unknown => self.unknown += 1,
+            Health::CarryingTraffic => self.carrying_traffic += 1,
+            // A state this build has no counter for must not vanish from a distribution
+            // that claims to add up.
+            _ => self.unknown += 1,
         }
     }
 
     /// How many members were counted.
     #[must_use]
     pub const fn total(self) -> usize {
-        self.ok + self.degraded + self.unreachable + self.blocked + self.unknown
+        self.ok
+            + self.degraded
+            + self.unreachable
+            + self.blocked
+            + self.carrying_traffic
+            + self.unknown
     }
 
     /// Members that came back.
@@ -237,14 +301,25 @@ fn verdict_for(counts: HealthCounts) -> Health {
         return Health::Unknown;
     }
     if counts.answering() > 0 {
-        // Anything less than a clean sweep is degradation, and the counts say how much.
-        if counts.degraded == 0 && counts.unreachable == 0 && counts.blocked == 0 {
+        // Anything less than a clean sweep is degradation, and the counts say how much. A
+        // member proven alive by its traffic is not a clean sweep — nothing measured its
+        // path — but it is not a failure either, so it lands here with the rest.
+        if counts.degraded == 0
+            && counts.unreachable == 0
+            && counts.blocked == 0
+            && counts.carrying_traffic == 0
+        {
             return Health::Ok;
         }
         return Health::Degraded;
     }
-    // Nothing in the group answers. An explicit refusal anywhere is a stronger statement
-    // than filtering, which measured nothing at all.
+    // Nothing in the group answers a probe. Being alive still outranks every explanation of
+    // silence: the group is reaching *something*.
+    if counts.carrying_traffic > 0 {
+        return Health::CarryingTraffic;
+    }
+    // An explicit refusal anywhere is a stronger statement than filtering, which measured
+    // nothing at all.
     if counts.unreachable > 0 {
         Health::Unreachable
     } else {
@@ -540,5 +615,100 @@ mod tests {
 
         assert!(Health::Blocked.is_known());
         assert!(!Health::Unknown.is_known());
+
+        assert!(Health::Ok.is_alive());
+        assert!(Health::Degraded.is_alive());
+        assert!(Health::CarryingTraffic.is_alive());
+        assert!(!Health::Unreachable.is_alive());
+        assert!(!Health::Blocked.is_alive());
+        assert!(!Health::Unknown.is_alive());
+    }
+
+    #[test]
+    fn traffic_across_a_silent_endpoint_means_it_is_alive_not_unreachable() {
+        // The headline case: a game's match server answers no probe of any kind, because
+        // nothing listens on a game port but the game. Calling it unreachable would say
+        // "your game server is down" about a server the user is playing on.
+        assert_eq!(
+            with_passive_evidence(Health::Unreachable, true, true),
+            Health::CarryingTraffic
+        );
+    }
+
+    #[test]
+    fn a_refusal_is_softened_too_when_traffic_is_crossing() {
+        // A TCP probe to a game port is normally refused outright. That is a fact about the
+        // port our probe chose, not about the path the game is playing over.
+        let refused = health(&[ProbeOutcome::Unreachable, ProbeOutcome::Unreachable]);
+        assert_eq!(refused, Health::Unreachable);
+        assert_eq!(
+            with_passive_evidence(refused, true, true),
+            Health::CarryingTraffic
+        );
+    }
+
+    #[test]
+    fn silence_without_traffic_stays_unreachable() {
+        // Nothing counted any bytes — either the platform cannot, or none crossed. Absent
+        // evidence must not become evidence of life.
+        assert_eq!(
+            with_passive_evidence(Health::Unreachable, false, true),
+            Health::Unreachable
+        );
+    }
+
+    #[test]
+    fn traffic_never_makes_a_measured_verdict_look_better() {
+        // Probes that answered say more than the fact that bytes crossed, so a measured
+        // verdict is never touched — least of all a degraded one, which is the finding the
+        // user came for.
+        for measured in [Health::Ok, Health::Degraded] {
+            assert_eq!(with_passive_evidence(measured, true, true), measured);
+        }
+    }
+
+    #[test]
+    fn proven_filtering_outranks_liveness() {
+        // `Blocked` promises filtering was *proven*, which is actionable — "try a VPN".
+        // Liveness is a weaker statement and must not overwrite it.
+        assert_eq!(
+            with_passive_evidence(Health::Blocked, true, true),
+            Health::Blocked
+        );
+    }
+
+    #[test]
+    fn an_endpoint_still_being_tested_stays_unknown() {
+        // While a probe kind is left to try, "not measured yet" is honest and is about to
+        // become something better. Only when nothing is left does traffic become the answer.
+        assert_eq!(
+            with_passive_evidence(Health::Unknown, true, true),
+            Health::Unknown
+        );
+        assert_eq!(
+            with_passive_evidence(Health::Unknown, true, false),
+            Health::CarryingTraffic
+        );
+    }
+
+    #[test]
+    fn a_group_reaching_something_is_not_reported_as_unreachable() {
+        let mut counts = HealthCounts::default();
+        counts.record(Health::CarryingTraffic);
+        counts.record(Health::Unreachable);
+
+        assert_eq!(verdict_for(counts), Health::CarryingTraffic);
+        assert_eq!(counts.total(), 2);
+    }
+
+    #[test]
+    fn a_group_is_not_clean_while_a_member_is_unmeasured() {
+        // The member is alive, but nothing measured its path, so the group cannot claim a
+        // clean sweep — the distribution says which member it is.
+        let mut counts = HealthCounts::default();
+        counts.record(Health::Ok);
+        counts.record(Health::CarryingTraffic);
+
+        assert_eq!(verdict_for(counts), Health::Degraded);
     }
 }

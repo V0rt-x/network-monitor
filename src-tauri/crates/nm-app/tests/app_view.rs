@@ -222,6 +222,87 @@ fn every_caveat_travels_with_the_number() {
 }
 
 #[test]
+fn a_game_server_carrying_traffic_is_never_called_unreachable() {
+    // Found by running the app against a live game. Its match server answers no probe of
+    // any kind — nothing listens on a game port but the game — while hundreds of kilobytes
+    // cross it every half minute. Reported as "unreachable", that reads as "your game
+    // server is down" about a server the user is playing on.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor
+        .observe(APP, udp(1), None, Some(630_000), now)
+        .unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let endpoint = &view.endpoints[0];
+
+    assert_eq!(endpoint.health, HealthView::CarryingTraffic);
+    assert_eq!(view.counts.carrying_traffic, 1);
+    assert_eq!(view.counts.unreachable, 0);
+    // And it claims nothing it did not measure: liveness is not latency.
+    assert_eq!(endpoint.rtt_ms, None);
+    assert_eq!(endpoint.recent_bytes, Some(630_000.0));
+}
+
+#[test]
+fn a_silent_endpoint_with_no_traffic_is_still_unreachable() {
+    // The complement: without passive evidence there is nothing to soften the verdict with,
+    // and inventing life for an endpoint nothing has been seen crossing would be the same
+    // failure in the opposite direction.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, Some(0), now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    assert_eq!(view.endpoints[0].health, HealthView::Unreachable);
+}
+
+#[test]
+fn a_measured_endpoint_keeps_the_verdict_its_probes_earned() {
+    // Traffic must not paper over a degraded path — that is the finding the user came for.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor
+        .observe(APP, udp(1), None, Some(630_000), now)
+        .unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(400_000)),
+    );
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    assert_eq!(view.endpoints[0].health, HealthView::Degraded);
+}
+
+#[test]
+fn a_live_but_unmeasured_endpoint_sorts_below_the_broken_ones() {
+    // It needs no action from the user, so it must not sit above an endpoint that does.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor
+        .observe(APP, udp(1), None, Some(630_000), now)
+        .unwrap();
+    monitor.observe(APP, udp(2), None, Some(0), now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+    fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let order: Vec<HealthView> = view
+        .endpoints
+        .iter()
+        .map(|endpoint| endpoint.health)
+        .collect();
+    assert_eq!(
+        order,
+        vec![HealthView::Unreachable, HealthView::CarryingTraffic]
+    );
+}
+
+#[test]
 fn unknown_throughput_is_not_reported_as_zero() {
     // Without a flow source there are no byte counters at all; showing zero for a busy game
     // would be a lie the user cannot see through.

@@ -59,6 +59,7 @@
       "degraded": "Degraded",
       "unreachable": "Unreachable",
       "blocked": "Probe blocked",
+      "carryingTraffic": "Carrying traffic",
       "unknown": "Not measured yet"
     },
     "probeKind": {

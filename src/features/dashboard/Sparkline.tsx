@@ -19,6 +19,7 @@ const STROKE: Record<HealthView, string> = {
   degraded: '#d29922',
   unreachable: '#f85149',
   blocked: '#a371f7',
+  carryingTraffic: '#58a6ff',
   unknown: '#8b949e',
 };
 

@@ -26,7 +26,7 @@ const HEALTH: NetworkHealth = {
     {
       group: 'domestic',
       verdict: 'ok',
-      counts: { ok: 2, degraded: 0, unreachable: 0, blocked: 0, unknown: 0 },
+      counts: { ok: 2, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
       rttMs: 8,
       jitterMs: 1,
       lossPct: 0,
@@ -35,7 +35,7 @@ const HEALTH: NetworkHealth = {
     {
       group: 'foreign',
       verdict: 'unreachable',
-      counts: { ok: 0, degraded: 0, unreachable: 2, blocked: 0, unknown: 0 },
+      counts: { ok: 0, degraded: 0, unreachable: 2, blocked: 0, carryingTraffic: 0, unknown: 0 },
       rttMs: null,
       jitterMs: null,
       lossPct: 100,

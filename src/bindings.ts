@@ -254,6 +254,8 @@ export type HealthCountsView = {
 	unreachable: number,
 	/**  Members whose probes are all filtered. */
 	blocked: number,
+	/**  Members proven alive by their traffic, with no probe answering. */
+	carryingTraffic: number,
 	/**  Members not measured enough to judge. */
 	unknown: number,
 };
@@ -268,6 +270,8 @@ export type HealthView =
 "unreachable" | 
 /**  Every probe was filtered; nothing about the link was measured. */
 "blocked" | 
+/**  Data is crossing it, but no probe answers — the normal state of a game server. */
+"carryingTraffic" | 
 /**  Not measured enough yet to say anything. */
 "unknown";
 
