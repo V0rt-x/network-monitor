@@ -14,8 +14,10 @@ use std::time::{Duration, Instant};
 
 use nm_app::apps::{AppMonitor, TargetChange};
 use nm_core::address::AddressPolicy;
+use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
-use nm_core::health::HealthThresholds;
+use nm_core::health::{Health, HealthThresholds};
+use nm_core::path::{Hop, PathTrace};
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
@@ -593,4 +595,383 @@ fn a_sweep_with_nothing_monitored_asks_for_nothing() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
     assert!(monitor.sweep(&mut registry, Instant::now()).is_empty());
+}
+
+// --- The path edge: measuring the route to an endpoint that answers nothing ---------------
+
+/// Stand-ins for routers on the way to an endpoint, in increasing distance.
+///
+/// The documentation ranges cannot play a hop: the address policy classifies them as
+/// unusable, and a hop not worth probing is passed over. These are well-known public
+/// resolver addresses used as routable constants — nothing here sends a packet anywhere, and
+/// none of them was observed on any machine.
+const HOME_ROUTER: &str = "192.168.1.1";
+const NEAR_HOP: &str = "1.1.1.1";
+const MID_HOP: &str = "8.8.8.8";
+const DEEP_HOP: &str = "9.9.9.9";
+const OTHER_HOP: &str = "8.8.4.4";
+
+fn hop(raw: &str) -> IpAddr {
+    raw.parse().expect("a literal address")
+}
+
+/// A walk that never reached its target, over `(address, milliseconds)` pairs from TTL 1.
+fn trace(hops: &[(&str, u32)]) -> PathTrace {
+    let hops = hops
+        .iter()
+        .enumerate()
+        .map(|(index, (address, millis))| {
+            let ttl = u8::try_from(index + 1).unwrap();
+            Hop::answered(ttl, hop(address), Rtt::from_micros(millis * 1_000))
+        })
+        .collect();
+    PathTrace::new(hops, false)
+}
+
+/// The ordinary route to a match server: the home router, then three public hops.
+fn typical_route() -> PathTrace {
+    trace(&[
+        (HOME_ROUTER, 1),
+        (NEAR_HOP, 6),
+        (MID_HOP, 9),
+        (DEEP_HOP, 40),
+    ])
+}
+
+fn walk_requests(changes: &[TargetChange]) -> Vec<TargetId> {
+    changes
+        .iter()
+        .filter_map(|change| match change {
+            TargetChange::WalkNow { id } => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn unregistrations(changes: &[TargetChange]) -> Vec<TargetId> {
+    changes
+        .iter()
+        .filter_map(|change| match change {
+            TargetChange::Unregister { id } => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// One monitored endpoint carrying traffic, whose probe kinds are all exhausted.
+///
+/// The state a game's match server settles into within seconds of a match starting: it
+/// answers no echo, no handshake and no hello, because nothing listens on a game port but
+/// the game, while every packet of the match crosses it.
+fn silent_but_busy() -> (
+    AppMonitor,
+    TargetRegistry,
+    Instant,
+    TargetId,
+    Vec<TargetChange>,
+) {
+    let (mut monitor, mut registry, now) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), Some(64_000), now)
+        .unwrap();
+    let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
+
+    // No probe kind left, and the route still worth measuring — the probe engine's own
+    // report of an endpoint that has fallen through to walking its path.
+    monitor.note_probe_state(endpoint, None, false, true);
+    let changes = monitor.sweep(&mut registry, now);
+    (monitor, registry, now, endpoint, changes)
+}
+
+#[test]
+fn an_endpoint_that_runs_out_of_probe_kinds_asks_for_its_route_to_be_walked() {
+    let (_, _, _, endpoint, changes) = silent_but_busy();
+    assert_eq!(walk_requests(&changes), vec![endpoint]);
+}
+
+#[test]
+fn an_endpoint_that_can_still_be_probed_is_left_alone() {
+    // A path edge is three probes a second. Nothing gets one while there is something better
+    // to measure than a router short of it.
+    let (mut monitor, mut registry, now) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), Some(64_000), now)
+        .unwrap();
+    let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
+    monitor.note_probe_state(endpoint, Some(ProbeKind::IcmpEcho), false, true);
+
+    assert!(walk_requests(&monitor.sweep(&mut registry, now)).is_empty());
+    assert!(monitor.endpoints(APP, now)[0].path.is_none());
+}
+
+#[test]
+fn a_walked_route_becomes_probes_along_the_applications_own_egress() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+
+    let changes = monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now);
+
+    let hops: Vec<(IpAddr, Option<IpAddr>, Duration)> = changes
+        .iter()
+        .filter_map(|change| match change {
+            TargetChange::Register {
+                address,
+                source,
+                interval,
+                ..
+            } => Some((address.ip, *source, *interval)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        hops.iter().map(|(ip, _, _)| *ip).collect::<Vec<_>>(),
+        vec![hop(NEAR_HOP), hop(MID_HOP), hop(DEEP_HOP)],
+        "the home router is not worth probing, and the rest of the walk is"
+    );
+    for (_, source, interval) in &hops {
+        assert_eq!(
+            *source,
+            Some(local(9)),
+            "a hop measured off the application's route measures the wrong route"
+        );
+        assert_eq!(*interval, Duration::from_secs(1));
+    }
+    assert!(
+        changes
+            .iter()
+            .all(|change| !matches!(change, TargetChange::Register { address, .. } if address.port.is_some())),
+        "a router is not a service: there is no port for a connecting probe to aim at"
+    );
+}
+
+#[test]
+fn a_hops_measurements_become_the_endpoints_path_figure() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let changes = monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now);
+    let hops = registrations(&changes);
+
+    for step in 0..6 {
+        let at = now + Duration::from_secs(step);
+        monitor.record(
+            hops[0],
+            ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(6_000))),
+        );
+        monitor.record(
+            hops[1],
+            ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(9_000))),
+        );
+        monitor.record(
+            hops[2],
+            ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(40_000))),
+        );
+    }
+
+    let report = &monitor.endpoints(APP, now + Duration::from_secs(6))[0];
+    let path = report
+        .path
+        .as_ref()
+        .expect("the endpoint holds a path edge");
+    assert_eq!(path.quality, PathQuality::Ok);
+    assert_eq!(path.rtt_ms(), Some(40.0));
+    assert_eq!(
+        path.reported_hop().map(|reported| reported.ttl),
+        Some(4),
+        "the figure belongs to the deepest hop that answers, and says which one that is"
+    );
+    assert_eq!(
+        report.stats.rtt, None,
+        "the endpoint itself still answers nothing, and the path must not stand in for it"
+    );
+}
+
+#[test]
+fn a_silent_endpoint_carrying_traffic_is_never_reported_as_unmeasured() {
+    // Once the chain has fallen through to the route, no future probe will say anything more
+    // about the endpoint — so "not measured yet" has stopped being the honest word, and the
+    // traffic crossing it is the answer.
+    let (monitor, _, now, _, _) = silent_but_busy();
+    assert_eq!(
+        monitor.endpoints(APP, now)[0].health,
+        Health::CarryingTraffic
+    );
+}
+
+#[test]
+fn only_the_busiest_endpoint_of_an_application_is_given_a_path_edge() {
+    // An edge is three probes a second, which `PLAN.md` allots to the one endpoint that
+    // matters. A game with four silent servers would otherwise spend the product's whole
+    // allowance on a single application.
+    let (mut monitor, mut registry, now) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), Some(1_000), now)
+        .unwrap();
+    monitor
+        .observe(APP, udp(2), Some(local(9)), Some(64_000), now)
+        .unwrap();
+    let registered = registrations(&monitor.sweep(&mut registry, now));
+    for id in &registered {
+        monitor.note_probe_state(*id, None, false, true);
+    }
+
+    let asked = walk_requests(&monitor.sweep(&mut registry, now));
+    assert_eq!(asked.len(), 1, "one edge per application, no more");
+
+    let reports = monitor.endpoints(APP, now);
+    let with_edge: Vec<&EndpointKey> = reports
+        .iter()
+        .filter(|report| report.path.is_some())
+        .map(|report| &report.key)
+        .collect();
+    assert_eq!(
+        with_edge,
+        vec![&udp(2)],
+        "the busiest endpoint is the match server; the rest keep their single probe"
+    );
+}
+
+#[test]
+fn an_edge_that_moves_to_another_endpoint_gives_up_its_hops_first() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let hops =
+        registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
+    assert_eq!(hops.len(), 3);
+
+    // A second endpoint takes over as the busiest, and runs out of probe kinds too.
+    let later = now + Duration::from_secs(1);
+    monitor
+        .observe(APP, udp(2), Some(local(9)), Some(500_000), later)
+        .unwrap();
+    let registered = registrations(&monitor.sweep(&mut registry, later));
+    monitor.note_probe_state(registered[0], None, false, true);
+    let changes = monitor.sweep(&mut registry, later);
+
+    let released = unregistrations(&changes);
+    assert_eq!(
+        released.len(),
+        3,
+        "the old edge's probes must stop before the new one's start: {changes:?}"
+    );
+    assert!(hops.iter().all(|id| released.contains(id)));
+
+    let reports = monitor.endpoints(APP, later);
+    let held: Vec<&EndpointKey> = reports
+        .iter()
+        .filter(|report| report.path.is_some())
+        .map(|report| &report.key)
+        .collect();
+    assert_eq!(held, vec![&udp(2)], "the edge followed the traffic");
+}
+
+#[test]
+fn a_rewalk_that_finds_the_same_route_asks_the_probe_engine_for_nothing() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now);
+
+    let later = now + Duration::from_secs(300);
+    let changes = monitor.note_path_trace(&mut registry, endpoint, &typical_route(), later);
+
+    assert!(
+        changes.is_empty(),
+        "an unchanged route must cost nothing to confirm: {changes:?}"
+    );
+}
+
+#[test]
+fn a_route_that_moved_swaps_only_the_hop_that_changed() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let before =
+        registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
+
+    let later = now + Duration::from_secs(300);
+    let moved = trace(&[
+        (HOME_ROUTER, 1),
+        (NEAR_HOP, 6),
+        (MID_HOP, 9),
+        (OTHER_HOP, 44),
+    ]);
+    let changes = monitor.note_path_trace(&mut registry, endpoint, &moved, later);
+
+    assert_eq!(unregistrations(&changes), vec![before[2]]);
+    assert_eq!(registrations(&changes).len(), 1);
+}
+
+#[test]
+fn a_hop_that_answers_no_probe_of_ours_is_released() {
+    // Answering a time-to-live expiry does not oblige a router to answer an echo addressed
+    // to it. One that will not is worth nothing to the edge, and its slot is better empty.
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let hops =
+        registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
+
+    monitor.note_probe_state(hops[2], None, false, true);
+    let changes = monitor.sweep(&mut registry, now);
+
+    assert_eq!(unregistrations(&changes), vec![hops[2]]);
+    let report = &monitor.endpoints(APP, now)[0];
+    assert_eq!(report.path.as_ref().map(|path| path.hops.len()), Some(2));
+}
+
+#[test]
+fn forgetting_an_application_stops_the_hops_it_was_probing() {
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let hops =
+        registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
+
+    let released = unregistrations(&monitor.forget(&mut registry, APP));
+
+    for id in hops {
+        assert!(
+            released.contains(&id),
+            "a hop outlived its reason for existing"
+        );
+        assert!(registry.get(id).is_none());
+    }
+}
+
+#[test]
+fn a_walk_for_an_endpoint_with_no_edge_registers_nothing() {
+    // A trace can arrive for an endpoint the sweep has since decided is not the one worth
+    // three probes a second. Its hops have nowhere to live, and registering them would spend
+    // budget nobody decided to spend.
+    let (mut monitor, mut registry, now) = watching();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
+
+    assert!(monitor
+        .note_path_trace(&mut registry, endpoint, &typical_route(), now)
+        .is_empty());
+}
+
+#[test]
+fn a_hop_that_is_already_a_baseline_is_measured_once_and_answers_both() {
+    // The same router can be a baseline target in its own right. The shared registry is what
+    // makes that one probe rather than two, and re-registering it would reset a fallback
+    // chain and a failure history the dashboard owns.
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let shared = TargetAddress::icmp(hop(DEEP_HOP));
+    let existing = registry.insert(shared, TargetTag::ForeignBaseline).unwrap();
+
+    let changes = monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now);
+
+    assert!(
+        !registrations(&changes).contains(&existing),
+        "the address was already being probed: {changes:?}"
+    );
+    for step in 0..6 {
+        let at = now + Duration::from_secs(step);
+        monitor.record(
+            existing,
+            ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(40_000))),
+        );
+    }
+    let report = &monitor.endpoints(APP, now + Duration::from_secs(6))[0];
+    assert_eq!(
+        report.path.as_ref().and_then(EdgeReading::rtt_ms),
+        Some(40.0),
+        "the baseline's own measurement is the edge's measurement"
+    );
+
+    // And letting go of the application must not stop the dashboard's probe.
+    let released = unregistrations(&monitor.forget(&mut registry, APP));
+    assert!(!released.contains(&existing));
+    assert!(registry.find(shared).is_some());
 }

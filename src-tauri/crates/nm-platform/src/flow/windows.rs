@@ -443,7 +443,15 @@ mod tests {
         }
         source.stop();
 
-        let event = discovered.expect("a UDP peer of this process must be discovered");
+        // Observed on the dev machine: a session left running by a crashed app — the product
+        // reclaims its own name on start-up, but only when it gets to run — consumes this
+        // provider with nobody draining it, and a second consumer of the same provider then
+        // receives nothing at all. `logman query -ets` lists them; `logman stop <name> -ets`
+        // clears one.
+        let event = discovered.expect(
+            "a UDP peer of this process must be discovered — check for an orphaned \
+             NetworkMonitorFlows tracing session if this fails",
+        );
         assert_eq!(event.pid, Pid::new(std::process::id()));
         assert_eq!(event.protocol, Protocol::Udp);
         assert_eq!(event.remote, target);

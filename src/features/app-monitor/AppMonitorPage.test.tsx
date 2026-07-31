@@ -48,6 +48,7 @@ const ENDPOINTS: AppEndpoints = {
           rttMs: null,
           jitterMs: null,
           lossPct: 100,
+          path: null,
           seriesAgeSecs: [],
           seriesRttMs: [],
         },

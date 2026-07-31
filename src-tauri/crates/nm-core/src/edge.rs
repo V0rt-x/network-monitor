@@ -147,18 +147,19 @@ pub struct PathEdge {
     policy: EdgePolicy,
     /// Shallowest first, so the deepest — the one whose figure is reported — is last.
     hops: Vec<EdgeHop>,
-    walked_at: Instant,
+    /// [`None`] until the first walk lands, which is what makes a new edge ask for one.
+    walked_at: Option<Instant>,
     end: PathEnd,
 }
 
 impl PathEdge {
-    /// An edge with no hops yet, awaiting its first walk.
+    /// An edge with no hops yet, which asks to be walked at once.
     #[must_use]
-    pub fn new(policy: EdgePolicy, now: Instant) -> Self {
+    pub fn new(policy: EdgePolicy) -> Self {
         Self {
             policy: policy.sanitised(),
             hops: Vec::new(),
-            walked_at: now,
+            walked_at: None,
             end: PathEnd::NothingAnswered,
         }
     }
@@ -222,7 +223,7 @@ impl PathEdge {
         change.removed = self.hops.drain(..).map(|hop| hop.address).collect();
         change.removed.sort_unstable();
         self.hops = kept;
-        self.walked_at = now;
+        self.walked_at = Some(now);
         self.end = classify(trace, addresses);
         Ok(change)
     }
@@ -309,9 +310,9 @@ impl PathEdge {
         self.hops.is_empty()
     }
 
-    /// When the route was last walked.
+    /// When the route was last walked, or [`None`] if it never has been.
     #[must_use]
-    pub const fn walked_at(&self) -> Instant {
+    pub const fn walked_at(&self) -> Option<Instant> {
         self.walked_at
     }
 
@@ -321,17 +322,22 @@ impl PathEdge {
         self.end
     }
 
-    /// Whether the route should be walked again.
+    /// Whether the route should be walked.
     ///
-    /// Three reasons, and the floor that keeps all of them affordable. The edge is empty and
-    /// has nothing to measure; the route has been trusted for long enough; or the deepest
-    /// hop — the one whose figure is reported — has stopped answering, which is what a route
-    /// change looks like from here. None of them may fire more often than
+    /// An edge that has never been walked says yes at once: it exists because the layer above
+    /// decided this endpoint needs one, and it can measure nothing until a walk gives it hops.
+    /// Afterwards there are three reasons, and a floor that keeps all of them affordable. The
+    /// walk found no hop worth probing; the route has been trusted for long enough; or the
+    /// deepest hop — the one whose figure is reported — has stopped answering, which is what a
+    /// route change looks like from here. None of them may fire more often than
     /// [`EdgePolicy::min_rewalk_gap`], because a walk is thirty probes and a hop that always
     /// rate-limits would otherwise ask for one every few seconds forever.
     #[must_use]
     pub fn needs_rewalk(&self, now: Instant) -> bool {
-        let since_walk = now.saturating_duration_since(self.walked_at);
+        let Some(walked_at) = self.walked_at else {
+            return true;
+        };
+        let since_walk = now.saturating_duration_since(walked_at);
         if since_walk < self.policy.min_rewalk_gap {
             return false;
         }
@@ -565,13 +571,13 @@ mod tests {
         ])
     }
 
-    fn edge(now: Instant) -> PathEdge {
-        PathEdge::new(EdgePolicy::default(), now)
+    fn edge() -> PathEdge {
+        PathEdge::new(EdgePolicy::default())
     }
 
     /// An edge that has adopted the typical walk.
     fn walked(now: Instant) -> (PathEdge, EdgeChange) {
-        let mut edge = edge(now);
+        let mut edge = edge();
         let change = edge
             .adopt(&typical_walk(), &addresses(), now)
             .expect("the default policy retains samples");
@@ -593,7 +599,7 @@ mod tests {
     #[test]
     fn a_fresh_edge_probes_nothing_and_claims_nothing() {
         let start = Instant::now();
-        let edge = edge(start);
+        let edge = edge();
         assert!(edge.is_empty());
         assert_eq!(edge.len(), 0);
         assert_eq!(edge.end(), PathEnd::NothingAnswered);
@@ -622,7 +628,7 @@ mod tests {
         // A probe to them would be refused outright, and the slot would be spent on a hop
         // that can never produce a figure.
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         edge.adopt(
             &walk(&[(HOME, 1), (CARRIER, 4), (NEAR, 6)]),
             &addresses(),
@@ -636,7 +642,7 @@ mod tests {
     #[test]
     fn a_path_that_dies_inside_the_provider_leaves_no_edge_to_probe() {
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         edge.adopt(
             &walk(&[(HOME, 1), (CARRIER, 4), ("", 0), ("", 0)]),
             &addresses(),
@@ -657,7 +663,7 @@ mod tests {
         // The destination answers for itself; measuring a router instead would replace a real
         // round trip with a substitute for one.
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         let reached = PathTrace::new(
             vec![
                 Hop::answered(1, ip(NEAR), Rtt::from_micros(5_000)),
@@ -677,7 +683,7 @@ mod tests {
         // it twice would spend two of three slots on one router — which would then
         // "corroborate" its own rate limiting.
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         edge.adopt(
             &walk(&[(NEAR, 5), (MID, 9), (DEEP, 40), (DEEP, 41)]),
             &addresses(),
@@ -694,7 +700,7 @@ mod tests {
     #[test]
     fn a_shallow_walk_uses_every_hop_it_has() {
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         edge.adopt(&walk(&[(NEAR, 5)]), &addresses(), start)
             .unwrap();
         assert_eq!(edge.len(), 1);
@@ -703,13 +709,10 @@ mod tests {
     #[test]
     fn a_policy_that_would_probe_no_hops_probes_one() {
         let start = Instant::now();
-        let mut edge = PathEdge::new(
-            EdgePolicy {
-                hops: 0,
-                ..EdgePolicy::default()
-            },
-            start,
-        );
+        let mut edge = PathEdge::new(EdgePolicy {
+            hops: 0,
+            ..EdgePolicy::default()
+        });
         edge.adopt(&typical_walk(), &addresses(), start).unwrap();
         assert_eq!(
             edge.len(),
@@ -863,7 +866,7 @@ mod tests {
     #[test]
     fn a_single_hop_can_never_corroborate_itself() {
         let start = Instant::now();
-        let mut edge = edge(start);
+        let mut edge = edge();
         edge.adopt(&walk(&[(NEAR, 5)]), &addresses(), start)
             .unwrap();
         feed(&mut edge, NEAR, start, 3, ok(5));
@@ -992,10 +995,22 @@ mod tests {
     }
 
     #[test]
-    fn an_edge_with_no_hops_asks_to_be_walked_again() {
+    fn an_edge_that_has_never_been_walked_asks_for_one_at_once() {
+        // It exists because the layer above decided this endpoint needs one, and it can
+        // measure nothing at all until a walk gives it hops.
         let start = Instant::now();
-        let edge = edge(start);
+        assert!(edge().needs_rewalk(start));
+    }
+
+    #[test]
+    fn a_walk_that_found_no_hop_worth_probing_is_retried_but_not_at_once() {
+        let start = Instant::now();
+        let mut edge = edge();
         let policy = EdgePolicy::default();
+        edge.adopt(&walk(&[(HOME, 1), ("", 0)]), &addresses(), start)
+            .unwrap();
+
+        assert!(edge.is_empty());
         assert!(!edge.needs_rewalk(start));
         assert!(edge.needs_rewalk(start + policy.min_rewalk_gap));
     }
@@ -1028,13 +1043,10 @@ mod tests {
     fn a_history_that_could_hold_nothing_is_refused_and_changes_nothing() {
         let start = Instant::now();
         let (mut edge, _) = walked(start);
-        let mut broken = PathEdge::new(
-            EdgePolicy {
-                history_capacity: 0,
-                ..EdgePolicy::default()
-            },
-            start,
-        );
+        let mut broken = PathEdge::new(EdgePolicy {
+            history_capacity: 0,
+            ..EdgePolicy::default()
+        });
 
         assert_eq!(
             broken

@@ -46,11 +46,13 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 use nm_core::address::{AddressClass, AddressPolicy};
+use nm_core::edge::{EdgePolicy, EdgeReading, PathEdge};
 use nm_core::endpoint::{
     AppId, EndpointKey, EndpointTracker, LifecyclePolicy, Liveness, Probing, TrackedEndpoint,
 };
 use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
+use nm_core::path::PathTrace;
 use nm_core::sample::{ProbeSample, Rtt};
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
@@ -114,6 +116,17 @@ pub enum TargetChange {
         /// Which target.
         id: TargetId,
     },
+    /// Walk the route to an endpoint that answers nothing, without waiting out the walk
+    /// interval.
+    ///
+    /// Asked for when the endpoint has just been given a path edge and has no hops yet, or
+    /// when the hops it had have gone quiet — which is what a route change looks like from
+    /// here. The probe engine refuses it for an endpoint that can still be probed directly,
+    /// so it can never become a way past the rate cap.
+    WalkNow {
+        /// Which target.
+        id: TargetId,
+    },
 }
 
 /// Everything known about one application's use of one endpoint.
@@ -136,6 +149,13 @@ struct Entry {
     egress_conflict: bool,
     tunnelled: bool,
     measurable: bool,
+    /// Whether every probe kind has been ruled out and only the route is left to measure.
+    ///
+    /// Not the same as being unmeasurable: the route *is* a measurement, and this is the
+    /// state a game's match server settles into within seconds of a match starting. It is
+    /// what qualifies an endpoint for a path edge, and it is why a silent endpoint carrying
+    /// traffic stops reading "not measured yet" — there is nothing left that would measure it.
+    walking_path: bool,
     probe_kind: Option<ProbeKind>,
     filtering_confirmed: bool,
     history: SampleHistory,
@@ -170,6 +190,20 @@ struct TargetUsers {
     interval: Option<Duration>,
 }
 
+/// One router being probed as a stand-in for an endpoint that answers nothing.
+#[derive(Debug, Clone, Copy)]
+struct HopTarget {
+    /// The endpoint whose path this hop is on.
+    owner: (AppId, EndpointKey),
+    /// Which router, so its result reaches the right hop of the right edge.
+    address: IpAddr,
+    /// Whether the probe was already running for another feature — a baseline, most likely.
+    ///
+    /// The registry deduplicates by address, so a hop that is also on a baseline list is
+    /// probed once and answers both. Releasing it must then only drop this claim on it.
+    adopted: bool,
+}
+
 /// Per-application endpoint state and the probe targets it implies.
 #[derive(Debug)]
 pub struct AppMonitor {
@@ -179,6 +213,16 @@ pub struct AppMonitor {
     policy: AddressPolicy,
     thresholds: HealthThresholds,
     window: Duration,
+    edge_policy: EdgePolicy,
+    /// At most one per application — see [`AppMonitor::retune_edges`].
+    edges: BTreeMap<(AppId, EndpointKey), PathEdge>,
+    /// The probe targets standing in for those endpoints, and which edge each belongs to.
+    hops: HashMap<TargetId, HopTarget>,
+    /// Hops the probe engine has run out of ways to measure, released on the next sweep.
+    ///
+    /// Collected rather than acted on immediately because the report that reveals it arrives
+    /// without the registry, and releasing a target needs one.
+    spent_hops: Vec<TargetId>,
     /// Reused by every sweep so the steady state allocates nothing for expiry.
     gone: Vec<(AppId, EndpointKey)>,
 }
@@ -202,8 +246,19 @@ impl AppMonitor {
             policy,
             thresholds,
             window,
+            edge_policy: EdgePolicy::default(),
+            edges: BTreeMap::new(),
+            hops: HashMap::new(),
+            spent_hops: Vec::new(),
             gone: Vec::new(),
         })
+    }
+
+    /// Uses a different policy for the path edges.
+    #[must_use]
+    pub const fn with_edge_policy(mut self, edge_policy: EdgePolicy) -> Self {
+        self.edge_policy = edge_policy;
+        self
     }
 
     /// Starts monitoring an application.
@@ -278,6 +333,7 @@ impl AppMonitor {
                 egress_conflict: false,
                 tunnelled,
                 measurable: true,
+                walking_path: false,
                 probe_kind: None,
                 filtering_confirmed: false,
                 history,
@@ -313,7 +369,237 @@ impl AppMonitor {
             self.register(registry, app, key, interval, &mut changes);
         }
         self.retune(&mut changes);
+        self.release_spent_hops(registry, &mut changes);
+        self.retune_edges(registry, &mut changes, now);
         changes
+    }
+
+    /// Decides which endpoint of each application is worth a path edge, and keeps its route
+    /// current.
+    ///
+    /// **One edge per application**, because an edge is three probes a second — the budget
+    /// `PLAN.md` allots to the one endpoint that matters, and a game with four silent servers
+    /// would otherwise spend the whole product's allowance on a single application. The one
+    /// chosen is the busiest endpoint that has run out of probe kinds, which in a live match
+    /// is the match server: the endpoints ranked below it keep their ordinary single probe.
+    ///
+    /// The route is walked by the probe engine, not from here; this only says when a walk is
+    /// worth asking for.
+    fn retune_edges(
+        &mut self,
+        registry: &mut TargetRegistry,
+        changes: &mut Vec<TargetChange>,
+        now: Instant,
+    ) {
+        for app in self.monitored_apps() {
+            let holder = self.edge_holder(app);
+
+            // Anything this application had an edge on that is no longer the holder gives it
+            // up, hops and all, before a new one is created — so the per-application budget
+            // is never briefly doubled.
+            let stale: Vec<EndpointKey> = self
+                .edges
+                .keys()
+                .filter(|(owner, key)| *owner == app && Some(*key) != holder)
+                .map(|(_, key)| *key)
+                .collect();
+            for key in stale {
+                self.drop_edge(registry, app, key, changes);
+            }
+
+            let Some(key) = holder else {
+                continue;
+            };
+            let edge = self
+                .edges
+                .entry((app, key))
+                .or_insert_with(|| PathEdge::new(self.edge_policy));
+            if edge.needs_rewalk(now) {
+                if let Some(id) = self.entries.get(&(app, key)).and_then(|entry| entry.id) {
+                    changes.push(TargetChange::WalkNow { id });
+                }
+            }
+        }
+    }
+
+    /// The endpoint of an application that most deserves a path edge, if any does.
+    ///
+    /// Only an endpoint that has exhausted every probe kind qualifies — until then there is
+    /// something better to measure than a router short of it — and only one probed at the
+    /// active interval, since an endpoint the cap has already demoted is not the one the user
+    /// is playing on. Among those the busiest wins, then the most recently seen, exactly as
+    /// the endpoint tracker ranks; ties break on the key so the choice never oscillates.
+    fn edge_holder(&self, app: AppId) -> Option<EndpointKey> {
+        self.tracker
+            .endpoints(app)
+            .filter(|tracked| tracked.probing() == Probing::Active)
+            .filter(|tracked| {
+                self.entries
+                    .get(&(app, tracked.key()))
+                    .is_some_and(|entry| entry.walking_path)
+            })
+            .max_by(|left, right| {
+                left.recent_bytes()
+                    .unwrap_or(0)
+                    .cmp(&right.recent_bytes().unwrap_or(0))
+                    .then(left.last_seen().cmp(&right.last_seen()))
+                    .then(right.key().cmp(&left.key()))
+            })
+            .map(TrackedEndpoint::key)
+    }
+
+    /// Takes the hops of a completed route walk for one endpoint.
+    ///
+    /// The walk itself is the probe engine's work; this is where its result becomes something
+    /// measured. Only an endpoint that holds its application's path edge adopts a trace —
+    /// a walk that arrives for any other is a snapshot with nowhere to live, and registering
+    /// its hops would spend budget nobody decided to spend.
+    pub fn note_path_trace(
+        &mut self,
+        registry: &mut TargetRegistry,
+        id: TargetId,
+        trace: &PathTrace,
+        now: Instant,
+    ) -> Vec<TargetChange> {
+        let mut changes = Vec::new();
+        for (app, key) in self.members_of(id) {
+            let Some(edge) = self.edges.get_mut(&(app, key)) else {
+                continue;
+            };
+            let Ok(change) = edge.adopt(trace, &self.policy, now) else {
+                // Only an edge policy that could retain no samples reaches this, which the
+                // type's own tests rule out; the edge is left exactly as it was.
+                continue;
+            };
+            for address in change.removed {
+                self.release_hop_address(registry, (app, key), address, &mut changes);
+            }
+            for address in change.added {
+                self.register_hop(registry, (app, key), address, &mut changes);
+            }
+        }
+        changes
+    }
+
+    /// Starts probing one router as a stand-in for an endpoint.
+    fn register_hop(
+        &mut self,
+        registry: &mut TargetRegistry,
+        owner: (AppId, EndpointKey),
+        address: IpAddr,
+        changes: &mut Vec<TargetChange>,
+    ) {
+        // A hop is reached by echo alone: it is a router, not a service, and it has no port
+        // for a connecting probe to aim at.
+        let target = TargetAddress::icmp(address);
+        let adopted = registry.find(target).is_some();
+        let Ok(id) = registry.insert(target, TargetTag::PathEdgeHop) else {
+            return;
+        };
+        self.hops.insert(
+            id,
+            HopTarget {
+                owner,
+                address,
+                adopted,
+            },
+        );
+        if adopted {
+            // Something else already probes this address — the same router can be a baseline
+            // in its own right. Re-registering would reset a fallback chain and a failure
+            // history that belong to that feature, and its results reach the edge anyway.
+            return;
+        }
+        changes.push(TargetChange::Register {
+            id,
+            address: target,
+            // The egress the endpoint's own probes use, so the hop is measured along the
+            // route the application actually takes through any tunnel or accelerator.
+            source: self.entries.get(&owner).and_then(|entry| entry.source),
+            interval: self.tracker.policy().active_interval,
+        });
+    }
+
+    /// Stops probing one router on behalf of one edge.
+    fn release_hop_address(
+        &mut self,
+        registry: &mut TargetRegistry,
+        owner: (AppId, EndpointKey),
+        address: IpAddr,
+        changes: &mut Vec<TargetChange>,
+    ) {
+        let found = self
+            .hops
+            .iter()
+            .find(|(_, hop)| hop.owner == owner && hop.address == address)
+            .map(|(id, _)| *id);
+        if let Some(id) = found {
+            self.release_hop(registry, id, changes);
+        }
+    }
+
+    /// Stops probing one hop target, if nothing else still wants it.
+    fn release_hop(
+        &mut self,
+        registry: &mut TargetRegistry,
+        id: TargetId,
+        changes: &mut Vec<TargetChange>,
+    ) {
+        let Some(hop) = self.hops.remove(&id) else {
+            return;
+        };
+        if hop.adopted {
+            // The probe was another feature's before it was ours; dropping our tag must not
+            // stop it.
+            registry.untag(id, TargetTag::PathEdgeHop);
+            return;
+        }
+        if registry.untag(id, TargetTag::PathEdgeHop) {
+            changes.push(TargetChange::Unregister { id });
+        }
+    }
+
+    /// Gives up one endpoint's path edge and every hop it was probing.
+    fn drop_edge(
+        &mut self,
+        registry: &mut TargetRegistry,
+        app: AppId,
+        key: EndpointKey,
+        changes: &mut Vec<TargetChange>,
+    ) {
+        if self.edges.remove(&(app, key)).is_none() {
+            return;
+        }
+        let orphaned: Vec<TargetId> = self
+            .hops
+            .iter()
+            .filter(|(_, hop)| hop.owner == (app, key))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in orphaned {
+            self.release_hop(registry, id, changes);
+        }
+    }
+
+    /// Releases the hops the probe engine has run out of ways to measure.
+    ///
+    /// A router that answers a time-to-live expiry is under no obligation to answer an echo
+    /// addressed to it, and one that does not is worth nothing to the edge. Dropping it frees
+    /// the slot; the next walk of the route fills it with something better, or does not.
+    fn release_spent_hops(
+        &mut self,
+        registry: &mut TargetRegistry,
+        changes: &mut Vec<TargetChange>,
+    ) {
+        for id in std::mem::take(&mut self.spent_hops) {
+            let Some(hop) = self.hops.get(&id).copied() else {
+                continue;
+            };
+            if let Some(edge) = self.edges.get_mut(&hop.owner) {
+                edge.drop_hop(hop.address);
+            }
+            self.release_hop(registry, id, changes);
+        }
     }
 
     /// Recomputes each target's cadence and egress from every application that uses it.
@@ -485,6 +771,8 @@ impl AppMonitor {
         key: EndpointKey,
         changes: &mut Vec<TargetChange>,
     ) {
+        // Before the endpoint itself, or its hops would outlive the reason they were probed.
+        self.drop_edge(registry, app, key, changes);
         let Some(entry) = self.entries.remove(&(app, key)) else {
             return;
         };
@@ -511,10 +799,18 @@ impl AppMonitor {
     }
 
     /// Records a probe result against every application using that target.
+    ///
+    /// One address can be an application's endpoint and a hop on another endpoint's path at
+    /// the same time, so both are told rather than the first match winning.
     pub fn record(&mut self, id: TargetId, sample: ProbeSample) {
         for key in self.members_of(id) {
             if let Some(entry) = self.entries.get_mut(&key) {
                 entry.history.record(sample);
+            }
+        }
+        if let Some(hop) = self.hops.get(&id).copied() {
+            if let Some(edge) = self.edges.get_mut(&hop.owner) {
+                edge.record(hop.address, sample);
             }
         }
     }
@@ -532,7 +828,17 @@ impl AppMonitor {
                 entry.probe_kind = kind;
                 entry.filtering_confirmed = filtering_confirmed;
                 entry.measurable = measurable;
+                // No kind left, but the route is still there to measure. Only reachable from
+                // a completed report, so it can never be confused with an endpoint that has
+                // simply not been probed yet.
+                entry.walking_path = kind.is_none() && measurable;
             }
+        }
+        // A hop that has run out of probe kinds cannot stand in for anything: what remains
+        // for an ordinary endpoint is a walk of its route, and walking the route to a router
+        // on a route we already walked is worth nothing.
+        if kind.is_none() && self.hops.contains_key(&id) && !self.spent_hops.contains(&id) {
+            self.spent_hops.push(id);
         }
     }
 
@@ -542,7 +848,11 @@ impl AppMonitor {
             if let Some(entry) = self.entries.get_mut(&key) {
                 entry.measurable = false;
                 entry.probe_kind = None;
+                entry.walking_path = false;
             }
+        }
+        if self.hops.contains_key(&id) && !self.spent_hops.contains(&id) {
+            self.spent_hops.push(id);
         }
     }
 
@@ -574,9 +884,14 @@ impl AppMonitor {
             .endpoints(app)
             .filter_map(|tracked| {
                 let entry = self.entries.get(&(app, tracked.key()))?;
+                let path = self
+                    .edges
+                    .get(&(app, tracked.key()))
+                    .map(|edge| edge.reading(now, self.window, &self.thresholds));
                 Some(EndpointReport::build(
                     tracked,
                     entry,
+                    path,
                     now,
                     self.window,
                     &self.thresholds,
@@ -641,6 +956,12 @@ pub struct EndpointReport {
     pub probe_kind: Option<ProbeKind>,
     /// Whether a probe kind has been *proven* filtered here.
     pub filtering_confirmed: bool,
+    /// What the route to it says, when nothing about the endpoint itself can be measured.
+    ///
+    /// A separate quantity from everything else in this report, and it must stay separate:
+    /// it is the round trip to a *router short of* the endpoint, not to the endpoint. Merging
+    /// the two into one figure called "ping" is the lie this product exists not to tell.
+    pub path: Option<EdgeReading>,
     /// Its statistics over the health window.
     pub stats: WindowStats,
     /// The verdict those statistics imply.
@@ -659,6 +980,7 @@ impl EndpointReport {
     fn build(
         tracked: &TrackedEndpoint,
         entry: &Entry,
+        path: Option<EdgeReading>,
         now: Instant,
         window: Duration,
         thresholds: &HealthThresholds,
@@ -668,11 +990,16 @@ impl EndpointReport {
         // meet: the probe engine cannot see the flow counters, and the endpoint tracker
         // cannot see the probes. A game's match server answers nothing and carries every
         // packet of the match, and only this join can tell that apart from a dead host.
+        //
+        // What counts as "still being tried" is a probe kind aimed at the endpoint itself.
+        // Once the chain has fallen through to walking the route, no future probe will ever
+        // say anything more about the endpoint, so "not measured yet" has stopped being the
+        // honest word for it — the traffic crossing it is the answer.
         let carrying = tracked.recent_bytes().is_some_and(|bytes| bytes > 0);
         let health = nm_core::health::with_passive_evidence(
             thresholds.health_of(&stats),
             carrying,
-            entry.measurable,
+            entry.measurable && !entry.walking_path,
         );
 
         let mut series_age_secs = Vec::with_capacity(SERIES_POINTS);
@@ -695,6 +1022,7 @@ impl EndpointReport {
             measurable: entry.measurable,
             probe_kind: entry.probe_kind,
             filtering_confirmed: entry.filtering_confirmed,
+            path,
             health,
             stats,
         }

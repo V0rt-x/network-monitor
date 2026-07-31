@@ -13,8 +13,10 @@
 //!   `switch`, so a new variant is a TypeScript compile error rather than a missing string
 //!   at runtime.
 
+use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
+use nm_core::path::PathEnd;
 use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -292,6 +294,115 @@ impl From<FlowStatus> for FlowStatusView {
     }
 }
 
+/// What the hops of a path say together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PathQualityView {
+    /// Nothing measured yet.
+    NotMeasuredYet,
+    /// The deepest hop that answers is within every threshold.
+    Ok,
+    /// Degradation shows at every answering hop, so it belongs to the path.
+    Degraded,
+    /// Only the deepest hop's own figure moved, and the hops before it are clean.
+    ///
+    /// Reported as its own state rather than as a fault: routers rate-limit echoes addressed
+    /// to themselves while forwarding everything else perfectly, so this observation is real
+    /// and its cause is genuinely ambiguous.
+    Uncorroborated,
+    /// Nothing on the path's edge answers any more — a route change, or a break short of it.
+    Lost,
+}
+
+impl From<PathQuality> for PathQualityView {
+    fn from(quality: PathQuality) -> Self {
+        match quality {
+            PathQuality::Ok => Self::Ok,
+            PathQuality::Degraded => Self::Degraded,
+            PathQuality::Uncorroborated => Self::Uncorroborated,
+            PathQuality::Lost => Self::Lost,
+            // A state this build has no word for must read as "nothing measured", never as
+            // anything reassuring.
+            _ => Self::NotMeasuredYet,
+        }
+    }
+}
+
+/// Where the route to an endpoint stops.
+///
+/// Position, not blame, and deliberately not a claim about a national border: naming one
+/// needs the baselines to corroborate, which is the verdict engine's job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PathPositionView {
+    /// The endpoint itself answered the walk; nothing stands in for it.
+    Reached,
+    /// Not one router answered, which usually means expiry messages are filtered locally.
+    NothingAnswered,
+    /// The furthest answering hop was inside the user's own network.
+    InsideThisNetwork,
+    /// The furthest answering hop was the provider's carrier-NAT equipment.
+    InsideTheAccessNetwork,
+    /// Public infrastructure, with no long-haul link crossed first.
+    BeforeAnyLongHaulLink,
+    /// Past a link long enough to be intercontinental.
+    BeyondALongHaulLink,
+}
+
+impl From<PathEnd> for PathPositionView {
+    fn from(end: PathEnd) -> Self {
+        match end {
+            PathEnd::Reached => Self::Reached,
+            PathEnd::InsideThisNetwork { .. } => Self::InsideThisNetwork,
+            PathEnd::InsideTheAccessNetwork { .. } => Self::InsideTheAccessNetwork,
+            PathEnd::BeforeAnyLongHaulLink { .. } => Self::BeforeAnyLongHaulLink,
+            PathEnd::BeyondALongHaulLink { .. } => Self::BeyondALongHaulLink,
+            _ => Self::NothingAnswered,
+        }
+    }
+}
+
+/// The route to an endpoint that answers nothing, measured continuously.
+///
+/// **Never a round trip to the endpoint**, and the UI must never present it as one. It is the
+/// round trip to the deepest router that answers on the way there, and the endpoint's own
+/// distance beyond that router is unknown — it replied at no time-to-live at all. What can be
+/// said is which hop this is ([`PathView::hop_ttl`]) and where it sits
+/// ([`PathView::position`]), and that is what the page says.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathView {
+    /// Distance in routers of the hop these figures belong to, or `null` when none answers.
+    pub hop_ttl: Option<u32>,
+    /// How many hops of the route are being probed. More than one is what makes the verdict
+    /// worth anything: a single router's figure cannot corroborate itself.
+    pub hops_probed: u32,
+    /// Where the route stops.
+    pub position: PathPositionView,
+    /// What the hops say together.
+    pub quality: PathQualityView,
+    /// Mean round-trip time to that hop, in milliseconds.
+    pub rtt_ms: Option<f64>,
+    /// Jitter at that hop, in milliseconds.
+    pub jitter_ms: Option<f64>,
+    /// Packet loss to that hop, as a percentage.
+    pub loss_pct: Option<f64>,
+}
+
+impl From<&EdgeReading> for PathView {
+    fn from(reading: &EdgeReading) -> Self {
+        Self {
+            hop_ttl: reading.reported_hop().map(|hop| u32::from(hop.ttl)),
+            hops_probed: u32::try_from(reading.hops.len()).unwrap_or(u32::MAX),
+            position: reading.end.into(),
+            quality: reading.quality.into(),
+            rtt_ms: reading.rtt_ms(),
+            jitter_ms: reading.jitter_ms(),
+            loss_pct: reading.loss_pct(),
+        }
+    }
+}
+
 /// One endpoint of one monitored application.
 ///
 /// Per endpoint and never rolled up. Within one application some endpoints stay clean
@@ -349,6 +460,13 @@ pub struct EndpointView {
     pub jitter_ms: Option<f64>,
     /// Packet loss over the window, as a percentage.
     pub loss_pct: Option<f64>,
+    /// The route to it, measured continuously, when nothing about the endpoint itself can be.
+    ///
+    /// A second column beside the figures above, never merged into them: it belongs to a
+    /// router short of the endpoint, and calling it the endpoint's ping would be the one lie
+    /// this product exists not to tell. `null` for an endpoint that answers for itself, which
+    /// needs no stand-in.
+    pub path: Option<PathView>,
     /// Seconds before now for each point of the series — negative, ascending.
     pub series_age_secs: Vec<f64>,
     /// Round-trip time at each point, or `null` where the probe did not come back.
@@ -380,6 +498,7 @@ impl EndpointView {
             rtt_ms: report.stats.rtt.map(|rtt| rtt.mean_ms),
             jitter_ms: report.stats.rtt.and_then(|rtt| rtt.jitter_ms),
             loss_pct: report.stats.loss_pct,
+            path: report.path.as_ref().map(PathView::from),
             series_age_secs: report.series_age_secs.clone(),
             series_rtt_ms: report.series_rtt_ms.clone(),
         }

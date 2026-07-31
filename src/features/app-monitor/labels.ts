@@ -1,6 +1,8 @@
 import type {
   FlowStatusView,
   LivenessView,
+  PathPositionView,
+  PathQualityView,
   ProbingView,
   ProcessListProblem,
   TransportView,
@@ -50,6 +52,52 @@ export const flowStatusKey = (status: FlowStatusView) => {
       return 'apps.flow.stopped' as const;
     case 'unavailable':
       return 'apps.flow.unavailable' as const;
+  }
+};
+
+export const pathQualityKey = (quality: PathQualityView) => {
+  switch (quality) {
+    case 'notMeasuredYet':
+      return 'apps.path.quality.notMeasuredYet' as const;
+    case 'ok':
+      return 'apps.path.quality.ok' as const;
+    case 'degraded':
+      return 'apps.path.quality.degraded' as const;
+    case 'uncorroborated':
+      return 'apps.path.quality.uncorroborated' as const;
+    case 'lost':
+      return 'apps.path.quality.lost' as const;
+  }
+};
+
+export const pathPositionKey = (position: PathPositionView) => {
+  switch (position) {
+    case 'reached':
+      return 'apps.path.position.reached' as const;
+    case 'nothingAnswered':
+      return 'apps.path.position.nothingAnswered' as const;
+    case 'insideThisNetwork':
+      return 'apps.path.position.insideThisNetwork' as const;
+    case 'insideTheAccessNetwork':
+      return 'apps.path.position.insideTheAccessNetwork' as const;
+    case 'beforeAnyLongHaulLink':
+      return 'apps.path.position.beforeAnyLongHaulLink' as const;
+    case 'beyondALongHaulLink':
+      return 'apps.path.position.beyondALongHaulLink' as const;
+  }
+};
+
+/** How a path verdict is shown, reusing the health palette rather than inventing one. */
+export const pathQualityModifier = (quality: PathQualityView) => {
+  switch (quality) {
+    case 'ok':
+      return 'nm-health--ok' as const;
+    case 'degraded':
+    case 'lost':
+      return 'nm-health--degraded' as const;
+    case 'uncorroborated':
+    case 'notMeasuredYet':
+      return 'nm-health--unknown' as const;
   }
 };
 

@@ -205,6 +205,15 @@ export type EndpointView = {
 	jitterMs: number | null,
 	/**  Packet loss over the window, as a percentage. */
 	lossPct: number | null,
+	/**
+	 *  The route to it, measured continuously, when nothing about the endpoint itself can be.
+	 * 
+	 *  A second column beside the figures above, never merged into them: it belongs to a
+	 *  router short of the endpoint, and calling it the endpoint's ping would be the one lie
+	 *  this product exists not to tell. `null` for an endpoint that answers for itself, which
+	 *  needs no stand-in.
+	 */
+	path: PathView | null,
 	/**  Seconds before now for each point of the series — negative, ascending. */
 	seriesAgeSecs: (number | null)[],
 	/**  Round-trip time at each point, or `null` where the probe did not come back. */
@@ -304,6 +313,74 @@ export type NetworkHealth = {
 	windowSecs: number,
 	/**  The baselines, domestic first. */
 	groups: GroupView[],
+};
+
+/**
+ *  Where the route to an endpoint stops.
+ * 
+ *  Position, not blame, and deliberately not a claim about a national border: naming one
+ *  needs the baselines to corroborate, which is the verdict engine's job.
+ */
+export type PathPositionView = 
+/**  The endpoint itself answered the walk; nothing stands in for it. */
+"reached" | 
+/**  Not one router answered, which usually means expiry messages are filtered locally. */
+"nothingAnswered" | 
+/**  The furthest answering hop was inside the user's own network. */
+"insideThisNetwork" | 
+/**  The furthest answering hop was the provider's carrier-NAT equipment. */
+"insideTheAccessNetwork" | 
+/**  Public infrastructure, with no long-haul link crossed first. */
+"beforeAnyLongHaulLink" | 
+/**  Past a link long enough to be intercontinental. */
+"beyondALongHaulLink";
+
+/**  What the hops of a path say together. */
+export type PathQualityView = 
+/**  Nothing measured yet. */
+"notMeasuredYet" | 
+/**  The deepest hop that answers is within every threshold. */
+"ok" | 
+/**  Degradation shows at every answering hop, so it belongs to the path. */
+"degraded" | 
+/**
+ *  Only the deepest hop's own figure moved, and the hops before it are clean.
+ * 
+ *  Reported as its own state rather than as a fault: routers rate-limit echoes addressed
+ *  to themselves while forwarding everything else perfectly, so this observation is real
+ *  and its cause is genuinely ambiguous.
+ */
+"uncorroborated" | 
+/**  Nothing on the path's edge answers any more — a route change, or a break short of it. */
+"lost";
+
+/**
+ *  The route to an endpoint that answers nothing, measured continuously.
+ * 
+ *  **Never a round trip to the endpoint**, and the UI must never present it as one. It is the
+ *  round trip to the deepest router that answers on the way there, and the endpoint's own
+ *  distance beyond that router is unknown — it replied at no time-to-live at all. What can be
+ *  said is which hop this is ([`PathView::hop_ttl`]) and where it sits
+ *  ([`PathView::position`]), and that is what the page says.
+ */
+export type PathView = {
+	/**  Distance in routers of the hop these figures belong to, or `null` when none answers. */
+	hopTtl: number | null,
+	/**
+	 *  How many hops of the route are being probed. More than one is what makes the verdict
+	 *  worth anything: a single router's figure cannot corroborate itself.
+	 */
+	hopsProbed: number,
+	/**  Where the route stops. */
+	position: PathPositionView,
+	/**  What the hops say together. */
+	quality: PathQualityView,
+	/**  Mean round-trip time to that hop, in milliseconds. */
+	rttMs: number | null,
+	/**  Jitter at that hop, in milliseconds. */
+	jitterMs: number | null,
+	/**  Packet loss to that hop, as a percentage. */
+	lossPct: number | null,
 };
 
 /**

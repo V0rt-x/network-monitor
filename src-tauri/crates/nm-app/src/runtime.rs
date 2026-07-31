@@ -261,7 +261,10 @@ async fn session(
                 }
                 None => return SessionEnd::Shutdown,
             },
-            Some(completed) = reports.recv() => fold_in(&mut baselines, &mut apps, &completed),
+            Some(completed) = reports.recv() => {
+                let changes = fold_in(&mut baselines, &mut apps, &mut registry, &completed);
+                queue(&mut pending, changes, &refusals);
+            }
             Some(observation) = observations.recv() => observe(&mut apps, observation),
             Some(id) = refused.recv() => apps.note_unmeasurable(id),
             _ = ticker.tick() => {
@@ -372,6 +375,7 @@ fn queue(
                 pending.push_back(ProbeCommand::SetSource { id, source });
             }
             TargetChange::Unregister { id } => pending.push_back(ProbeCommand::Remove(id)),
+            TargetChange::WalkNow { id } => pending.push_back(ProbeCommand::WalkNow(id)),
         }
     }
 }
@@ -424,7 +428,15 @@ fn flush(pending: &mut VecDeque<ProbeCommand>, probe_commands: &mpsc::Sender<Pro
 /// each ignores a handle it does not know, and an address that is *both* a baseline and an
 /// application's endpoint is one target whose single measurement legitimately answers for
 /// both — which is what the shared registry exists to arrange.
-fn fold_in(baselines: &mut BaselineMonitor, apps: &mut AppMonitor, completed: &Completed) {
+///
+/// Returns whatever the probe engine must be told as a result, which is how a walked route
+/// turns into the hops that will be probed along it.
+fn fold_in(
+    baselines: &mut BaselineMonitor,
+    apps: &mut AppMonitor,
+    registry: &mut TargetRegistry,
+    completed: &Completed,
+) -> Vec<TargetChange> {
     let id = completed.report.id;
     baselines.note_probe_state(
         id,
@@ -439,14 +451,21 @@ fn fold_in(baselines: &mut BaselineMonitor, apps: &mut AppMonitor, completed: &C
         completed.progress.measurable,
     );
 
-    // Only a probe result becomes history. A path walk maps the route to a silent endpoint
-    // but measures no round trip *to* it, so recording one would invent a sample; a failure
-    // of our own is not the endpoint's packet loss. Neither belongs in what the verdict
-    // reads, and neither does a future variant this build has never heard of.
-    if let Measured::Probe { outcome, .. } = &completed.report.measured {
-        let sample = ProbeSample::new(completed.report.at, *outcome);
-        baselines.record(id, sample);
-        apps.record(id, sample);
+    // Only a probe result becomes history *for the endpoint*. A path walk maps the route to
+    // a silent endpoint but measures no round trip *to* it, so recording one would invent a
+    // sample; a failure of our own is not the endpoint's packet loss. Neither belongs in what
+    // the verdict reads, and neither does a future variant this build has never heard of.
+    match &completed.report.measured {
+        Measured::Probe { outcome, .. } => {
+            let sample = ProbeSample::new(completed.report.at, *outcome);
+            baselines.record(id, sample);
+            apps.record(id, sample);
+            Vec::new()
+        }
+        // The walk's own product: the hops that will stand in for an endpoint nothing can
+        // measure directly, each probed from here on as an ordinary target.
+        Measured::Path(trace) => apps.note_path_trace(registry, id, trace, completed.report.at),
+        _ => Vec::new(),
     }
 }
 

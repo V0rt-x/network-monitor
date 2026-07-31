@@ -122,6 +122,29 @@
     "metric": {
       "traffic": "Traffic ({{seconds}} s)"
     },
+    "path": {
+      "heading": "Path to this endpoint",
+      "note": "This endpoint answers nothing we can send, so these figures belong to the deepest router that does answer on the way there. It is not the round-trip time to the server: how much further the server sits is unknown.",
+      "hop": "Last answering hop: {{ttl}} hops out",
+      "hopUnknown": "No hop on the route is answering",
+      "hopsProbed": "{{count}} hop watched",
+      "hopsProbed_other": "{{count}} hops watched",
+      "quality": {
+        "notMeasuredYet": "Not measured yet",
+        "ok": "Path clean",
+        "degraded": "Path degraded",
+        "uncorroborated": "Only the last hop is off — may be that router, not the path",
+        "lost": "The route stopped answering"
+      },
+      "position": {
+        "reached": "The endpoint answered the trace itself",
+        "nothingAnswered": "No router on the way answered; expiry messages are probably filtered locally",
+        "insideThisNetwork": "The route stops inside your own network",
+        "insideTheAccessNetwork": "The route stops inside your provider's network",
+        "beforeAnyLongHaulLink": "The route stops on public infrastructure, before any long-distance link",
+        "beyondALongHaulLink": "The route stops past a long-distance link"
+      }
+    },
     "egress": {
       "via": "Probes leave from {{address}}",
       "unknown": "Egress address unknown; probes follow whatever route the system picks"

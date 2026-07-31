@@ -577,3 +577,37 @@ body {
 .nm-health--carryingTraffic {
   color: var(--nm-alive);
 }
+
+/*
+ * The route to an endpoint that answers nothing. Set apart from the endpoint's own figures
+ * on purpose: they are different quantities, measured against different machines, and a
+ * layout that let them read as one row would be the merge the product exists not to make.
+ */
+.nm-path {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--nm-border);
+  border-radius: 0.5rem;
+}
+
+.nm-path__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nm-path__title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.nm-path__note,
+.nm-path__where {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+}

@@ -28,6 +28,22 @@ use crate::Error;
 /// How many consecutive silent probes make a kind suspect enough to step past.
 pub const SILENCE_BEFORE_FALLBACK: u32 = 3;
 
+/// How many consecutive refusals retire a probe kind that needs a port.
+///
+/// A refusal answers a different question from the one being asked. "Nothing is listening on
+/// this port" is a fact about the port *we* chose, and a game's match server refusing a TCP
+/// handshake on the port it plays UDP over is the normal case, not a fault — while the game
+/// runs perfectly across it. Left in place, that answer keeps a kind that can never measure
+/// the path occupying the endpoint forever, so nothing further is ever tried.
+///
+/// A run rather than a single answer, because a middlebox can reset intermittently, and
+/// because the cost of waiting is a few seconds against the cost of being wrong.
+///
+/// It applies only to the kinds that address a port. An ICMP unreachable comes from a router
+/// and is about the *destination*: every other kind would fail the same way, so stepping past
+/// ICMP on one would swap a correct answer for an expensive silence.
+pub const REFUSALS_BEFORE_FALLBACK: u32 = 3;
+
 /// What to do next for an endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -52,6 +68,11 @@ pub enum RuledOutBecause {
     ItReportedFiltering,
     /// It went silent for long enough that another kind was worth trying.
     ItWentSilent,
+    /// The endpoint refused it: nothing is listening on the port this kind had to use.
+    ///
+    /// A definitive answer, and an answer to the wrong question — see
+    /// [`REFUSALS_BEFORE_FALLBACK`]. It says nothing whatever about filtering.
+    ItFoundNoServiceThere,
     /// It cannot address this target at all.
     ///
     /// Nothing to do with the network: an ICMP backend with no IPv6 implementation, a
@@ -66,7 +87,10 @@ impl RuledOutBecause {
     ///
     /// False for [`Self::ItCannotAddressThisTarget`]: our own inability to form the probe
     /// says nothing whatever about the path, and letting it stand in for filtering would
-    /// have the UI claim a network fact we never observed.
+    /// have the UI claim a network fact we never observed. False for
+    /// [`Self::ItFoundNoServiceThere`] for the mirror reason: the endpoint answered, so the
+    /// path plainly works — a closed port is the opposite of evidence that something is
+    /// dropping our packets.
     const fn suggests_filtering(self) -> bool {
         matches!(self, Self::ItReportedFiltering | Self::ItWentSilent)
     }
@@ -93,6 +117,7 @@ pub struct FallbackChain {
     order: Vec<ProbeKind>,
     position: usize,
     consecutive_silent: u32,
+    consecutive_refused: u32,
     ruled_out: Vec<RuledOut>,
     filtering_confirmed: bool,
 }
@@ -115,6 +140,7 @@ impl FallbackChain {
             order,
             position: 0,
             consecutive_silent: 0,
+            consecutive_refused: 0,
             ruled_out: Vec::new(),
             filtering_confirmed: false,
         })
@@ -164,6 +190,7 @@ impl FallbackChain {
         match outcome {
             ProbeOutcome::Success(_) => {
                 self.consecutive_silent = 0;
+                self.consecutive_refused = 0;
                 // Only a kind set aside *by the network* proves filtering. One we could not
                 // form the probe for proves something about this build.
                 if self
@@ -174,9 +201,22 @@ impl FallbackChain {
                     self.filtering_confirmed = true;
                 }
             }
+            // A refusal from a kind that had to pick a port answers a different question from
+            // the one asked: nothing listens on *that port*. A game's match server refuses a
+            // handshake on the port it plays UDP over while the match runs perfectly across
+            // it, so leaving the kind in place would park the endpoint on an answer that can
+            // never become a measurement.
+            ProbeOutcome::Unreachable if kind.needs_a_port() => {
+                self.consecutive_silent = 0;
+                self.consecutive_refused = self.consecutive_refused.saturating_add(1);
+                if self.consecutive_refused >= REFUSALS_BEFORE_FALLBACK {
+                    self.set_aside(kind, RuledOutBecause::ItFoundNoServiceThere);
+                }
+            }
             // A definitive answer *about the destination*, delivered by a working path. It
             // says nothing against the probe kind, so it must not cost the cheapest kind its
-            // place — an endpoint that is simply down would otherwise walk the whole chain.
+            // place — an endpoint that is simply down would otherwise walk the whole chain,
+            // and every kind after it would fail in exactly the same way.
             ProbeOutcome::Unreachable => self.consecutive_silent = 0,
             ProbeOutcome::Blocked => self.set_aside(kind, RuledOutBecause::ItReportedFiltering),
             ProbeOutcome::Timeout => {
@@ -223,6 +263,7 @@ impl FallbackChain {
     pub fn reconsider(&mut self) {
         self.position = 0;
         self.consecutive_silent = 0;
+        self.consecutive_refused = 0;
         self.ruled_out.clear();
         self.filtering_confirmed = false;
     }
@@ -231,6 +272,7 @@ impl FallbackChain {
         self.ruled_out.push(RuledOut { kind, because });
         self.position += 1;
         self.consecutive_silent = 0;
+        self.consecutive_refused = 0;
     }
 }
 
@@ -347,6 +389,96 @@ mod tests {
         repeat(&mut chain, ProbeOutcome::Unreachable, 20);
         assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
         assert!(chain.ruled_out().is_empty());
+    }
+
+    #[test]
+    fn a_closed_port_retires_the_kind_that_had_to_choose_one() {
+        // Found by running the app against a live game: its match server refuses a TCP
+        // handshake on the port it plays UDP over, which is normal — nothing listens on a
+        // game port but the game. Left in place, that answer parks the endpoint on a kind
+        // that can never measure anything, and the path walk is never reached.
+        let mut chain = FallbackChain::new(AddressClass::Routable, ALL).unwrap();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TcpConnect));
+
+        repeat(
+            &mut chain,
+            ProbeOutcome::Unreachable,
+            REFUSALS_BEFORE_FALLBACK - 1,
+        );
+        assert_eq!(
+            chain.current_kind(),
+            Some(ProbeKind::TcpConnect),
+            "one reset could be a middlebox; a run of them is the port"
+        );
+
+        chain.record(ProbeOutcome::Unreachable);
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TlsHello));
+        assert_eq!(
+            chain.ruled_out().last().unwrap().because,
+            RuledOutBecause::ItFoundNoServiceThere
+        );
+    }
+
+    #[test]
+    fn a_closed_port_is_never_evidence_of_filtering() {
+        // The mirror of the rule for a probe we could not form: the endpoint answered, so
+        // the path plainly works. A closed port is the opposite of evidence that something
+        // is dropping our packets, and the UI must not offer "try a VPN" because of one.
+        // Only the closed port sets a kind aside here: an ICMP silence earlier in the chain
+        // would be genuine evidence, and this test is about the refusal alone.
+        let mut chain = FallbackChain::new(
+            AddressClass::Routable,
+            &[ProbeKind::TcpConnect, ProbeKind::TlsHello],
+        )
+        .unwrap();
+        repeat(
+            &mut chain,
+            ProbeOutcome::Unreachable,
+            REFUSALS_BEFORE_FALLBACK,
+        );
+        chain.record(success());
+
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TlsHello));
+        assert!(!chain.filtering_confirmed());
+    }
+
+    #[test]
+    fn a_run_of_refusals_has_to_be_unbroken() {
+        let mut chain = FallbackChain::new(AddressClass::Routable, ALL).unwrap();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+
+        for _ in 0..10 {
+            repeat(
+                &mut chain,
+                ProbeOutcome::Unreachable,
+                REFUSALS_BEFORE_FALLBACK - 1,
+            );
+            chain.record(success());
+        }
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TcpConnect));
+    }
+
+    #[test]
+    fn a_game_endpoint_that_answers_no_probe_at_all_reaches_the_path_walk() {
+        // The whole point of the rule, end to end: echoes filtered, both connecting kinds
+        // refused on the game's own port. Nothing is left that can measure the endpoint, and
+        // the route to it is the only honest thing remaining to measure.
+        let mut chain = FallbackChain::new(AddressClass::Routable, ALL).unwrap();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        repeat(
+            &mut chain,
+            ProbeOutcome::Unreachable,
+            REFUSALS_BEFORE_FALLBACK,
+        );
+        repeat(
+            &mut chain,
+            ProbeOutcome::Unreachable,
+            REFUSALS_BEFORE_FALLBACK,
+        );
+
+        assert_eq!(chain.step(), ChainStep::WalkThePath);
+        assert!(!chain.filtering_confirmed());
     }
 
     #[test]

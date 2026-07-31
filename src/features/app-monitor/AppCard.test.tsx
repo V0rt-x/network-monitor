@@ -29,6 +29,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   rttMs: 24,
   jitterMs: 3,
   lossPct: 0,
+  path: null,
   seriesAgeSecs: [-2, -1, 0],
   seriesRttMs: [24, null, 25],
   ...overrides,
@@ -98,6 +99,44 @@ describe('AppCard', () => {
     expect(screen.getByText('1.1.1.2:443')).toBeInTheDocument();
     expect(screen.getByText('Unreachable')).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
+  });
+
+  it('keeps the path figure beside a silent endpoint rather than standing in for it', () => {
+    // A match server answers nothing, so its own round-trip time stays a dash. The route to
+    // it is a different quantity, measured against a different machine, and the two must
+    // never merge into one number called "ping".
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              health: 'carryingTraffic',
+              probeKind: null,
+              rttMs: null,
+              jitterMs: null,
+              lossPct: null,
+              path: {
+                hopTtl: 12,
+                hopsProbed: 3,
+                position: 'beyondALongHaulLink',
+                quality: 'ok',
+                rttMs: 84.2,
+                jitterMs: 2.5,
+                lossPct: 0,
+              },
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Path to this endpoint')).toBeInTheDocument();
+    expect(screen.getByText(/12 hops out/)).toBeInTheDocument();
+    // Three dashes for the endpoint itself — round trip, jitter and loss — beside the
+    // route's three figures.
+    expect(screen.getAllByText('—')).toHaveLength(3);
   });
 
   it('states what an endpoint could not be measured with rather than showing a bare number', () => {

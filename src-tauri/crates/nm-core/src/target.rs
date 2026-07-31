@@ -45,6 +45,13 @@ impl TargetId {
 pub enum TargetTag {
     /// An endpoint discovered belonging to an application the user monitors.
     AppEndpoint,
+    /// A router on the way to an endpoint that answers nothing.
+    ///
+    /// Probed as a stand-in for a destination that cannot be measured directly — see
+    /// [`crate::edge`]. It is a tag rather than a separate pipeline because the address that
+    /// happens to be a game's path edge can equally be a baseline of its own, and then it is
+    /// probed once and answers both.
+    PathEdgeHop,
     /// A service known to be reachable inside the user's country.
     DomesticBaseline,
     /// A service typically degraded or blocked at the country's border.

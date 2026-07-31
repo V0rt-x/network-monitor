@@ -5,6 +5,7 @@ import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { Sparkline } from '../dashboard/Sparkline';
 import { livenessKey, probingKey, transportKey } from './labels';
+import { PathPanel } from './PathPanel';
 
 interface EndpointRowProps {
   readonly endpoint: EndpointView;
@@ -30,6 +31,11 @@ interface EndpointRowProps {
  * monitored application reaching the endpoint by a different interface, and an address a
  * baseline was already probing, whose binding was chosen before this application asked.
  * Either way the single probe cannot be promised to follow this application's route.
+ *
+ * An endpoint that answers nothing at all — a game's match server, normally — carries a
+ * second panel for the route to it. It sits below the endpoint's own figures and never
+ * replaces them: the dashes stay dashes, because nothing measured the server, and the panel
+ * says in as many words which router its numbers do belong to.
  */
 export const EndpointRow = ({ endpoint, trafficWindowSecs }: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
@@ -85,6 +91,8 @@ export const EndpointRow = ({ endpoint, trafficWindowSecs }: EndpointRowProps) =
           <dd>{formatBytes(endpoint.recentBytes, locale)}</dd>
         </div>
       </dl>
+
+      {endpoint.path !== null && <PathPanel path={endpoint.path} />}
 
       <p className="nm-endpoint__egress">
         {endpoint.egress === null
