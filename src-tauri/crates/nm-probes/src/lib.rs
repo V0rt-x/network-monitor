@@ -20,6 +20,7 @@ mod error;
 mod socket;
 
 pub mod icmp;
+pub mod path;
 pub mod probe;
 pub mod tcp;
 pub mod tls;

@@ -28,10 +28,17 @@ pub enum AddressClass {
     /// probe that exchanges data end to end вЂ” a TLS handshake, an HTTP request вЂ” travels
     /// the real path.
     TunnelSentinel,
-    /// A private or carrier-shared address: a LAN peer, a router, a CGNAT hop.
+    /// A private address: a LAN peer, the user's own router.
     ///
     /// Measurable, but it says nothing about reaching the internet.
     Private,
+    /// A carrier-grade NAT address: equipment inside the ISP's access network.
+    ///
+    /// Kept apart from [`Private`](Self::Private) because the difference decides which of
+    /// the product's verdicts applies. A path that dies at `192.168.x.x` is the user's own
+    /// router; a path that dies here is the ISP's, and telling someone to reboot their
+    /// router when their provider is broken wastes their time.
+    CarrierGrade,
     /// This machine.
     Loopback,
     /// Reserved, multicast, link-local or documentation space. Nothing to measure.
@@ -44,7 +51,10 @@ impl AddressClass {
     /// False for a tunnel sentinel, which is the whole point of this module.
     #[must_use]
     pub const fn trusts_transport_rtt(self) -> bool {
-        matches!(self, Self::Routable | Self::Private | Self::Loopback)
+        matches!(
+            self,
+            Self::Routable | Self::Private | Self::CarrierGrade | Self::Loopback
+        )
     }
 
     /// Whether probing this address tells us anything about reaching the internet.
@@ -86,9 +96,11 @@ const PRIVATE: &[&str] = &[
     "10.0.0.0/8",
     "172.16.0.0/12",
     "192.168.0.0/16",
-    "100.64.0.0/10", // carrier-grade NAT
-    "fc00::/7",      // unique local
+    "fc00::/7", // unique local
 ];
+
+/// Carrier-grade NAT, where the equipment belongs to the ISP rather than to the user.
+const CARRIER_GRADE: &[&str] = &["100.64.0.0/10"];
 
 /// How addresses are classified, including which ranges a local tunnel uses.
 ///
@@ -99,6 +111,7 @@ const PRIVATE: &[&str] = &[
 pub struct AddressPolicy {
     tunnel_sentinels: Vec<IpCidr>,
     private: Vec<IpCidr>,
+    carrier_grade: Vec<IpCidr>,
     unusable: Vec<IpCidr>,
 }
 
@@ -116,6 +129,7 @@ impl AddressPolicy {
         Ok(Self {
             tunnel_sentinels: parse_all(sentinels)?,
             private: parse_all(PRIVATE)?,
+            carrier_grade: parse_all(CARRIER_GRADE)?,
             unusable: parse_all(UNUSABLE)?,
         })
     }
@@ -142,6 +156,9 @@ impl AddressPolicy {
         if contains_any(&self.unusable, address) {
             return AddressClass::Unusable;
         }
+        if contains_any(&self.carrier_grade, address) {
+            return AddressClass::CarrierGrade;
+        }
         if contains_any(&self.private, address) {
             return AddressClass::Private;
         }
@@ -159,6 +176,7 @@ impl Default for AddressPolicy {
         Self::with_sentinels([DEFAULT_SENTINEL_V4, DEFAULT_SENTINEL_V6]).unwrap_or(Self {
             tunnel_sentinels: Vec::new(),
             private: Vec::new(),
+            carrier_grade: Vec::new(),
             unusable: Vec::new(),
         })
     }
@@ -196,6 +214,7 @@ mod tests {
         // a test of their own or a typo would silently disable classification.
         assert!(parse_all(UNUSABLE).is_ok());
         assert!(parse_all(PRIVATE).is_ok());
+        assert!(parse_all(CARRIER_GRADE).is_ok());
         assert!(parse_all([DEFAULT_SENTINEL_V4, DEFAULT_SENTINEL_V6]).is_ok());
         assert_eq!(AddressPolicy::default().sentinels().len(), 2);
     }
@@ -226,16 +245,21 @@ mod tests {
     }
 
     #[test]
-    fn private_and_carrier_ranges_are_private() {
-        for raw in [
-            "10.1.101.1",
-            "172.16.0.1",
-            "192.168.1.1",
-            "100.64.0.1",
-            "fd12:3456::1",
-        ] {
+    fn private_ranges_are_private() {
+        for raw in ["10.1.101.1", "172.16.0.1", "192.168.1.1", "fd12:3456::1"] {
             assert_eq!(classify(raw), AddressClass::Private, "{raw}");
         }
+    }
+
+    #[test]
+    fn carrier_nat_is_kept_apart_from_the_users_own_network() {
+        // The distinction decides whether a failure here is the user's router or their
+        // provider's equipment, which are two different verdicts and two different actions.
+        assert_eq!(classify("100.64.0.1"), AddressClass::CarrierGrade);
+        assert_eq!(classify("100.127.255.255"), AddressClass::CarrierGrade);
+        // Just outside the /10.
+        assert_eq!(classify("100.63.255.255"), AddressClass::Routable);
+        assert_eq!(classify("100.128.0.0"), AddressClass::Routable);
     }
 
     #[test]
@@ -269,17 +293,19 @@ mod tests {
         assert!(!AddressClass::TunnelSentinel.trusts_transport_rtt());
         assert!(AddressClass::Routable.trusts_transport_rtt());
         assert!(AddressClass::Private.trusts_transport_rtt());
+        assert!(AddressClass::CarrierGrade.trusts_transport_rtt());
         assert!(AddressClass::Loopback.trusts_transport_rtt());
         assert!(!AddressClass::Unusable.trusts_transport_rtt());
     }
 
     #[test]
     fn a_tunnel_sentinel_is_still_worth_probing_with_the_right_kind() {
-        // It must not be discarded: a TLS or HTTP probe does travel the real path.
+        // It must not be discarded: a TLS probe does travel the real path.
         assert!(AddressClass::TunnelSentinel.worth_probing());
         assert!(AddressClass::Routable.worth_probing());
         assert!(!AddressClass::Unusable.worth_probing());
         assert!(!AddressClass::Loopback.worth_probing());
+        assert!(!AddressClass::CarrierGrade.worth_probing());
     }
 
     #[test]

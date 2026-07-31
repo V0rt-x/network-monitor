@@ -85,8 +85,18 @@ Goal: real measurements against real hosts, still no per-app discovery.
       `network-tests`): all answered, and a non-TLS port yielded no measurement rather than a
       false one. **HTTP(S) HEAD is dropped** — it needs everything the hello probe avoids and
       measures the same quantity plus server-side work.
-- [~] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies (ISP / border / destination)
-      — the TTL mechanism works and is verified; the ISP/border/destination classification remains
+- [x] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies
+      — the walk lives in `nm_probes::path` (steps over silent hops, stops on reply/unreachable/
+      a run of silence), the classification in `nm_core::path`.
+      **Deliberate correction to the wording**: the classifier reports *position* — the user's
+      own network, the provider's carrier NAT, public infrastructure before any long-haul link,
+      or past one — and does **not** claim to have found a national border. Naming a border
+      needs the domestic/foreign baselines to corroborate, which is Phase 6's job. A confident
+      "the border is blocking you" built on one traceroute would be wrong often enough to make
+      the product untrustworthy for the people who most need it to be right.
+      A long-haul link is a round-trip jump of ≥ 30 ms that *stays* high for every hop beyond:
+      distance does not come back, whereas a router with a busy control plane spikes once and
+      recovers.
 - [x] Source-address binding on all probers (probe egresses via a chosen local address/interface)
       — implemented and verified live for ICMP; carried into TCP-connect (bind before connect,
       with a mismatched address family refused rather than silently handed to the OS)
