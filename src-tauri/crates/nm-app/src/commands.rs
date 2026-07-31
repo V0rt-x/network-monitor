@@ -20,13 +20,14 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, State, Wry};
 
+use crate::presets::PresetList;
 use crate::settings::{
     Settings, SettingsProblem, MAX_BASELINE_INTERVAL_SECS, MIN_BASELINE_INTERVAL_SECS,
 };
 use crate::shell::TrayLabels;
 use crate::state::AppState;
-use crate::view::{ProcessListProblem, ProcessListView, ProcessView};
-use crate::{baselines, shell};
+use crate::view::{ApplicationChoiceView, ApplicationListProblem, ApplicationListView};
+use crate::{applications, baselines, shell};
 
 /// Platform backend the core will use, as seen across the IPC boundary.
 ///
@@ -171,7 +172,13 @@ pub fn set_settings(
     SettingsView::of(applied, state.problem())
 }
 
-/// Lists the processes the user could choose to monitor.
+/// Lists the applications the user could choose to monitor.
+///
+/// **Applications, not processes.** The raw process list of a desktop is six identical
+/// `Discord.exe` rows and eighty `svchost.exe` ones, and picking one of them is a question
+/// nobody wants to answer — they want to watch Discord. The same grouping the monitor uses
+/// is applied here, minus the descendant rule, which only makes sense once a choice has
+/// been made (see [`crate::applications::candidates`]).
 ///
 /// Read-only and handle-free: the sweep reports identity without opening a process, so an
 /// anti-cheat system has nothing to see. Called when the picker opens and when the user
@@ -180,39 +187,34 @@ pub fn set_settings(
 #[tauri::command]
 #[specta::specta]
 #[must_use]
-pub fn list_processes() -> ProcessListView {
+pub fn list_applications() -> ApplicationListView {
+    let refused = |problem: ApplicationListProblem| ApplicationListView {
+        applications: Vec::new(),
+        problem: Some(problem),
+    };
+
     let Ok(enumerator) = nm_platform::process::system_enumerator() else {
-        return ProcessListView {
-            processes: Vec::new(),
-            problem: Some(ProcessListProblem::UnsupportedPlatform),
-        };
+        return refused(ApplicationListProblem::UnsupportedPlatform);
     };
-
     let Ok(processes) = enumerator.processes() else {
-        return ProcessListView {
-            processes: Vec::new(),
-            problem: Some(ProcessListProblem::Refused),
-        };
+        return refused(ApplicationListProblem::Refused);
     };
 
-    let mut processes: Vec<ProcessView> = processes
+    // A failure here costs the awkward titles their grouping and nothing else; the
+    // executable name still groups everything. Refusing to list anything would be worse.
+    let presets = PresetList::bundled().unwrap_or_else(|_| PresetList::empty());
+    let applications = applications::candidates(&presets, &processes)
         .into_iter()
-        .map(|process| ProcessView {
-            pid: process.pid.get(),
-            name: process.name,
+        .map(|candidate| ApplicationChoiceView {
+            key: candidate.key,
+            label: candidate.label,
+            seed_pid: candidate.seed.get(),
+            pids: candidate.processes.iter().map(|pid| pid.get()).collect(),
         })
         .collect();
-    // By name, then by identifier: several copies of one executable are common, and a list
-    // that reordered itself between refreshes would be unusable to click in.
-    processes.sort_by(|left, right| {
-        left.name
-            .to_lowercase()
-            .cmp(&right.name.to_lowercase())
-            .then_with(|| left.pid.cmp(&right.pid))
-    });
 
-    ProcessListView {
-        processes,
+    ApplicationListView {
+        applications,
         problem: None,
     }
 }

@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { forgetApp, monitorApp } from '../../shared/ipc';
 import { AppCard } from './AppCard';
 import { flowStatusKey } from './labels';
-import type { MonitoredBy } from './ProcessPicker';
-import { ProcessPicker } from './ProcessPicker';
+import type { MonitoredBy } from './ApplicationPicker';
+import { ApplicationPicker } from './ApplicationPicker';
 import { useAppEndpoints } from './useAppEndpoints';
 
 /**
@@ -59,12 +59,12 @@ export const AppMonitorPage = () => {
         </p>
       )}
 
-      <ProcessPicker
+      <ApplicationPicker
         monitored={monitored}
         count={apps.length}
         limit={MAX_APPS}
-        onMonitor={(pid) => {
-          void monitorApp(pid);
+        onMonitor={(seedPid) => {
+          void monitorApp(seedPid);
         }}
         onForget={(app) => {
           void forgetApp(app);

@@ -240,6 +240,103 @@ impl<'a> Index<'a> {
     }
 }
 
+/// One application the user could choose, as the picker offers it.
+///
+/// **Not a process.** A picker listing six identical `Discord.exe` rows asks the user to
+/// pick one arbitrarily and gets the question backwards: they want to watch Discord, and
+/// which of its processes opened the socket is exactly what this app exists to stop them
+/// having to know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    /// Stable key for the offer — the preset's identifier, or the lowercased executable
+    /// name. Unique in one listing, and the same across refreshes, so a list the user is
+    /// clicking in does not reshuffle.
+    pub key: String,
+    /// What to call it.
+    pub label: String,
+    /// The process to form the application around, if the user chooses it.
+    pub seed: Pid,
+    /// The processes it is offered as, in identifier order.
+    ///
+    /// What the *picker's* rules found: an executable name, or a preset. The tree rule is
+    /// not applied here — a candidate list that adopted descendants would put half the
+    /// machine under whichever process happened to be listed first. It is applied when the
+    /// user actually chooses, which is why an adopted application can hold more processes
+    /// than the offer showed.
+    pub processes: Vec<Pid>,
+}
+
+/// Groups every running process into the applications a user could choose.
+///
+/// Two rules, and deliberately not the third. A preset joins its executables; otherwise
+/// processes sharing an executable name are one offer. **Descendants are not followed
+/// here**: the tree rule exists to catch a launcher starting a title *after* the user has
+/// committed to watching it, and applying it to an unfiltered process list would collapse
+/// the machine into whatever the shell started.
+#[must_use]
+pub fn candidates(presets: &PresetList, snapshot: &[ProcessInfo]) -> Vec<Candidate> {
+    let mut found: Vec<Candidate> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
+
+    for process in snapshot {
+        if process.name.is_empty() {
+            continue;
+        }
+        let (key, label) = match presets.matching(&process.name) {
+            Some(preset) => (preset.id.clone(), preset.label.clone()),
+            None => (process.name.to_lowercase(), process.name.clone()),
+        };
+
+        if let Some(candidate) = index.get(&key).and_then(|at| found.get_mut(*at)) {
+            candidate.processes.push(process.pid);
+            continue;
+        }
+        index.insert(key.clone(), found.len());
+        found.push(Candidate {
+            key,
+            label,
+            seed: process.pid,
+            processes: vec![process.pid],
+        });
+    }
+
+    for candidate in &mut found {
+        candidate.processes.sort_unstable();
+        candidate.seed = root_of(candidate, snapshot);
+    }
+    // By label, then by key, so the list is the same on every refresh and a row does not
+    // move out from under the cursor.
+    found.sort_by(|left, right| {
+        left.label
+            .to_lowercase()
+            .cmp(&right.label.to_lowercase())
+            .then_with(|| left.key.cmp(&right.key))
+    });
+    found
+}
+
+/// The member to seed an application from: one whose parent is not also a member.
+///
+/// The main process of an application that spawns helpers, which is the one whose children
+/// are worth adopting. Ties, and a group with no such member, fall back to the lowest
+/// identifier so the choice is decided rather than left to enumeration order.
+fn root_of(candidate: &Candidate, snapshot: &[ProcessInfo]) -> Pid {
+    let members: HashSet<Pid> = candidate.processes.iter().copied().collect();
+    candidate
+        .processes
+        .iter()
+        .copied()
+        .find(|pid| {
+            snapshot
+                .iter()
+                .find(|process| process.pid == *pid)
+                .and_then(|process| process.parent)
+                .is_none_or(|parent| !members.contains(&parent))
+        })
+        .or_else(|| candidate.processes.first().copied())
+        .unwrap_or(candidate.seed)
+}
+
 /// Every application the user is monitoring, and which process belongs to which.
 #[derive(Debug)]
 pub struct Applications {

@@ -102,18 +102,20 @@
       "highlight": "Highlight on the chart"
     },
     "picker": {
-      "heading": "Running processes",
-      "hint": "Pick up to {{limit}} applications. Choosing a process monitors the whole application it belongs to — its other processes and anything it launches. Nothing is read from inside them — only which addresses they talk to.",
+      "heading": "Running applications",
+      "hint": "Pick up to {{limit}}. Choosing one monitors the whole application — every process it is running under, and anything it launches. Nothing is read from inside them — only which addresses they talk to.",
       "partOf": "Part of {{name}}",
+      "processes": "{{count}} process",
+      "processes_other": "{{count}} processes",
       "searchLabel": "Search",
       "searchPlaceholder": "Filter by name",
       "refresh": "Refresh",
-      "loading": "Reading the process list…",
-      "unavailable": "The process list could not be requested",
-      "unsupportedPlatform": "This build cannot list processes on this operating system",
+      "loading": "Reading the application list…",
+      "unavailable": "The application list could not be requested",
+      "unsupportedPlatform": "This build cannot list applications on this operating system",
       "refused": "The system refused to list running processes",
-      "noMatches": "No process matches that name",
-      "more": "Showing {{shown}} of {{total}} processes — narrow the search to see the rest"
+      "noMatches": "No application matches that name",
+      "more": "Showing {{shown}} of {{total}} applications — narrow the search to see the rest"
     },
     "transport": {
       "tcp": "TCP",

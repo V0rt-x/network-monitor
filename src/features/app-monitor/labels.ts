@@ -1,10 +1,10 @@
 import type {
+  ApplicationListProblem,
   FlowStatusView,
   LivenessView,
   PathPositionView,
   PathQualityView,
   ProbingView,
-  ProcessListProblem,
   TransportView,
 } from '../../shared/ipc';
 
@@ -101,7 +101,7 @@ export const pathQualityModifier = (quality: PathQualityView) => {
   }
 };
 
-export const processProblemKey = (problem: ProcessListProblem) => {
+export const applicationProblemKey = (problem: ApplicationListProblem) => {
   switch (problem) {
     case 'unsupportedPlatform':
       return 'apps.picker.unsupportedPlatform' as const;

@@ -668,38 +668,53 @@ impl AppView {
     }
 }
 
-/// One running process the user could choose to monitor.
+/// One application the user could choose to monitor.
+///
+/// **An application, not a process.** Six identical `Discord.exe` rows ask the user to pick
+/// one arbitrarily, and which of them opened the socket is precisely what this product
+/// exists to stop them having to know.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessView {
-    /// Identifier to monitor it by.
-    pub pid: u32,
-    /// Executable file name. Not unique — several copies of one game can run at once,
-    /// which is exactly why the identifier is the identity and this is only a label.
-    pub name: String,
+pub struct ApplicationChoiceView {
+    /// Stable key for this offer, unique in the listing. A React key, and stable across
+    /// refreshes so a list the user is clicking in does not reshuffle.
+    pub key: String,
+    /// What to call it: the preset's name, or the executable's file name.
+    pub label: String,
+    /// The process monitoring would be seeded from.
+    ///
+    /// Crosses the boundary because that is what `monitor_app` takes; it is never shown as
+    /// the application's identity, which is assigned only once it is being monitored.
+    pub seed_pid: u32,
+    /// The processes currently running under it, in identifier order.
+    ///
+    /// Sent rather than counted so the picker can tell whether an application is already
+    /// monitored — the monitored one may hold a different process of the same group than
+    /// the one that seeded it.
+    pub pids: Vec<u32>,
 }
 
-/// Why the running processes could not be listed.
+/// Why the applications could not be listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub enum ProcessListProblem {
+pub enum ApplicationListProblem {
     /// This build has no process enumerator for the host operating system.
     UnsupportedPlatform,
     /// The operating system refused the enumeration.
     Refused,
 }
 
-/// The processes the picker may offer.
+/// The applications the picker may offer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessListView {
-    /// Running processes, by name and then by identifier.
+pub struct ApplicationListView {
+    /// Running applications, by name.
     ///
-    /// Unfiltered on purpose. Offering only processes that already hold a socket would hide
-    /// a game the user wants to start watching *before* it connects, which is precisely
-    /// when the first endpoints are worth catching.
-    pub processes: Vec<ProcessView>,
+    /// Unfiltered by network activity on purpose. Offering only applications that already
+    /// hold a socket would hide a game the user wants to start watching *before* it
+    /// connects, which is precisely when the first endpoints are worth catching.
+    pub applications: Vec<ApplicationChoiceView>,
     /// What went wrong, if anything. An empty list with no problem means the machine really
     /// is running nothing.
-    pub problem: Option<ProcessListProblem>,
+    pub problem: Option<ApplicationListProblem>,
 }

@@ -596,6 +596,11 @@ part of Phase 4 and nothing here waits on it.
       – **`monitor_app`/`forget_app` and the `AppEndpoints` event take an application identity**
         instead of a pid. The UI must show which processes an application currently consists of:
         a grouping the user cannot inspect is one they cannot correct.
+      – **The picker offers applications too.** Found by running the build: the monitoring
+        side was grouped and the picker was still a raw process list, so choosing Discord
+        meant picking one of six identical `Discord.exe` rows at random — the exact question
+        this item exists to remove. `list_applications` now groups every running process the
+        same way and offers "Discord · 6 processes".
       — `nm_app::applications`, pure and clock-free: the process snapshot is passed in, so
       adoption, expiry, the tree walk, the caps and the conflicts between two applications
       wanting one process replay in tests on any operating system without a process ever
@@ -627,6 +632,13 @@ part of Phase 4 and nothing here waits on it.
       A per-application cap of 64 processes bounds what the descendant rule can do — a user
       who picks a shell would otherwise turn one click into a membership set the size of the
       machine, tested against on every flow event.
+      **The picker groups by two of the three rules, not all three.** A preset, then the
+      executable name; the descendant rule is deliberately left out of the *offer*, because
+      applied to an unfiltered process list it would collapse the machine into whatever the
+      shell started. It applies once the user has committed to watching something, which is
+      why an adopted application can hold more processes than the offer showed — and why the
+      picker marks an offer as taken if *any* of its processes is monitored rather than
+      requiring the two groupings to agree exactly.
 - [x] **2. Show every endpoint of a selected application at once, on one chart.** The page today
       is a list of endpoints each with its own sparkline, which answers "how is this endpoint"
       and not the question the user actually has — "which of these is the odd one out". One

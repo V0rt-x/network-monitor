@@ -42,15 +42,15 @@ pub mod presets;
 pub mod settings;
 
 pub use commands::{
-    core_status, list_processes, CoreReadiness, CoreStatus, PlatformKind, SettingsView,
+    core_status, list_applications, CoreReadiness, CoreStatus, PlatformKind, SettingsView,
 };
 pub use error::Error;
 pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth};
 pub use shell::TrayLabels;
 pub use view::{
-    AppProcessView, AppView, EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView,
-    LivenessView, ProbeKindView, ProbingView, ProcessListProblem, ProcessListView, ProcessView,
-    TargetView, TransportView, SERIES_POINTS,
+    AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
+    EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView, LivenessView,
+    ProbeKindView, ProbingView, TargetView, TransportView, SERIES_POINTS,
 };
 
 use std::path::PathBuf;
@@ -75,7 +75,7 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::core_status,
             commands::get_settings,
             commands::set_settings,
-            commands::list_processes,
+            commands::list_applications,
             commands::monitor_app,
             commands::forget_app,
             commands::apply_tray_labels,

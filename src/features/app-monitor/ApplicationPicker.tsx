@@ -2,31 +2,31 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatCount } from '../../shared/format';
-import { processProblemKey } from './labels';
-import { useProcessList } from './useProcessList';
+import { applicationProblemKey } from './labels';
+import { useApplicationList } from './useApplicationList';
 
-/** One application a listed process already belongs to. */
+/** One application already being monitored, as the picker needs to recognise it. */
 export interface MonitoredBy {
   /** Identity to stop it by. */
   readonly app: number;
-  /** What that application is called, so the entry can say which one took the process. */
+  /** What that application is called, so an offer can say which one already took it. */
   readonly name: string;
 }
 
-interface ProcessPickerProps {
+interface ApplicationPickerProps {
   /**
-   * Which application each already-monitored process belongs to.
+   * Which monitored application each running process belongs to.
    *
-   * Keyed by process rather than by application because that is the question this list
-   * asks of every row — and because one application holds several of them, so a process
-   * the user did not pick can still turn out to be taken.
+   * Keyed by process, because that is the only thing an offer and a monitored application
+   * have in common: the offer is a grouping the picker made, the monitored one is a
+   * grouping the monitor made, and they meet at the processes.
    */
   readonly monitored: ReadonlyMap<number, MonitoredBy>;
   /** How many applications are being monitored. */
   readonly count: number;
   /** How many applications may be monitored at once. */
   readonly limit: number;
-  readonly onMonitor: (pid: number) => void;
+  readonly onMonitor: (seedPid: number) => void;
   readonly onForget: (app: number) => void;
 }
 
@@ -34,45 +34,47 @@ interface ProcessPickerProps {
 const SHOWN = 40;
 
 /**
- * The list of running processes, searchable, with the monitored ones marked.
+ * The applications running on this machine, searchable, with the monitored ones marked.
+ *
+ * **Applications, not processes.** A raw process list is six identical `Discord.exe` rows
+ * and eighty `svchost.exe` ones, and asking which of them to watch gets the question
+ * backwards — the user wants Discord, and which of its processes opened the socket is
+ * exactly what this product exists to stop them having to know. Rust does the grouping, by
+ * the same rules the monitor uses.
  *
  * Unfiltered by network activity on purpose: a game the user wants to watch *before* it
- * connects is exactly the case where the first endpoints are worth catching, and a picker
- * that only offered processes already holding a socket would hide it.
+ * connects is exactly the case where the first endpoints are worth catching.
  *
- * The list is fetched when this mounts and when the user asks again — never on a timer. A
- * process list is stale the instant it is taken, so polling would spend budget to be no
- * fresher, and Rust re-checks the identifier when monitoring actually starts.
- *
- * What a click starts is an *application*, not this process: Rust forms one around it from
- * its namesakes, its descendants and any bundled preset. So a process the user never picked
- * can appear here as already taken, and the entry says which application took it — a
- * grouping nobody can inspect is one nobody can correct.
+ * The list is fetched when this mounts and when the user asks again — never on a timer. It
+ * is stale the instant it is taken, so polling would spend budget to be no fresher, and
+ * Rust re-checks the process when monitoring actually starts.
  */
-export const ProcessPicker = ({
+export const ApplicationPicker = ({
   monitored,
   count,
   limit,
   onMonitor,
   onForget,
-}: ProcessPickerProps) => {
+}: ApplicationPickerProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const { state, refresh } = useProcessList();
+  const { state, refresh } = useApplicationList();
   const [search, setSearch] = useState('');
 
   // Memoized rather than read inline so the filter below does not re-run on every render
-  // of an unchanged list — a few hundred processes is small, but this component also
-  // re-renders on every keystroke.
-  const processes = useMemo(() => (state.kind === 'listed' ? state.list.processes : []), [state]);
+  // of an unchanged list — this component re-renders on every keystroke.
+  const applications = useMemo(
+    () => (state.kind === 'listed' ? state.list.applications : []),
+    [state],
+  );
   const matches = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const found =
       needle === ''
-        ? processes
-        : processes.filter((process) => process.name.toLowerCase().includes(needle));
+        ? applications
+        : applications.filter((application) => application.label.toLowerCase().includes(needle));
     return found.slice(0, SHOWN);
-  }, [processes, search]);
+  }, [applications, search]);
 
   const full = count >= limit;
 
@@ -114,7 +116,7 @@ export const ProcessPicker = ({
 
       {state.kind === 'listed' && state.list.problem !== null && (
         <p className="nm-state--degraded" role="alert">
-          {t(processProblemKey(state.list.problem))}
+          {t(applicationProblemKey(state.list.problem))}
         </p>
       )}
 
@@ -123,12 +125,22 @@ export const ProcessPicker = ({
       )}
 
       <ul className="nm-picker__list">
-        {matches.map((process) => {
-          const owner = monitored.get(process.pid);
+        {matches.map((application) => {
+          // Any of its processes being monitored means the application is. The picker's
+          // grouping and the monitor's need not agree exactly — the monitor also adopts
+          // descendants — and the honest answer to "can I still choose this" is no as soon
+          // as they overlap at all.
+          const owner = application.pids
+            .map((pid) => monitored.get(pid))
+            .find((found) => found !== undefined);
           return (
-            <li key={process.pid} className="nm-picker__entry">
-              <span className="nm-picker__name">{process.name}</span>
-              <span className="nm-picker__pid">{t('apps.pid', { pid: process.pid })}</span>
+            <li key={application.key} className="nm-picker__entry">
+              <span className="nm-picker__name">{application.label}</span>
+              <span className="nm-picker__pid">
+                {application.pids.length === 1
+                  ? t('apps.pid', { pid: application.seedPid })
+                  : t('apps.picker.processes', { count: application.pids.length })}
+              </span>
               {owner !== undefined && (
                 <span className="nm-picker__owner">
                   {t('apps.picker.partOf', { name: owner.name })}
@@ -141,7 +153,7 @@ export const ProcessPicker = ({
                 // happen rather than letting the click fail silently.
                 disabled={owner === undefined && full}
                 onClick={() => {
-                  if (owner === undefined) onMonitor(process.pid);
+                  if (owner === undefined) onMonitor(application.seedPid);
                   else onForget(owner.app);
                 }}
               >
@@ -152,11 +164,11 @@ export const ProcessPicker = ({
         })}
       </ul>
 
-      {processes.length > matches.length && (
+      {applications.length > matches.length && (
         <p className="nm-picker__more">
           {t('apps.picker.more', {
             shown: formatCount(matches.length, locale),
-            total: formatCount(processes.length, locale),
+            total: formatCount(applications.length, locale),
           })}
         </p>
       )}

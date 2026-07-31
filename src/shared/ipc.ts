@@ -3,10 +3,10 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { commands, events } from '../bindings';
 import type {
   AppEndpoints,
+  ApplicationListView,
   CoreHeartbeat,
   CoreStatus,
   NetworkHealth,
-  ProcessListView,
   Settings,
   SettingsView,
   TrayLabels,
@@ -22,6 +22,9 @@ import type {
 export type {
   AppEndpoints,
   AppProcessView,
+  ApplicationChoiceView,
+  ApplicationListProblem,
+  ApplicationListView,
   AppView,
   BaselineGroup,
   CoreHeartbeat,
@@ -40,9 +43,6 @@ export type {
   PlatformKind,
   ProbeKindView,
   ProbingView,
-  ProcessListProblem,
-  ProcessListView,
-  ProcessView,
   Settings,
   SettingsProblem,
   SettingsView,
@@ -72,7 +72,8 @@ export const subscribeToAppEndpoints = (
     onEndpoints(event.payload);
   });
 
-export const fetchProcesses = (): Promise<ProcessListView> => commands.listProcesses();
+/** The applications the picker may offer, grouped by Rust rather than a raw process list. */
+export const fetchApplications = (): Promise<ApplicationListView> => commands.listApplications();
 
 /** Starts monitoring the application a running process belongs to; the pid is the seed. */
 export const monitorApp = (pid: number): Promise<void> => commands.monitorApp(pid);

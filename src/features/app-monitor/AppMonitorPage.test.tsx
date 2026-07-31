@@ -5,15 +5,15 @@ import '../../i18n';
 import { AppMonitorPage } from './AppMonitorPage';
 import type { AppEndpoints } from '../../shared/ipc';
 
-const { fetchProcesses, forgetApp, monitorApp, subscribeToAppEndpoints } = vi.hoisted(() => ({
-  fetchProcesses: vi.fn(),
+const { fetchApplications, forgetApp, monitorApp, subscribeToAppEndpoints } = vi.hoisted(() => ({
+  fetchApplications: vi.fn(),
   forgetApp: vi.fn(),
   monitorApp: vi.fn(),
   subscribeToAppEndpoints: vi.fn(),
 }));
 
 vi.mock('../../shared/ipc', () => ({
-  fetchProcesses,
+  fetchApplications,
   forgetApp,
   monitorApp,
   subscribeToAppEndpoints,
@@ -75,7 +75,7 @@ const captureEmitter = () => {
 describe('AppMonitorPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    fetchProcesses.mockResolvedValue({ processes: [], problem: null });
+    fetchApplications.mockResolvedValue({ applications: [], problem: null });
     subscribeToAppEndpoints.mockResolvedValue(() => undefined);
   });
 
@@ -83,7 +83,7 @@ describe('AppMonitorPage', () => {
     render(<AppMonitorPage />);
     expect(screen.getByText('Waiting for the core…')).toBeInTheDocument();
     // Let the picker settle so its state update lands inside this test.
-    await screen.findByText('Running processes');
+    await screen.findByText('Running applications');
   });
 
   it('says nothing is chosen once the core answers with no applications', async () => {
@@ -115,11 +115,11 @@ describe('AppMonitorPage', () => {
   it('marks every process an application holds, not only the one that was picked', async () => {
     // An application adopts its namesakes and its children, so the picker has to answer
     // "is this taken" for processes the user never clicked.
-    fetchProcesses.mockResolvedValue({
-      processes: [
-        { pid: 4242, name: 'game.exe' },
-        { pid: 4300, name: 'title.exe' },
-        { pid: 900, name: 'unrelated.exe' },
+    fetchApplications.mockResolvedValue({
+      applications: [
+        { key: 'game.exe', label: 'game.exe', seedPid: 4242, pids: [4242] },
+        { key: 'title.exe', label: 'title.exe', seedPid: 4300, pids: [4300] },
+        { key: 'unrelated.exe', label: 'unrelated.exe', seedPid: 900, pids: [900] },
       ],
       problem: null,
     });

@@ -19,14 +19,20 @@ export const commands = {
 	 */
 	setSettings: (settings: Settings) => __TAURI_INVOKE<SettingsView>("set_settings", { settings }),
 	/**
-	 *  Lists the processes the user could choose to monitor.
+	 *  Lists the applications the user could choose to monitor.
+	 * 
+	 *  **Applications, not processes.** The raw process list of a desktop is six identical
+	 *  `Discord.exe` rows and eighty `svchost.exe` ones, and picking one of them is a question
+	 *  nobody wants to answer — they want to watch Discord. The same grouping the monitor uses
+	 *  is applied here, minus the descendant rule, which only makes sense once a choice has
+	 *  been made (see [`crate::applications::candidates`]).
 	 * 
 	 *  Read-only and handle-free: the sweep reports identity without opening a process, so an
 	 *  anti-cheat system has nothing to see. Called when the picker opens and when the user
 	 *  refreshes it — never on a timer, because a process list is a snapshot the moment it is
 	 *  taken and polling one would spend budget to be no less stale.
 	 */
-	listProcesses: () => __TAURI_INVOKE<ProcessListView>("list_processes"),
+	listApplications: () => __TAURI_INVOKE<ApplicationListView>("list_applications"),
 	/**
 	 *  Starts monitoring the application a running process belongs to.
 	 * 
@@ -142,6 +148,62 @@ export type AppView = {
 	chartAgeSecs: (number | null)[],
 	/**  Its endpoints, worst first. */
 	endpoints: EndpointView[],
+};
+
+/**
+ *  One application the user could choose to monitor.
+ * 
+ *  **An application, not a process.** Six identical `Discord.exe` rows ask the user to pick
+ *  one arbitrarily, and which of them opened the socket is precisely what this product
+ *  exists to stop them having to know.
+ */
+export type ApplicationChoiceView = {
+	/**
+	 *  Stable key for this offer, unique in the listing. A React key, and stable across
+	 *  refreshes so a list the user is clicking in does not reshuffle.
+	 */
+	key: string,
+	/**  What to call it: the preset's name, or the executable's file name. */
+	label: string,
+	/**
+	 *  The process monitoring would be seeded from.
+	 * 
+	 *  Crosses the boundary because that is what `monitor_app` takes; it is never shown as
+	 *  the application's identity, which is assigned only once it is being monitored.
+	 */
+	seedPid: number,
+	/**
+	 *  The processes currently running under it, in identifier order.
+	 * 
+	 *  Sent rather than counted so the picker can tell whether an application is already
+	 *  monitored — the monitored one may hold a different process of the same group than
+	 *  the one that seeded it.
+	 */
+	pids: number[],
+};
+
+/**  Why the applications could not be listed. */
+export type ApplicationListProblem = 
+/**  This build has no process enumerator for the host operating system. */
+"unsupportedPlatform" | 
+/**  The operating system refused the enumeration. */
+"refused";
+
+/**  The applications the picker may offer. */
+export type ApplicationListView = {
+	/**
+	 *  Running applications, by name.
+	 * 
+	 *  Unfiltered by network activity on purpose. Offering only applications that already
+	 *  hold a socket would hide a game the user wants to start watching *before* it
+	 *  connects, which is precisely when the first endpoints are worth catching.
+	 */
+	applications: ApplicationChoiceView[],
+	/**
+	 *  What went wrong, if anything. An empty list with no problem means the machine really
+	 *  is running nothing.
+	 */
+	problem: ApplicationListProblem | null,
 };
 
 /**  Which baseline a target belongs to. */
@@ -498,41 +560,6 @@ export type ProbingView =
  *  never dropped.
  */
 "demoted";
-
-/**  Why the running processes could not be listed. */
-export type ProcessListProblem = 
-/**  This build has no process enumerator for the host operating system. */
-"unsupportedPlatform" | 
-/**  The operating system refused the enumeration. */
-"refused";
-
-/**  The processes the picker may offer. */
-export type ProcessListView = {
-	/**
-	 *  Running processes, by name and then by identifier.
-	 * 
-	 *  Unfiltered on purpose. Offering only processes that already hold a socket would hide
-	 *  a game the user wants to start watching *before* it connects, which is precisely
-	 *  when the first endpoints are worth catching.
-	 */
-	processes: ProcessView[],
-	/**
-	 *  What went wrong, if anything. An empty list with no problem means the machine really
-	 *  is running nothing.
-	 */
-	problem: ProcessListProblem | null,
-};
-
-/**  One running process the user could choose to monitor. */
-export type ProcessView = {
-	/**  Identifier to monitor it by. */
-	pid: number,
-	/**
-	 *  Executable file name. Not unique — several copies of one game can run at once,
-	 *  which is exactly why the identifier is the identity and this is only a label.
-	 */
-	name: string,
-};
 
 /**
  *  Everything the user can configure.
