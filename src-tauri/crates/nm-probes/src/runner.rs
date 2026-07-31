@@ -273,6 +273,40 @@ impl ProbeRunner {
         Ok(true)
     }
 
+    /// Changes the local address a target's probes egress from.
+    ///
+    /// This is how a monitored flow that moves takes its probes with it — the user enabling
+    /// a VPN or an accelerator mid-session, which is a core use case rather than an edge
+    /// one. Without it the probe keeps following the old route and reports a round trip the
+    /// application is no longer making.
+    ///
+    /// The fallback chain survives: whether ICMP is filtered is mostly a fact about the
+    /// destination, and re-testing every kind on every re-route would spend the budget
+    /// proving what is already known. The backoff resets, because a stretched interval
+    /// records the *old* route's failures and the new one deserves full resolution.
+    ///
+    /// The new binding takes effect from the next probe rather than instantly, so a route
+    /// that flaps cannot outrun the rate cap.
+    ///
+    /// Returns `true` if the target is registered.
+    pub fn set_source(&mut self, id: TargetId, source: Option<IpAddr>, now: Instant) -> bool {
+        let Some(state) = self.targets.get_mut(&id) else {
+            return false;
+        };
+        if state.source == source {
+            return true;
+        }
+
+        state.source = source;
+        state.backoff.reset();
+        if !state.in_flight {
+            // The probe in flight measures the old route; its report reschedules from the
+            // reset backoff, so the new one is measured immediately either way.
+            let _ = self.scheduler.schedule(id, state.backoff.interval(), now);
+        }
+        true
+    }
+
     /// Stops measuring a target. Returns `true` if it was registered.
     ///
     /// A probe already in flight is not cancelled — nothing can un-send a packet — but its
@@ -425,11 +459,20 @@ impl ProbeRunner {
                     state.backoff.reset();
                 }
             }
+            // A failure that means the kind can never address this target is not a
+            // measurement either, but it *is* decisive: retrying is guaranteed to fail the
+            // same way, so the target steps onto the next kind rather than being probed
+            // forever and reported as never measured. The backoff resets because the next
+            // kind's history is not the old one's.
+            Measured::Failed(error) if error.is_target_unaddressable() => {
+                state.chain.cannot_address_target();
+                state.backoff.reset();
+            }
             // Neither changes what we believe about the endpoint. A walk is already the last
             // resort and maps the route without saying whether the destination recovered, so
-            // its interval stays wherever backoff had stretched it to. A failure of our own is
-            // reported outward but is not evidence against the probe kind or the endpoint, so
-            // neither the chain nor the backoff hears of it.
+            // its interval stays wherever backoff had stretched it to. A transient failure of
+            // our own is reported outward but is not evidence against the probe kind or the
+            // endpoint, so neither the chain nor the backoff hears of it.
             Measured::Path(_) | Measured::Failed(_) => {}
         }
 
@@ -581,6 +624,16 @@ pub enum Command {
         /// Its new base interval.
         interval: Duration,
     },
+    /// Change the local address a target's probes egress from.
+    ///
+    /// Without a reply channel for the same reason as [`Command::SetInterval`]: the only
+    /// way it does nothing is a target that is already gone, which needs no handling.
+    SetSource {
+        /// Which target.
+        id: TargetId,
+        /// The address its probes must now leave from.
+        source: Option<IpAddr>,
+    },
     /// Give a target's ruled-out probe kinds another chance.
     Reconsider(TargetId),
 }
@@ -666,6 +719,9 @@ fn apply(runner: &mut ProbeRunner, command: Command) {
             // A rejected interval leaves the target probing exactly as it was, which is the
             // safe direction: worst case the endpoint keeps its previous cadence.
             let _ = runner.set_interval(id, interval, Instant::now());
+        }
+        Command::SetSource { id, source } => {
+            runner.set_source(id, source, Instant::now());
         }
         Command::Reconsider(id) => {
             runner.reconsider(id, Instant::now());
@@ -1168,8 +1224,8 @@ mod tests {
 
     #[test]
     fn our_own_failure_is_not_charged_to_the_endpoint() {
-        // A local socket failure is not the endpoint's packet loss, so it must not set a
-        // probe kind aside nor stretch the interval.
+        // A transient local socket failure is not the endpoint's packet loss, so it must not
+        // set a probe kind aside nor stretch the interval.
         let start = Instant::now();
         let mut runner = runner(start);
         runner
@@ -1182,13 +1238,138 @@ mod tests {
             runner.complete(&report(
                 id(0),
                 now,
-                Measured::Failed(Error::SourceFamilyMismatch),
+                Measured::Failed(Error::LocalFailure {
+                    kind: ProbeKind::IcmpEcho,
+                    reason: std::io::ErrorKind::OutOfMemory,
+                }),
             ));
             now += DEFAULT_INTERVAL;
         }
 
         assert_eq!(runner.current_kind(id(0)), Some(ProbeKind::IcmpEcho));
         assert_eq!(runner.next_deadline(), Some(now));
+    }
+
+    #[test]
+    fn a_kind_that_cannot_address_the_target_steps_aside_at_once() {
+        // Regression, found by running the app: an endpoint the ICMP backend cannot address
+        // — anything IPv6 on an IPv4-only build — was retried forever. The endpoint sat
+        // there reported as "not measured yet" under the name of a probe that never ran,
+        // while a connecting kind that *could* have measured it waited behind it.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::with_port(ip(0), 443), None, start)
+            .unwrap();
+        assert_eq!(runner.current_kind(id(0)), Some(ProbeKind::IcmpEcho));
+
+        runner.due(start);
+        runner.complete(&report(
+            id(0),
+            start,
+            Measured::Failed(Error::Platform(nm_platform::Error::Ipv6Unsupported)),
+        ));
+
+        assert_eq!(
+            runner.current_kind(id(0)),
+            Some(ProbeKind::TcpConnect),
+            "one failure is enough: the next attempt would fail identically"
+        );
+    }
+
+    #[test]
+    fn stepping_past_a_kind_we_cannot_form_never_claims_filtering() {
+        // Our own limitation must not be reported as a network fact. "ICMP is filtered
+        // here" is a claim about the path, and this build's missing IPv6 support is not
+        // evidence for it.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::with_port(ip(0), 443), None, start)
+            .unwrap();
+
+        runner.due(start);
+        runner.complete(&report(
+            id(0),
+            start,
+            Measured::Failed(Error::Platform(nm_platform::Error::Ipv6Unsupported)),
+        ));
+        let later = start + DEFAULT_INTERVAL;
+        runner.due(later);
+        runner.complete(&report(
+            id(0),
+            later,
+            Measured::Probe {
+                kind: ProbeKind::TcpConnect,
+                outcome: ProbeOutcome::Success(Rtt::from_micros(9_000)),
+            },
+        ));
+
+        let progress = runner.progress(id(0)).expect("the target is registered");
+        assert_eq!(progress.kind, Some(ProbeKind::TcpConnect));
+        assert!(
+            !progress.filtering_confirmed,
+            "a kind we could not form a probe with proves nothing about the path"
+        );
+    }
+
+    #[test]
+    fn a_target_whose_flow_moved_is_probed_from_the_new_address() {
+        // The user turns a VPN on mid-session. The probe has to follow, or it keeps
+        // measuring the route the application has stopped using — which is exactly the
+        // before-and-after comparison this product exists to make.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        let first = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+        let second = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20));
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), Some(first), start)
+            .unwrap();
+        assert_eq!(runner.due(start)[0].target.source, Some(first));
+
+        runner.complete(&report(id(0), start, success()));
+        assert!(runner.set_source(id(0), Some(second), start));
+
+        // From the next probe, not this instant: a re-route re-bases the schedule the same
+        // way reconsidering does, rather than jumping the queue past the rate cap.
+        let planned = runner.due(start + DEFAULT_INTERVAL);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(
+            planned[0].target.source,
+            Some(second),
+            "the probe must leave from where the application's flow now does"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_egress_address_does_not_disturb_the_schedule() {
+        // Discovery restates what it knows on every sweep; re-stating the same address must
+        // not reset a backoff that a genuinely dead endpoint has earned.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        let source = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), Some(source), start)
+            .unwrap();
+
+        let mut now = start;
+        for _ in 0..6 {
+            runner.due(now);
+            runner.complete(&report(id(0), now, timeout(ProbeKind::IcmpEcho)));
+            now += DEFAULT_INTERVAL;
+        }
+        let stretched = runner.next_deadline();
+
+        assert!(runner.set_source(id(0), Some(source), now));
+
+        assert_eq!(runner.next_deadline(), stretched);
+    }
+
+    #[test]
+    fn setting_a_source_on_a_target_that_is_gone_is_harmless() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        assert!(!runner.set_source(id(0), None, start));
     }
 
     #[test]

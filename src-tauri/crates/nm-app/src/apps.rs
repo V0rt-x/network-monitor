@@ -98,6 +98,17 @@ pub enum TargetChange {
         /// Its new interval.
         interval: Duration,
     },
+    /// Probe an existing target from a different local address.
+    ///
+    /// The monitored flow moved — the user turned a VPN or an accelerator on mid-session —
+    /// so the probe has to move with it or it measures a route the application is no longer
+    /// taking.
+    SetSource {
+        /// Which target.
+        id: TargetId,
+        /// The address its probes must now leave from.
+        source: Option<IpAddr>,
+    },
     /// Stop probing an endpoint no monitored application uses any more.
     Unregister {
         /// Which target.
@@ -134,8 +145,23 @@ struct Entry {
 #[derive(Debug, Clone, Default)]
 struct TargetUsers {
     members: BTreeSet<(AppId, EndpointKey)>,
-    /// The egress address the probe was registered with.
+    /// The egress address last asked of the probe engine.
+    ///
+    /// What the engine currently believes, never what the applications want — the wanted
+    /// value is recomputed from the members on every sweep, which is what lets a flow that
+    /// moves take its probes with it.
     source: Option<IpAddr>,
+    /// Whether a source has ever been stated for this target.
+    ///
+    /// Distinguishes "the engine was told to bind nowhere" from "the engine has not been
+    /// told anything yet", which are the same [`None`] and mean different things.
+    source_stated: bool,
+    /// Whether the probe belongs to another feature, such as a baseline.
+    ///
+    /// Its binding was chosen for that feature's purpose and is not ours to change: a
+    /// baseline silently re-bound to a game's interface would stop measuring what the
+    /// dashboard claims it measures.
+    foreign: bool,
     /// The interval last asked of the probe engine.
     ///
     /// Kept so that a sweep only speaks when something changed. Restating every endpoint's
@@ -290,20 +316,35 @@ impl AppMonitor {
         changes
     }
 
-    /// Recomputes each target's cadence from every application that uses it.
+    /// Recomputes each target's cadence and egress from every application that uses it.
     ///
-    /// Separate from registration because the answer depends on *all* of a target's users:
+    /// Separate from registration because both answers depend on *all* of a target's users:
     /// the shortest interval anyone wants wins, so one application caring about an endpoint
     /// keeps it well measured and the others benefit — and the endpoint can slow down again
     /// only once every user has lost interest.
+    ///
+    /// The egress is the same shape of question with a harder answer. Where the users agree,
+    /// that address is what the probe binds to, and it is restated whenever it changes — a
+    /// flow that moves takes its probes with it. Where they disagree, one probe cannot
+    /// represent both routes, so the disagreement is recorded on the endpoints and the
+    /// binding is left where it is rather than flipping between two applications' routes
+    /// once a second.
     fn retune(&mut self, changes: &mut Vec<TargetChange>) {
         for (id, users) in &mut self.users {
-            let shortest = users
-                .members
-                .iter()
-                .filter_map(|member| self.entries.get(member))
-                .map(|entry| entry.desired_interval)
-                .min();
+            let mut shortest: Option<Duration> = None;
+            let mut sources: BTreeSet<IpAddr> = BTreeSet::new();
+            for member in &users.members {
+                let Some(entry) = self.entries.get(member) else {
+                    continue;
+                };
+                shortest = Some(match shortest {
+                    Some(current) => current.min(entry.desired_interval),
+                    None => entry.desired_interval,
+                });
+                if let Some(source) = entry.source {
+                    sources.insert(source);
+                }
+            }
 
             let Some(shortest) = shortest else {
                 continue;
@@ -315,6 +356,60 @@ impl AppMonitor {
                     interval: shortest,
                 });
             }
+
+            // One address, one probe, one binding — so the question is who that binding
+            // serves. Where the users agree (the ordinary case, and the only case for a
+            // single application) it follows them, moving when they move. Where they
+            // disagree, or where the probe belongs to another feature entirely, it stays
+            // put and the applications it does *not* serve are told so.
+            let agreed = (!users.foreign && sources.len() <= 1)
+                .then(|| sources.iter().next().copied())
+                .filter(|_| !users.foreign);
+
+            if let Some(agreed) = agreed {
+                if !users.source_stated || users.source != agreed {
+                    users.source = agreed;
+                    users.source_stated = true;
+                    changes.push(TargetChange::SetSource {
+                        id: *id,
+                        source: agreed,
+                    });
+                }
+            }
+
+            Self::disclose_mismatches(
+                &mut self.entries,
+                &users.members,
+                users.source,
+                users.foreign,
+            );
+        }
+    }
+
+    /// Tells each user whether the one probe actually follows its route.
+    ///
+    /// Only the applications the binding does not serve are marked. Flagging every user of
+    /// a contested endpoint would warn the one whose figure is correct, and a warning that
+    /// covers the innocent is one nobody reads. An application that asked for no particular
+    /// egress is not mismeasured either — it never made a claim about its route.
+    ///
+    /// `foreign` marks a probe another feature owns: it was bound for that feature's
+    /// purpose, so any application wanting its own egress is disclosed regardless of what
+    /// the addresses happen to be.
+    fn disclose_mismatches(
+        entries: &mut BTreeMap<(AppId, EndpointKey), Entry>,
+        members: &BTreeSet<(AppId, EndpointKey)>,
+        bound: Option<IpAddr>,
+        foreign: bool,
+    ) {
+        for member in members {
+            let Some(entry) = entries.get_mut(member) else {
+                continue;
+            };
+            entry.egress_conflict = match entry.source {
+                None => false,
+                Some(source) => foreign || Some(source) != bound,
+            };
         }
     }
 
@@ -357,18 +452,16 @@ impl AppMonitor {
         users.members.insert((app, key));
 
         if first {
-            users.source = source;
             users.interval = Some(interval);
+            users.foreign = adopted;
             if adopted {
-                // Someone else's probe already covers this address, so only its cadence is
-                // ours to change. Its egress binding is not: it was chosen for another
-                // feature, so a probe bound elsewhere than this application's flow is a
-                // mismatch to disclose rather than to quietly present as the app's route.
+                // Another feature already probes this address, so only its cadence is ours
+                // to change. Re-registering would reset a fallback chain and a failure
+                // history that belong to someone else.
                 changes.push(TargetChange::SetInterval { id, interval });
-                if source.is_some() {
-                    self.mark_egress_conflict(app, key);
-                }
             } else {
+                users.source = source;
+                users.source_stated = true;
                 changes.push(TargetChange::Register {
                     id,
                     address,
@@ -376,23 +469,12 @@ impl AppMonitor {
                     interval,
                 });
             }
-            return;
         }
-
-        // An endpoint two applications reach by different routes cannot be represented by
-        // one probe. Say so rather than letting one application's figure stand in for the
-        // other's.
-        let disagrees = source.is_some() && users.source != source;
-        if disagrees {
-            self.mark_egress_conflict(app, key);
-        }
-    }
-
-    /// Records that this application's probe cannot be trusted to follow its own route.
-    fn mark_egress_conflict(&mut self, app: AppId, key: EndpointKey) {
-        if let Some(entry) = self.entries.get_mut(&(app, key)) {
-            entry.egress_conflict = true;
-        }
+        // Everything else — the cadence, the egress, and whether the users can agree on one
+        // — is decided in `retune` from *all* of a target's members at once. Deciding it
+        // here, from whichever application happened to be swept first, is what used to
+        // report a single application as conflicting with itself the moment its own egress
+        // address became known.
     }
 
     /// Drops one application's use of an endpoint, releasing the target if it was the last.

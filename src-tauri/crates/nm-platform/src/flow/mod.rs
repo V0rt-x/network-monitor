@@ -141,7 +141,16 @@ const SOCKADDR_IN6_LEN: usize = SOCKADDR_IN6_ADDR_END + 4;
 ///
 /// Returns [`None`] for a family this build does not understand rather than guessing —
 /// an endpoint we cannot name is one we must not probe.
+///
+/// An IPv4-mapped result is handed back in its IPv4 form: a dual-stack socket reports every
+/// IPv4 peer as `::ffff:a.b.c.d`, and leaving it that way makes the same host unprobeable,
+/// unclassifiable and countable twice. See [`crate::address`].
 pub(crate) fn decode_sockaddr(bytes: &[u8]) -> Option<SocketAddr> {
+    decode_raw_sockaddr(bytes).map(crate::address::unmap_socket)
+}
+
+/// The decoding itself, before the address family is canonicalised.
+fn decode_raw_sockaddr(bytes: &[u8]) -> Option<SocketAddr> {
     if bytes.len() < 4 {
         return None;
     }
@@ -221,6 +230,31 @@ mod tests {
         assert_eq!(blob[2], 0x69, "the port must be stored big-endian");
         assert_eq!(blob[3], 0x87);
         assert_eq!(decode_sockaddr(&blob).map(|a| a.port()), Some(27_015));
+    }
+
+    #[test]
+    fn a_dual_stack_socket_reports_its_ipv4_peer_as_ipv4() {
+        // Windows hands every IPv4 peer of a dual-stack socket over as `::ffff:a.b.c.d`.
+        // Left in that form the endpoint is refused by the ICMP backend as IPv6, escapes
+        // classification against the IPv4 ranges, and is counted separately from the same
+        // host seen in the connection table.
+        let mapped = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xcb00, 0x7105);
+        assert_eq!(
+            decode_sockaddr(&sockaddr_in6(27_015, mapped, 0)),
+            Some(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(203, 0, 113, 5)),
+                27_015
+            ))
+        );
+    }
+
+    #[test]
+    fn an_unbound_dual_stack_socket_is_recognisably_unspecified() {
+        // `::ffff:0.0.0.0` is not `is_unspecified`, so a caller looking for "this socket
+        // named no address" would bind a probe to a wildcard in disguise.
+        let mapped = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0);
+        let decoded = decode_sockaddr(&sockaddr_in6(0, mapped, 0)).expect("it must decode");
+        assert!(decoded.ip().is_unspecified());
     }
 
     #[test]

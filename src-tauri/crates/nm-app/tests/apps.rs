@@ -305,6 +305,103 @@ fn a_re_routed_flow_takes_the_new_egress_address() {
 }
 
 #[test]
+fn a_re_routed_flow_takes_its_probe_with_it() {
+    // Regression: the new egress address reached the *report* but never the probe engine,
+    // so turning on a VPN relabelled the endpoint while the probe carried on measuring the
+    // route the application had stopped using — which is the one comparison this product
+    // exists to make.
+    let (mut monitor, mut registry, now) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), None, now)
+        .unwrap();
+    let registered = registrations(&monitor.sweep(&mut registry, now));
+
+    let later = now + Duration::from_secs(1);
+    monitor
+        .observe(APP, udp(1), Some(local(10)), None, later)
+        .unwrap();
+    let changes = monitor.sweep(&mut registry, later);
+
+    assert_eq!(
+        changes,
+        vec![TargetChange::SetSource {
+            id: registered[0],
+            source: Some(local(10))
+        }]
+    );
+}
+
+#[test]
+fn a_steady_endpoint_never_restates_its_egress() {
+    // The other half of the same regression: a source that has not moved must produce no
+    // commands at all, or every endpoint would re-bind once a second.
+    let (mut monitor, mut registry, now) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), None, now)
+        .unwrap();
+    monitor.sweep(&mut registry, now);
+
+    for step in 1..6 {
+        let later = now + Duration::from_secs(step);
+        monitor
+            .observe(APP, udp(1), Some(local(9)), None, later)
+            .unwrap();
+        assert!(monitor.sweep(&mut registry, later).is_empty());
+    }
+}
+
+#[test]
+fn one_application_never_conflicts_with_itself() {
+    // Regression: an endpoint first discovered without an egress address — a connection
+    // table row for an unbound socket — was compared against the value recorded at
+    // registration when its address later became known, and a single monitored application
+    // was told its route disagreed with a second application that did not exist.
+    let (mut monitor, mut registry, now) = watching();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    monitor.sweep(&mut registry, now);
+
+    let later = now + Duration::from_secs(1);
+    monitor
+        .observe(APP, udp(1), Some(local(9)), None, later)
+        .unwrap();
+    monitor.sweep(&mut registry, later);
+
+    let report = &monitor.endpoints(APP, later)[0];
+    assert!(
+        !report.egress_conflict,
+        "there is only one application; there is nothing to conflict with"
+    );
+    assert_eq!(report.source, Some(local(9)));
+}
+
+#[test]
+fn a_disclosure_is_withdrawn_once_the_other_application_stops() {
+    // A warning that outlives its cause is a warning nobody reads.
+    let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
+    monitor.monitor(APP).unwrap();
+    monitor.monitor(OTHER).unwrap();
+    let now = Instant::now();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), None, now)
+        .unwrap();
+    monitor
+        .observe(OTHER, udp(1), Some(local(10)), None, now)
+        .unwrap();
+    monitor.sweep(&mut registry, now);
+    assert!(monitor.endpoints(OTHER, now)[0].egress_conflict);
+
+    monitor.forget(&mut registry, APP);
+    let later = now + Duration::from_secs(1);
+    monitor
+        .observe(OTHER, udp(1), Some(local(10)), None, later)
+        .unwrap();
+    monitor.sweep(&mut registry, later);
+
+    assert!(!monitor.endpoints(OTHER, later)[0].egress_conflict);
+}
+
+#[test]
 fn an_unmonitored_application_is_refused() {
     let mut monitor = monitor();
     let error = monitor.observe(APP, udp(1), None, None, Instant::now());

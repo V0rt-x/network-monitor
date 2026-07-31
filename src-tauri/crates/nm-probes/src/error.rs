@@ -86,3 +86,26 @@ pub enum Error {
     #[error("no path walker is configured")]
     NoPathWalker,
 }
+
+impl Error {
+    /// Whether this failure means the probe kind can *never* address that target.
+    ///
+    /// Not a network fact and never a measurement — it is a limit of this build meeting a
+    /// particular address. The runner uses it to step the target onto the next kind,
+    /// because retrying is guaranteed to fail again: an endpoint left on a probe that
+    /// cannot be formed is measured never, while the UI names the kind as if it were
+    /// running.
+    ///
+    /// The clearest case is an IPv6 endpoint on a build whose ICMP backend is IPv4-only —
+    /// which a game reached over IPv6 produces on the first packet.
+    #[must_use]
+    pub const fn is_target_unaddressable(&self) -> bool {
+        matches!(
+            self,
+            Self::Platform(nm_platform::Error::Ipv6Unsupported)
+                | Self::PortRequired { .. }
+                | Self::SourceFamilyMismatch
+                | Self::NoProberFor { .. }
+        )
+    }
+}

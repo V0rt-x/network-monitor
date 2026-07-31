@@ -466,6 +466,22 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       severity and the frontend holds no business logic. Unreachable outranks degraded
       outranks *filtered*: filtering is an absence of knowledge, and being told "no" is
       knowledge.
+- [ ] **A silent endpoint that is demonstrably carrying traffic must not be called
+      "unreachable".** Found by running the app against a live game: its UDP match server
+      answered neither ICMP, nor TCP-connect, nor a TLS hello — correctly, since nothing
+      listens on a game port but the game — while the flow events showed hundreds of
+      kilobytes crossing it. The page reported *Unreachable*, which reads as "your game
+      server is down" about a server that is working perfectly. That is the exact lie this
+      product exists not to tell, and it is the normal case for the headline feature rather
+      than an edge one: **every** UDP game server will look like this.
+      `CLAUDE.md` already names the intended behaviour — "degrade honestly (show
+      flow/throughput stats and 'ICMP blocked' state) instead of showing fake zeros" — so
+      what is missing is the rule that combines passive liveness with probe silence.
+      Needs a decision before implementing: whether passive traffic makes the verdict
+      `Blocked` (the UI already says "probe blocked", but `Health::Blocked` currently
+      promises *proven* filtering), or whether the state deserves a name of its own. It also
+      wants the path probe, which is the fallback of last resort for exactly this case and
+      is currently only reached after every probe kind has been ruled out.
 - [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 

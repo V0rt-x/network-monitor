@@ -200,13 +200,17 @@ fn rows<R: Copy>(bytes: &[u8], offset: usize, count: usize) -> impl Iterator<Ite
 }
 
 /// Builds an IPv6 address and its scope from a table row's fields.
+/// The local socket of a row from an IPv6 table.
+///
+/// Canonicalised: a dual-stack socket bound to an IPv4 address reports it mapped, and a
+/// caller cannot tell `::ffff:0.0.0.0` from a real binding — see [`crate::address`].
 fn ipv6_socket(address: [u8; 16], scope_id: u32, port: u16) -> SocketAddr {
-    SocketAddr::V6(SocketAddrV6::new(
+    crate::address::unmap_socket(SocketAddr::V6(SocketAddrV6::new(
         Ipv6Addr::from(address),
         port,
         0,
         scope_id,
-    ))
+    )))
 }
 
 impl ConnectionTable for WindowsConnectionTable {

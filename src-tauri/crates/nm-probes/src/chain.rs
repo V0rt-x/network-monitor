@@ -52,6 +52,24 @@ pub enum RuledOutBecause {
     ItReportedFiltering,
     /// It went silent for long enough that another kind was worth trying.
     ItWentSilent,
+    /// It cannot address this target at all.
+    ///
+    /// Nothing to do with the network: an ICMP backend with no IPv6 implementation, a
+    /// connecting kind handed a target with no port. Without this the kind is retried
+    /// forever and the endpoint sits there never measured, wearing the name of a probe that
+    /// never ran — which is the failure mode this crate exists to avoid.
+    ItCannotAddressThisTarget,
+}
+
+impl RuledOutBecause {
+    /// Whether setting a kind aside for this reason is evidence that something filters it.
+    ///
+    /// False for [`Self::ItCannotAddressThisTarget`]: our own inability to form the probe
+    /// says nothing whatever about the path, and letting it stand in for filtering would
+    /// have the UI claim a network fact we never observed.
+    const fn suggests_filtering(self) -> bool {
+        matches!(self, Self::ItReportedFiltering | Self::ItWentSilent)
+    }
 }
 
 /// A probe kind that has been set aside for an endpoint, and why.
@@ -146,7 +164,13 @@ impl FallbackChain {
         match outcome {
             ProbeOutcome::Success(_) => {
                 self.consecutive_silent = 0;
-                if !self.ruled_out.is_empty() {
+                // Only a kind set aside *by the network* proves filtering. One we could not
+                // form the probe for proves something about this build.
+                if self
+                    .ruled_out
+                    .iter()
+                    .any(|entry| entry.because.suggests_filtering())
+                {
                     self.filtering_confirmed = true;
                 }
             }
@@ -162,6 +186,32 @@ impl FallbackChain {
                 }
             }
         }
+    }
+
+    /// Sets the current kind aside because this build cannot address the target with it.
+    ///
+    /// Separate from [`FallbackChain::record`] because it is not an outcome: no probe
+    /// reached the network, so there is nothing to fold into a measurement. Doing nothing
+    /// instead would retry the same impossible probe until the endpoint is forgotten.
+    ///
+    /// Does nothing once every kind is exhausted.
+    pub fn cannot_address_target(&mut self) {
+        let Some(kind) = self.current_kind() else {
+            return;
+        };
+        self.set_aside(kind, RuledOutBecause::ItCannotAddressThisTarget);
+    }
+
+    /// Whether the current kind was set aside because it could not address the target.
+    ///
+    /// Reported apart from filtering because the two are different claims: one is about the
+    /// network, the other about this build.
+    #[must_use]
+    pub fn unaddressable_kinds(&self) -> usize {
+        self.ruled_out
+            .iter()
+            .filter(|entry| entry.because == RuledOutBecause::ItCannotAddressThisTarget)
+            .count()
     }
 
     /// Returns to the preferred kind and forgets what was ruled out.
@@ -401,5 +451,58 @@ mod tests {
             ChainStep::Probe(ProbeKind::IcmpEcho),
             "a single timeout after a reset must not immediately abandon the kind"
         );
+    }
+
+    #[test]
+    fn a_kind_that_cannot_address_the_target_is_set_aside_immediately() {
+        // Unlike silence, this needs no run of evidence: nothing about the endpoint will
+        // make a probe we cannot form start working.
+        let mut chain = chain();
+        chain.cannot_address_target();
+
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TcpConnect));
+        assert_eq!(chain.unaddressable_kinds(), 1);
+        assert_eq!(
+            chain.ruled_out()[0].because,
+            RuledOutBecause::ItCannotAddressThisTarget
+        );
+    }
+
+    #[test]
+    fn being_unable_to_form_a_probe_is_never_evidence_of_filtering() {
+        // The honesty rule: "ICMP is filtered here" is a claim about the network. Our own
+        // missing IPv6 support is a claim about this build, and a later kind succeeding
+        // proves only that the later kind works.
+        let mut chain = chain();
+        chain.cannot_address_target();
+        chain.record(ProbeOutcome::Success(Rtt::from_micros(9_000)));
+
+        assert!(!chain.filtering_confirmed());
+    }
+
+    #[test]
+    fn a_kind_ruled_out_by_the_network_still_proves_filtering_afterwards() {
+        // The complement of the test above: mixing the two reasons must not suppress a
+        // genuine finding.
+        let mut chain = chain();
+        chain.cannot_address_target();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        chain.record(ProbeOutcome::Success(Rtt::from_micros(9_000)));
+
+        assert!(chain.filtering_confirmed());
+    }
+
+    #[test]
+    fn stepping_past_every_kind_this_way_leaves_the_path_walk() {
+        let mut chain = chain();
+        for _ in 0..3 {
+            chain.cannot_address_target();
+        }
+
+        assert_eq!(chain.current_kind(), None);
+        assert_eq!(chain.step(), ChainStep::WalkThePath);
+        // And once there is nothing left, saying it again changes nothing.
+        chain.cannot_address_target();
+        assert_eq!(chain.step(), ChainStep::WalkThePath);
     }
 }

@@ -229,7 +229,10 @@ pub(crate) const fn port_from_mib(raw: u32) -> u16 {
 /// fields, so this is where "0.0.0.0:0" stops being mistaken for an endpoint. Port 0 is
 /// rejected on its own too: it is not a destination anything can be sent to, so a probe
 /// aimed at it would measure nothing.
+/// An IPv4-mapped peer of a dual-stack socket is reported in its IPv4 form, so that the
+/// same host is one endpoint however it was discovered — see [`crate::address`].
 pub(crate) fn peer(address: IpAddr, port: u16) -> Option<SocketAddr> {
+    let address = crate::address::unmap_ip(address);
     if port == 0 || address.is_unspecified() {
         return None;
     }

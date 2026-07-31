@@ -367,6 +367,9 @@ fn queue(
             TargetChange::SetInterval { id, interval } => {
                 pending.push_back(ProbeCommand::SetInterval { id, interval });
             }
+            TargetChange::SetSource { id, source } => {
+                pending.push_back(ProbeCommand::SetSource { id, source });
+            }
             TargetChange::Unregister { id } => pending.push_back(ProbeCommand::Remove(id)),
         }
     }
