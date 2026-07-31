@@ -424,16 +424,30 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       tested end to end against fake platform sources, and it has not been exercised against
       a real game.
 - [ ] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
-- [ ] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
+- [x] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
       lists with live RTT/jitter/loss + throughput, per-endpoint sparkline; "probe blocked"
       honest state
-      — this is what makes the item above reachable: `AppMonitor::endpoints` already
-      produces the per-endpoint report the page needs, and nothing yet emits it. The page
-      must also state the flow-source situation (`nm_app::discovery::FlowStatus`): on a
-      machine without the one-time tracing setup there are **no UDP endpoints and no byte
-      counters at all**, which must read as "this is missing, and here is why", never as an
-      application that has gone quiet.
-- [ ] **Per-endpoint state, never a single per-app verdict.** Filtering rarely hits everything
+      — `src/features/app-monitor/`, fed by `list_processes` and the `AppEndpoints` event.
+      The page states the flow-source situation (`FlowStatus`) whenever it is not `Active`:
+      on a machine without the one-time tracing setup there are **no UDP endpoints and no
+      byte counters at all**, and the banner says so and how to fix it, because an empty
+      list must never read as an application that has gone quiet.
+      **Icons are not done.** They need `SHGetFileInfo` plus HICON→bitmap conversion in
+      `unsafe` Windows code, and — because a picker holds a few hundred processes — a lazy
+      per-process fetch to avoid megabytes of base64 crossing the IPC boundary for a list
+      the user scrolls past. That is a feature's worth of platform code for decoration, so
+      it is deferred to Phase 6's polish pass; the picker searches by name instead. The
+      `[~]` on the process-enumeration item above stays for the same reason.
+      The picker offers **every** running process, not only those already holding a socket:
+      a game the user wants to watch *before* it connects is exactly the case where the
+      first endpoints are worth catching. It is read when the page opens and when the user
+      asks again — never on a timer, since a process list is stale the instant it is taken.
+      **Throughput is a byte count over a stated window, not a rate.** The counter covers
+      between one and two traffic windows, so dividing would invent a precision the
+      measurement does not have.
+      Not done here: the *interface* an endpoint egresses from is shown as the local
+      address the probes bind to, not as an adapter name — see the item above.
+- [x] **Per-endpoint state, never a single per-app verdict.** Filtering rarely hits everything
       an application talks to: within one app some endpoints stay clean, some lose packets, and
       some are unreachable outright — commonly at the same moment, because they sit in different
       networks (a login service on a CDN, voice on one provider, the game server on another),
@@ -446,6 +460,12 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       `nm_probes::chain` already distinguishes these and flattening them would throw away the
       one thing that makes the verdict actionable. Sorting/grouping by severity, so the broken
       few are visible without hunting through a long list.
+      — an application carries `HealthCountsView` and nothing else; there is no field a UI
+      could render as a single colour for a game, which is the point. Endpoints are ordered
+      worst first **in Rust** (`nm_app::view`), because the ordering is a judgement about
+      severity and the frontend holds no business logic. Unreachable outranks degraded
+      outranks *filtered*: filtering is an absence of knowledge, and being told "no" is
+      knowledge.
 - [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 

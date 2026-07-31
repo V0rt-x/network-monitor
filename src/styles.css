@@ -357,3 +357,217 @@ body {
 .nm-state--pending {
   color: var(--nm-muted);
 }
+
+/* --- Per-application monitoring ------------------------------------------------------ */
+
+.nm-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nm-apps__flow {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--nm-warn);
+  border-radius: 0.5rem;
+  color: var(--nm-warn);
+  font-size: 0.85rem;
+}
+
+.nm-apps__window {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.85rem;
+}
+
+.nm-apps__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nm-picker {
+  border: 1px solid var(--nm-border);
+  border-radius: 0.75rem;
+  background: var(--nm-surface);
+  padding: 1rem;
+}
+
+.nm-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nm-picker__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.nm-picker__hint {
+  margin: 0.35rem 0 0;
+  color: var(--nm-muted);
+  font-size: 0.8rem;
+}
+
+.nm-picker__search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--nm-muted);
+}
+
+.nm-picker__search input {
+  background: var(--nm-bg);
+  color: var(--nm-text);
+  border: 1px solid var(--nm-border);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+}
+
+.nm-picker__list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.nm-picker__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--nm-border);
+  border-radius: 0.4rem;
+}
+
+.nm-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nm-picker__pid,
+.nm-picker__more {
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+}
+
+.nm-picker__more {
+  margin: 0.5rem 0 0;
+}
+
+.nm-appcard {
+  border: 1px solid var(--nm-border);
+  border-radius: 0.75rem;
+  background: var(--nm-surface);
+  padding: 1rem;
+}
+
+.nm-appcard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nm-appcard__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.nm-appcard__pid {
+  margin: 0.15rem 0 0;
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+}
+
+.nm-appcard__distribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+}
+
+.nm-appcard__endpoints {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nm-endpoint {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--nm-border);
+  border-radius: 0.5rem;
+}
+
+.nm-endpoint__identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.nm-endpoint__address {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nm-endpoint__transport {
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.nm-endpoint__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+
+.nm-endpoint__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.nm-endpoint__metrics dt {
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+}
+
+.nm-endpoint__metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.nm-endpoint__egress {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+}

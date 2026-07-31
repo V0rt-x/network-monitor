@@ -8,6 +8,7 @@
   "nav": {
     "label": "Sections",
     "dashboard": "Dashboard",
+    "apps": "Applications",
     "settings": "Settings"
   },
   "tray": {
@@ -77,6 +78,57 @@
       "jitter": "Jitter",
       "jitterMedian": "Jitter (median)",
       "loss": "Loss"
+    }
+  },
+  "apps": {
+    "waiting": "Waiting for the core…",
+    "unavailable": "The core stopped sending application measurements",
+    "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
+    "noEndpoints": "Nothing discovered yet for this application",
+    "window": "Figures cover the last {{seconds}} s",
+    "pid": "PID {{pid}}",
+    "start": "Monitor",
+    "stop": "Stop",
+    "sparklineLabel": "Round-trip time over time for {{endpoint}}",
+    "picker": {
+      "heading": "Running processes",
+      "hint": "Pick up to {{limit}} applications. Nothing is read from inside them — only which addresses they talk to.",
+      "searchLabel": "Search",
+      "searchPlaceholder": "Filter by name",
+      "refresh": "Refresh",
+      "loading": "Reading the process list…",
+      "unavailable": "The process list could not be requested",
+      "unsupportedPlatform": "This build cannot list processes on this operating system",
+      "refused": "The system refused to list running processes",
+      "noMatches": "No process matches that name",
+      "more": "Showing {{shown}} of {{total}} processes — narrow the search to see the rest"
+    },
+    "transport": {
+      "tcp": "TCP",
+      "udp": "UDP"
+    },
+    "liveness": {
+      "active": "In use",
+      "idle": "Idle"
+    },
+    "probing": {
+      "active": "Probed",
+      "demoted": "Probed less often"
+    },
+    "badge": {
+      "egressConflict": "Route differs from another app's"
+    },
+    "metric": {
+      "traffic": "Traffic ({{seconds}} s)"
+    },
+    "egress": {
+      "via": "Probes leave from {{address}}",
+      "unknown": "Egress address unknown; probes follow whatever route the system picks"
+    },
+    "flow": {
+      "active": "Per-process flow events are running.",
+      "notPermitted": "This account may not open a tracing session, so UDP endpoints and traffic counters are missing — TCP endpoints are still found. Adding your account to the local “Performance Log Users” group once, from an elevated prompt, restores them. The app never does this for you.",
+      "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
     }
   },
   "settings": {

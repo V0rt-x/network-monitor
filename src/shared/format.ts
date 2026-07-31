@@ -32,3 +32,35 @@ export const formatPct = (value: Numeric, locale: string): string =>
 /** A whole count, such as how many members of a group are in a state. */
 export const formatCount = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale).format(value);
+
+/**
+ * Units for a byte count, largest first.
+ *
+ * Decimal rather than binary, because these are network volumes and every other tool the
+ * user compares against — the router's page, the ISP's meter — counts them the same way.
+ */
+const BYTE_UNITS = [
+  { limit: 1e9, divisor: 1e9, suffix: 'GB' },
+  { limit: 1e6, divisor: 1e6, suffix: 'MB' },
+  { limit: 1e3, divisor: 1e3, suffix: 'kB' },
+] as const;
+
+/**
+ * A volume of traffic, or the dash when nothing counted it.
+ *
+ * `null` is the answer wherever the platform has no byte counters at all, and it must stay
+ * visibly different from a measured zero: a busy game reported as "0 B" would be a lie the
+ * user cannot see through.
+ *
+ * The unit is a symbol rather than a translated word — `kB` and `MB` are written the same
+ * in every locale this app targets — while the number itself goes through `Intl`.
+ */
+export const formatBytes = (value: Numeric, locale: string): string => {
+  if (value === null) return NO_VALUE;
+
+  const unit = BYTE_UNITS.find((entry) => value >= entry.limit);
+  if (!unit) return `${new Intl.NumberFormat(locale).format(value)} B`;
+
+  const scaled = value / unit.divisor;
+  return `${formatterFor(locale, scaled < 10 ? 1 : 0).format(scaled)} ${unit.suffix}`;
+};

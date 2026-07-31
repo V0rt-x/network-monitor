@@ -2,9 +2,11 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import { commands, events } from '../bindings';
 import type {
+  AppEndpoints,
   CoreHeartbeat,
   CoreStatus,
   NetworkHealth,
+  ProcessListView,
   Settings,
   SettingsView,
   TrayLabels,
@@ -18,20 +20,30 @@ import type {
  * the app insulated from the generator's output shape.
  */
 export type {
+  AppEndpoints,
+  AppView,
   BaselineGroup,
   CoreHeartbeat,
   CoreReadiness,
   CoreStatus,
+  EndpointView,
+  FlowStatusView,
   GroupView,
   HealthCountsView,
   HealthView,
+  LivenessView,
   NetworkHealth,
   PlatformKind,
   ProbeKindView,
+  ProbingView,
+  ProcessListProblem,
+  ProcessListView,
+  ProcessView,
   Settings,
   SettingsProblem,
   SettingsView,
   TargetView,
+  TransportView,
   TrayLabels,
 } from '../bindings';
 
@@ -48,6 +60,19 @@ export const subscribeToNetworkHealth = (
   events.networkHealth.listen((event) => {
     onHealth(event.payload);
   });
+
+export const subscribeToAppEndpoints = (
+  onEndpoints: (endpoints: AppEndpoints) => void,
+): Promise<UnlistenFn> =>
+  events.appEndpoints.listen((event) => {
+    onEndpoints(event.payload);
+  });
+
+export const fetchProcesses = (): Promise<ProcessListView> => commands.listProcesses();
+
+export const monitorApp = (pid: number): Promise<void> => commands.monitorApp(pid);
+
+export const forgetApp = (pid: number): Promise<void> => commands.forgetApp(pid);
 
 export const fetchSettings = (): Promise<SettingsView> => commands.getSettings();
 

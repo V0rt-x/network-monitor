@@ -1,19 +1,38 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AppMonitorPage } from './features/app-monitor/AppMonitorPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
 import { hideToTray, quitApp } from './shared/ipc';
 
-/** The two pages Phase 3 ships. A router would be a dependency for one boolean. */
-type Page = 'dashboard' | 'settings';
+/** The pages the app ships. A router would be a dependency for one switch. */
+type Page = 'dashboard' | 'apps' | 'settings';
 
 /** Literal keys, so a rename in `common.json` is a compile error rather than a blank tab. */
 const PAGES = [
   { id: 'dashboard', labelKey: 'nav.dashboard' },
+  { id: 'apps', labelKey: 'nav.apps' },
   { id: 'settings', labelKey: 'nav.settings' },
 ] as const satisfies readonly { readonly id: Page; readonly labelKey: string }[];
+
+/**
+ * Which page is mounted.
+ *
+ * Only one at a time, deliberately: an unmounted page holds no chart and receives no
+ * events, so the hidden ones cost nothing to keep in the app.
+ */
+const pageFor = (page: Page) => {
+  switch (page) {
+    case 'dashboard':
+      return <DashboardPage />;
+    case 'apps':
+      return <AppMonitorPage />;
+    case 'settings':
+      return <SettingsPage />;
+  }
+};
 
 export const App = () => {
   const { t } = useTranslation();
@@ -68,9 +87,7 @@ export const App = () => {
         </div>
       </header>
 
-      <main className="nm-app__body">
-        {page === 'dashboard' ? <DashboardPage /> : <SettingsPage />}
-      </main>
+      <main className="nm-app__body">{pageFor(page)}</main>
     </div>
   );
 };
