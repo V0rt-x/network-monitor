@@ -329,16 +329,20 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       one-time elevated action, the app sees TCP endpoints only. The UI must say that
       plainly and must never present an absent UDP endpoint as an absent flow. The app
       performs no elevation itself; it explains and leaves the action to the user.
-      **Keyword and level are a budget decision, not a detail.** `ut:SendPath |
-      ut:ReceivePath` at `Informational` yields the needed events; the same subscription at
-      full level produced sixteen times the volume. The measured ~400 events/s on an idle
-      machine fits the 1 %-of-a-core budget with room to spare; under load the rate reaches
-      thousands per second, where what decides the cost is the *per-event parse* — a cached
-      schema is fractions of a percent, a `TDH` lookup per event is the whole budget.
-      Kernel-side PID filtering (`EVENT_FILTER_TYPE_PID` on `EnableTraceEx2`) is therefore
-      the lever that matters: with the five-application cap it cuts the stream to the
-      processes the user picked and removes both the parse cost and the dependence on
-      whatever else the machine is doing.
+      **Keyword, level and an event-ID filter are what make this fit the budget**, and the
+      figures are measured rather than reasoned: `ut:SendPath | ut:ReceivePath` at
+      `Informational` (full level costs sixteen times the volume for the same information),
+      plus an `EVENT_FILTER_TYPE_EVENT_ID` filter on the two UDP event numbers, which the
+      kernel applies before anything reaches this process. Over identical 20-second runs
+      that filter took the delivered stream from 32 859 events to 94 — **99.7 % dropped** —
+      and the spike's whole CPU cost, session setup included, was 16 ms. The marginal cost
+      works out at ~0.5 µs per delivered event, so even 2 000 events/s would be 0.1–0.2 %
+      of one core against a 1 % budget. **ETW consumption is not a threat to the budget.**
+      PID filtering is *not* the lever — `ferrisetw` documents it as ineffective on a
+      user-mode session, and it could not work for this provider anyway, since the kernel
+      writes these events rather than the process they describe. Selecting the monitored
+      processes is a `u32` comparison in our callback, which after the event-ID filter
+      costs nothing worth measuring.
       Event numbers come from the provider's manifest and may move between Windows
       versions; the consumer resolves by provider and number and degrades when a number is
       absent rather than failing.
@@ -413,10 +417,11 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 ## Standing risks
 
 - **ETW via ferrisetw** is the least-proven dependency → Phase 4 starts with a spike; if blocked, fall back to raw `windows`-crate ETW consumption behind the same trait.
-  *The privilege half of this risk is now measured (`docs/etw-privileges-spike.md`): a
-  session needs a one-time group membership, the planned provider had to be replaced, and
-  kernel-side PID filtering turns out to be a budget precondition. The library half —
-  whether ferrisetw can express that filter and consume this provider — is still open, and
-  is what the implementation must prove.*
+  *Both halves are now measured (`docs/etw-privileges-spike.md`) and the risk is closed as
+  a feasibility question. A session needs a one-time group membership and the planned
+  provider had to be replaced; ferrisetw 1.2 then opened that provider unelevated, applied
+  the event-ID filter that makes the budget comfortable, and parsed the process, both
+  socket addresses and the byte counts off live events. What remains is ordinary
+  implementation risk, not "can this be done".*
 - **ICMP realism**: many game servers deprioritize/drop ICMP → fallback probes + honest UI states are first-class, not afterthoughts.
 - **Dev machine is macOS, target is Windows** → keep platform-free logic maximal; CI on Windows runners is the source of truth for `nm-platform/windows`.
