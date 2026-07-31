@@ -17,6 +17,7 @@ mod error;
 pub mod connection;
 pub mod flow;
 pub mod icmp;
+pub mod interface;
 pub mod process;
 
 pub use error::Error;

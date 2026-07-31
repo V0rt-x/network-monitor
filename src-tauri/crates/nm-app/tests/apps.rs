@@ -285,8 +285,23 @@ fn different_egress_routes_to_one_endpoint_are_disclosed() {
 
     let conflicted = monitor.endpoints(OTHER, now);
     assert!(conflicted[0].egress_conflict);
+    assert_eq!(
+        conflicted[0].source,
+        Some(local(10)),
+        "the application's own flow leaves where it leaves"
+    );
+    assert_eq!(
+        conflicted[0].probe_source,
+        Some(local(9)),
+        "and the probe says which route it is actually measuring instead"
+    );
+
     let owner = monitor.endpoints(APP, now);
     assert!(!owner[0].egress_conflict);
+    assert_eq!(
+        owner[0].probe_source, owner[0].source,
+        "the application the probe does follow is told nothing it has to read past"
+    );
 }
 
 #[test]

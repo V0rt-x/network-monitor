@@ -423,7 +423,23 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       only from the bindings. That is the honest state of it: the pipeline is built and
       tested end to end against fake platform sources, and it has not been exercised against
       a real game.
-- [ ] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
+- [x] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
+      — `nm_platform::interface`: the `InterfaceTable` trait, the platform-free
+      address→adapter mapping, and a Windows backend over `GetAdaptersAddresses`. Read-only,
+      unprivileged, and measured at ~2.5 ms, so it is re-read on the same five-second beat as
+      application membership rather than cached for the session — a VPN or an accelerator
+      coming up is precisely the event these labels exist to make visible.
+      **The friendly name, not the device description.** `Description` is the driver's word
+      for the hardware; `FriendlyName` is what the user has seen and possibly renamed, and
+      the entire point of naming an adapter is that the person reading recognises it. An
+      address no adapter claims shows as an address, never as a guessed name.
+      **The warning now names both routes.** The endpoint carries the address the
+      application's own flow leaves from *and*, when they differ, the one the probe is
+      actually bound to — the per-process interceptor case, and the case of an address a
+      baseline was already probing whose binding is not ours to move. "This may be wrong"
+      leaves the user nothing to act on; "your traffic leaves via the accelerator, the probe
+      leaves via Ethernet" is the finding. The second line is shown only when it differs, so
+      the disclosure is not buried under a route restated on every row.
 - [x] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
       lists with live RTT/jitter/loss + throughput, per-endpoint sparkline; "probe blocked"
       honest state

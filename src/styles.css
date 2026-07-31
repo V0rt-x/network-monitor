@@ -559,6 +559,12 @@ body {
   flex: none;
 }
 
+/* Only ever present when the probe cannot follow the application. It is a disclosure, not
+   a decoration, so it stands out from the line it follows. */
+.nm-endpoint__egress-probe {
+  color: var(--nm-warn);
+}
+
 .nm-visually-hidden {
   position: absolute;
   width: 1px;

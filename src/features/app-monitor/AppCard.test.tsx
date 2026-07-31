@@ -41,6 +41,9 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   probing: 'active',
   recentBytes: 4096,
   egress: '192.0.2.10',
+  egressInterface: 'Ethernet',
+  probeEgress: null,
+  probeEgressInterface: null,
   egressConflict: false,
   tunnelled: false,
   measurable: true,
@@ -211,7 +214,73 @@ describe('AppCard', () => {
     expect(screen.getByText('TLS')).toBeInTheDocument();
     expect(screen.getByText('Filtering confirmed')).toBeInTheDocument();
     expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
-    expect(screen.getByText('Probes leave from 192.0.2.10')).toBeInTheDocument();
+    expect(
+      screen.getByText(/This app's traffic leaves via Ethernet \(192\.0\.2\.10\)/),
+    ).toBeInTheDocument();
+  });
+
+  it('names the adapter, not only the address, so a VPN change is recognisable', () => {
+    // The core use case: comparing before and after turning an accelerator on. An address
+    // is not something a user can check that against; the name they see in Windows is.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [endpoint({ egress: '10.7.0.2', egressInterface: 'Accelerator' })],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeInTheDocument();
+  });
+
+  it('falls back to the bare address when no adapter claims it', () => {
+    // A tunnel that went down between the adapter snapshot and this emission. A guessed
+    // name would be worse than none.
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ egress: '10.7.0.2', egressInterface: null })] })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/leaves from 10\.7\.0\.2/)).toBeInTheDocument();
+  });
+
+  it('names the route the probe takes when it cannot follow the application', () => {
+    // The per-process interceptor case. Saying only "this may be wrong" leaves the user
+    // nothing to act on; saying which route the figure describes gives them the answer.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              egress: '10.7.0.2',
+              egressInterface: 'Accelerator',
+              probeEgress: '192.0.2.10',
+              probeEgressInterface: 'Ethernet',
+              egressConflict: true,
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/The probe cannot follow it and leaves via Ethernet \(192\.0\.2\.10\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
+  });
+
+  it('says nothing about a second route when the probe follows the application', () => {
+    render(<AppCard app={app()} trafficWindowSecs={30} onForget={vi.fn()} />);
+
+    expect(screen.queryByText(/The probe cannot follow it/)).not.toBeInTheDocument();
   });
 
   it('shows a live game server as carrying traffic, never as unreachable', () => {

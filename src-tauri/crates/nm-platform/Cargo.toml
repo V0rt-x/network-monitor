@@ -23,6 +23,10 @@ thiserror.workspace = true
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
+    # `IP_ADAPTER_ADDRESSES_LH` names NDIS types in its own fields, so `GetAdaptersAddresses`
+    # — which is what puts an adapter's name beside a probe's egress address — is only
+    # declared with this alongside the IP Helper feature above.
+    "Win32_NetworkManagement_Ndis",
     # `AF_INET`/`AF_INET6`, which select the address family of a connection table. Taken
     # from the headers rather than written as 2 and 23 so the values cannot rot.
     "Win32_Networking_WinSock",

@@ -21,6 +21,7 @@ use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
 use nm_core::target::{TargetId, TargetRegistry};
+use nm_platform::interface::{InterfaceNames, NetworkInterface};
 use nm_probes::probe::ProbeKind;
 
 const APP: AppId = AppId::new(1);
@@ -75,6 +76,17 @@ fn fill(monitor: &mut AppMonitor, id: TargetId, now: Instant, outcome: ProbeOutc
     }
 }
 
+/// Names the one adapter these tests pretend the machine has.
+///
+/// Invented, like every address here: `192.0.2.0/24` is the documentation range and
+/// nothing on a real machine appears in this file.
+fn adapters() -> InterfaceNames {
+    InterfaceNames::of(&[NetworkInterface {
+        name: "Test Adapter".to_owned(),
+        addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10))],
+    }])
+}
+
 fn view(monitor: &AppMonitor, now: Instant) -> AppView {
     AppView::of(
         APP_ID,
@@ -84,6 +96,7 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
             name: "game.exe".to_owned(),
         }],
         monitor.chart_ages_secs(),
+        &adapters(),
         &monitor.endpoints(APP, now),
     )
 }
@@ -235,6 +248,15 @@ fn every_caveat_travels_with_the_number() {
     assert!(endpoint.filtering_confirmed);
     assert!(endpoint.measurable);
     assert_eq!(endpoint.egress, Some(egress.to_string()));
+    assert_eq!(
+        endpoint.egress_interface.as_deref(),
+        Some("Test Adapter"),
+        "an address is not something a user can check a before-and-after against; a name is"
+    );
+    assert_eq!(
+        endpoint.probe_egress, None,
+        "the probe follows the application, so there is no second route to disclose"
+    );
     assert!(!endpoint.egress_conflict);
     assert_eq!(endpoint.recent_bytes, Some(4_096.0));
 }

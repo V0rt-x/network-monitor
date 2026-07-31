@@ -34,6 +34,7 @@ use nm_core::endpoint::{AppId, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::ProbeSample;
 use nm_core::target::{TargetId, TargetRegistry, TargetTag};
+use nm_platform::interface::InterfaceNames;
 use nm_platform::process::{Pid, ProcessInfo};
 use nm_probes::icmp::IcmpEchoProber;
 use nm_probes::path::PathProbe;
@@ -256,6 +257,10 @@ async fn session(
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut membership = tokio::time::interval(MEMBERSHIP_PERIOD);
     membership.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Which adapter each local address belongs to. Re-read on the same beat rather than
+    // once, because a VPN or an accelerator coming up is exactly the event these labels
+    // exist to make visible — and it is 2.5 ms of read-only enumeration when it happens.
+    let mut interfaces = read_interfaces();
 
     loop {
         flush(&mut pending, &probe_commands);
@@ -265,7 +270,7 @@ async fn session(
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
                 Some(MonitorCommand::WindowRevealed) => {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, applications, discovery.flow_status());
+                    emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
                 }
                 Some(MonitorCommand::MonitorApp(pid)) => {
                     // A fresh snapshot rather than the last periodic one: the user has just
@@ -304,6 +309,7 @@ async fn session(
                     applications.refresh(&snapshot);
                     discovery.watch(&applications.watched_pids());
                 }
+                interfaces = read_interfaces();
             }
             _ = ticker.tick() => {
                 // All of this runs whether the window is visible or not: hidden means "stop
@@ -314,7 +320,7 @@ async fn session(
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, applications, discovery.flow_status());
+                    emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
                 }
             }
         }
@@ -335,6 +341,20 @@ async fn snapshot_processes() -> Option<Vec<ProcessInfo>> {
     .await
     .ok()
     .flatten()
+}
+
+/// Names the adapters the machine's local addresses belong to.
+///
+/// Synchronous rather than on the blocking pool, unlike the process sweep: it is a single
+/// read-only enumeration measured at ~2.5 ms, which is short enough to leave on the runtime
+/// thread and far too short to justify a task hop. Failure is an empty snapshot — every
+/// egress address then shows as an address with no adapter name, which is what a platform
+/// with no backend does too, and is honest either way.
+fn read_interfaces() -> InterfaceNames {
+    nm_platform::interface::system_table()
+        .and_then(|table| table.interfaces())
+        .map(|interfaces| InterfaceNames::of(&interfaces))
+        .unwrap_or_default()
 }
 
 /// Records one sighting from discovery, if it belongs to a monitored application.
@@ -505,6 +525,7 @@ fn emit_apps(
     app: &AppHandle<Wry>,
     apps: &AppMonitor,
     applications: &Applications,
+    interfaces: &InterfaceNames,
     flow_status: FlowStatus,
 ) {
     let now = Instant::now();
@@ -525,6 +546,7 @@ fn emit_apps(
                 application.label().to_owned(),
                 processes,
                 apps.chart_ages_secs(),
+                interfaces,
                 &reports,
             )
         })

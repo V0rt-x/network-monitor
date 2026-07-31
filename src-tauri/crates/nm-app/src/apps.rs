@@ -904,9 +904,16 @@ impl AppMonitor {
                     .and_then(EdgeReading::reported_hop)
                     .and_then(|hop| edge?.history(hop.address))
                     .map(|history| self.grid.place(history, now));
+                // What the probe engine was actually told to bind to, which is not always
+                // what this application asked for — see `EndpointReport::probe_source`.
+                let probe_source = entry
+                    .id
+                    .and_then(|id| self.users.get(&id))
+                    .and_then(|users| users.source);
                 Some(EndpointReport::build(
                     tracked,
                     entry,
+                    probe_source,
                     path,
                     path_series,
                     &self.grid,
@@ -969,8 +976,17 @@ pub struct EndpointReport {
     pub probing: Probing,
     /// Bytes seen recently, or [`None`] where no source counts them.
     pub recent_bytes: Option<u64>,
-    /// Local address its probes egress from.
+    /// Local address the application's own flow egresses from.
     pub source: Option<IpAddr>,
+    /// Local address the probe is actually bound to.
+    ///
+    /// Normally the same as [`EndpointReport::source`] — that is the whole point of binding
+    /// it. It differs when the probe belongs to someone else: another application reaching
+    /// this endpoint by another interface, or a baseline that was already probing the
+    /// address and whose binding was chosen for the dashboard's purpose. Then the two are
+    /// shown side by side, because the honest thing to say is *which* route the figure
+    /// describes, not merely that it may be the wrong one.
+    pub probe_source: Option<IpAddr>,
     /// Whether two applications reach it by different routes, so one probe cannot
     /// represent both.
     pub egress_conflict: bool,
@@ -1014,6 +1030,7 @@ impl EndpointReport {
     fn build(
         tracked: &TrackedEndpoint,
         entry: &Entry,
+        probe_source: Option<IpAddr>,
         path: Option<EdgeReading>,
         path_series: Option<Vec<Option<f64>>>,
         grid: &Grid,
@@ -1046,6 +1063,7 @@ impl EndpointReport {
             probing: tracked.probing(),
             recent_bytes: tracked.recent_bytes(),
             source: entry.source,
+            probe_source,
             egress_conflict: entry.egress_conflict,
             tunnelled: entry.tunnelled,
             measurable: entry.measurable,

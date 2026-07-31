@@ -218,14 +218,34 @@ export type EndpointView = {
 	 *  byte count stays exact in a float far past any figure this window can hold.
 	 */
 	recentBytes: number | null,
-	/**
-	 *  The local address its probes egress from, so they follow the application's own
-	 *  route through any tunnel or accelerator.
-	 */
+	/**  The local address the application's own flow leaves from. */
 	egress: string | null,
 	/**
-	 *  Whether another monitored application reaches this endpoint by a different route, so
-	 *  one probe cannot represent both. Disclosed, never averaged away.
+	 *  The adapter that address belongs to, as the operating system names it to its user.
+	 * 
+	 *  Wi-Fi, Ethernet, the accelerator's own adapter — the thing a user can actually check
+	 *  a before-and-after comparison against. `null` where no adapter claims the address,
+	 *  which happens
+	 *  when a tunnel goes down between the snapshot and the question; a guessed name would
+	 *  be worse than none.
+	 */
+	egressInterface: string | null,
+	/**
+	 *  The local address the probe is bound to, when it is not the one above.
+	 * 
+	 *  `null` in the ordinary case, where the probe follows the application exactly. A value
+	 *  here means the figure describes a *different* route, and says which — the disclosure
+	 *  `CLAUDE.md` requires for the case a single probe cannot represent two applications, or
+	 *  where a baseline was already probing the address and its binding is not ours to move.
+	 */
+	probeEgress: string | null,
+	/**  The adapter the probe's own address belongs to. */
+	probeEgressInterface: string | null,
+	/**
+	 *  Whether the probe cannot be promised to follow this application's route.
+	 * 
+	 *  Disclosed, never averaged away. Where it is true, `probeEgress` says what the probe
+	 *  is measuring instead.
 	 */
 	egressConflict: boolean,
 	/**

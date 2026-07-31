@@ -17,6 +17,7 @@ use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
 use nm_core::path::PathEnd;
+use nm_platform::interface::InterfaceNames;
 use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -439,11 +440,29 @@ pub struct EndpointView {
     /// Carried as a float because a 64-bit integer cannot cross into JavaScript intact; a
     /// byte count stays exact in a float far past any figure this window can hold.
     pub recent_bytes: Option<f64>,
-    /// The local address its probes egress from, so they follow the application's own
-    /// route through any tunnel or accelerator.
+    /// The local address the application's own flow leaves from.
     pub egress: Option<String>,
-    /// Whether another monitored application reaches this endpoint by a different route, so
-    /// one probe cannot represent both. Disclosed, never averaged away.
+    /// The adapter that address belongs to, as the operating system names it to its user.
+    ///
+    /// Wi-Fi, Ethernet, the accelerator's own adapter — the thing a user can actually check
+    /// a before-and-after comparison against. `null` where no adapter claims the address,
+    /// which happens
+    /// when a tunnel goes down between the snapshot and the question; a guessed name would
+    /// be worse than none.
+    pub egress_interface: Option<String>,
+    /// The local address the probe is bound to, when it is not the one above.
+    ///
+    /// `null` in the ordinary case, where the probe follows the application exactly. A value
+    /// here means the figure describes a *different* route, and says which — the disclosure
+    /// `CLAUDE.md` requires for the case a single probe cannot represent two applications, or
+    /// where a baseline was already probing the address and its binding is not ours to move.
+    pub probe_egress: Option<String>,
+    /// The adapter the probe's own address belongs to.
+    pub probe_egress_interface: Option<String>,
+    /// Whether the probe cannot be promised to follow this application's route.
+    ///
+    /// Disclosed, never averaged away. Where it is true, `probeEgress` says what the probe
+    /// is measuring instead.
     pub egress_conflict: bool,
     /// Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
     /// rather than a round trip to the server.
@@ -487,9 +506,19 @@ pub struct EndpointView {
 
 impl EndpointView {
     /// Renders one endpoint report for the UI.
+    ///
+    /// `interfaces` names the adapters the egress addresses belong to. It is passed in
+    /// rather than looked up because it is one snapshot per emission shared by every
+    /// endpoint of every application, and because reading it here would put an
+    /// operating-system call inside a rendering function.
     #[must_use]
-    pub fn of(report: &EndpointReport) -> Self {
+    pub fn of(report: &EndpointReport, interfaces: &InterfaceNames) -> Self {
         let transport = TransportView::from(report.key.transport);
+        // Stated only when it differs: naming the same address twice on every row would
+        // bury the one case the disclosure exists for.
+        let probe_egress = report
+            .probe_source
+            .filter(|probe| Some(*probe) != report.source);
         Self {
             key: format!("{}/{}", transport_slug(transport), report.key.address),
             address: report.key.address.to_string(),
@@ -502,6 +531,14 @@ impl EndpointView {
             #[allow(clippy::cast_precision_loss)]
             recent_bytes: report.recent_bytes.map(|bytes| bytes as f64),
             egress: report.source.map(|source| source.to_string()),
+            egress_interface: report
+                .source
+                .and_then(|source| interfaces.name_of(source))
+                .map(str::to_owned),
+            probe_egress: probe_egress.map(|probe| probe.to_string()),
+            probe_egress_interface: probe_egress
+                .and_then(|probe| interfaces.name_of(probe))
+                .map(str::to_owned),
             egress_conflict: report.egress_conflict,
             tunnelled: report.tunnelled,
             measurable: report.measurable,
@@ -594,11 +631,13 @@ pub struct AppView {
 impl AppView {
     /// Renders one application's endpoints, worst first.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn of(
         id: u32,
         name: String,
         processes: Vec<AppProcessView>,
         chart_age_secs: Vec<f64>,
+        interfaces: &InterfaceNames,
         reports: &[EndpointReport],
     ) -> Self {
         let mut counts = HealthCounts::default();
@@ -606,7 +645,10 @@ impl AppView {
             counts.record(report.health);
         }
 
-        let mut endpoints: Vec<EndpointView> = reports.iter().map(EndpointView::of).collect();
+        let mut endpoints: Vec<EndpointView> = reports
+            .iter()
+            .map(|report| EndpointView::of(report, interfaces))
+            .collect();
         // Address breaks ties so the list does not reshuffle under the user's cursor every
         // time two endpoints agree about their health.
         endpoints.sort_by(|left, right| {

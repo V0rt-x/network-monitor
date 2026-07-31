@@ -157,7 +157,10 @@
       }
     },
     "egress": {
-      "via": "Probes leave from {{address}}",
+      "via": "This app's traffic leaves from {{address}}, and the probe follows it",
+      "viaNamed": "This app's traffic leaves via {{interface}} ({{address}}), and the probe follows it",
+      "probe": "The probe cannot follow it and leaves from {{address}} instead",
+      "probeNamed": "The probe cannot follow it and leaves via {{interface}} ({{address}}) instead",
       "unknown": "Egress address unknown; probes follow whatever route the system picks"
     },
     "flow": {

@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
 import { formatBytes, formatMs, formatPct } from '../../shared/format';
@@ -5,6 +6,23 @@ import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
+
+/**
+ * How the application's own traffic leaves the machine.
+ *
+ * An adapter name where the machine gave one — "Wi-Fi", "Ethernet", the accelerator's own
+ * adapter — because that is the thing a user comparing before and after a VPN can actually
+ * check. The address is kept beside it rather than replaced by it: the name is a label, and
+ * the address is what the probe was bound to.
+ */
+const egressLine = (endpoint: EndpointView, t: TFunction): string => {
+  if (endpoint.egress === null) return t('apps.egress.unknown');
+  if (endpoint.egressInterface === null) return t('apps.egress.via', { address: endpoint.egress });
+  return t('apps.egress.viaNamed', {
+    address: endpoint.egress,
+    interface: endpoint.egressInterface,
+  });
+};
 
 interface EndpointRowProps {
   readonly endpoint: EndpointView;
@@ -149,9 +167,22 @@ export const EndpointRow = ({
       {endpoint.path !== null && <PathPanel path={endpoint.path} />}
 
       <p className="nm-endpoint__egress">
-        {endpoint.egress === null
-          ? t('apps.egress.unknown')
-          : t('apps.egress.via', { address: endpoint.egress })}
+        {egressLine(endpoint, t)}
+        {/* Only where the probe does not follow the application. Naming the same route
+            twice on every row would bury the one case this disclosure exists for. */}
+        {endpoint.probeEgress !== null && (
+          <>
+            {' '}
+            <span className="nm-endpoint__egress-probe">
+              {endpoint.probeEgressInterface === null
+                ? t('apps.egress.probe', { address: endpoint.probeEgress })
+                : t('apps.egress.probeNamed', {
+                    address: endpoint.probeEgress,
+                    interface: endpoint.probeEgressInterface,
+                  })}
+            </span>
+          </>
+        )}
       </p>
     </li>
   );
