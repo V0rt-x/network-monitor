@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifest for this crate's *test* binaries only.
+
+  Linking Tauri pulls in comctl32 v6 exports (e.g. TaskDialogIndirect). Windows only
+  binds those when the binary declares the Common-Controls v6 side-by-side assembly;
+  without it the loader picks comctl32 v5 from System32 and the process dies at startup
+  with STATUS_ENTRYPOINT_NOT_FOUND. `tauri-build` embeds an equivalent manifest into the
+  application binary, but not into test harnesses.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+</assembly>

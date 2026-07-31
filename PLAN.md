@@ -8,14 +8,28 @@ the riskiest platform work (ETW) is de-risked early, but a usable app exists fro
 
 Goal: empty-but-real app that builds, tests, lints on Windows; CI-ready.
 
-- [ ] `git init`, `.gitignore`, README stub
-- [ ] Tauri 2 workspace: `nm-core`, `nm-probes`, `nm-platform`, `nm-app` crates; Vite + React + TS frontend
-- [ ] Tooling: rustfmt/clippy configs, ESLint (strict, no-`any`), Prettier, Vitest, tsc
-- [ ] tauri-specta wired: one demo command + event with generated TS types
-- [ ] i18next wired: `locales/en/common.json`, no hardcoded strings from day one
-- [ ] `just check` (or npm script) running all gates from CLAUDE.md; sample test in every crate + one UI test
-- [ ] GitHub Actions CI: Windows runner, full gate suite
+- [x] `git init`, `.gitignore`, README stub
+- [x] Tauri 2 workspace: `nm-core`, `nm-probes`, `nm-platform`, `nm-app` crates; Vite + React + TS frontend
+- [x] Tooling: rustfmt/clippy configs, ESLint (strict, no-`any`), Prettier, Vitest, tsc
+- [x] tauri-specta wired: one demo command + event with generated TS types
+- [x] i18next wired: `locales/en/common.json`, no hardcoded strings from day one
+- [x] `just check` (or npm script) running all gates from CLAUDE.md; sample test in every crate + one UI test
+- [x] GitHub Actions CI: Windows runner, full gate suite
 - **Accept**: fresh clone → `just check` green; `tauri dev` opens a window showing a translated string fed from Rust.
+  *Verified: window shows core version, platform backend and live heartbeat uptime, all rendered
+  from i18next keys with values supplied by Rust.*
+
+Phase 0 notes (deviations worth remembering):
+
+- `tauri.conf.json`, the app manifest and icons live in `src-tauri/crates/nm-app/`, not in
+  `src-tauri/`, because the Tauri app is one crate of a workspace rather than the whole of it.
+  The CLI discovers the config automatically.
+- `nm-app`'s tests are integration tests under `tests/`, and `[lib]`/`[[bin]]` set `test = false`.
+  Linking Tauri pulls in comctl32 v6 exports; in-crate test harnesses do not receive the
+  side-by-side manifest `tauri-build` embeds into the binary, so they died at load with
+  `STATUS_ENTRYPOINT_NOT_FOUND`. `build.rs` supplies `tests.manifest` to test targets instead.
+- IPC payloads stay within `u32`/`f64`: `specta` rejects 64-bit integers because JavaScript
+  numbers cannot carry them without precision loss.
 
 ## Phase 1 — Metrics core (pure Rust, fully tested)
 

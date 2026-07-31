@@ -1,0 +1,7 @@
+# Keep LF in the working tree on every platform. Prettier and rustfmt are configured for
+# LF, so a CRLF checkout would fail the formatting gates on a fresh clone under Windows.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary

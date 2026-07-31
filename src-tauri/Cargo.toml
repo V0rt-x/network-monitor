@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nm-core",
+    "crates/nm-probes",
+    "crates/nm-platform",
+    "crates/nm-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/mixmi/network-monitor"
+publish = false
+
+[workspace.dependencies]
+nm-core = { path = "crates/nm-core" }
+nm-platform = { path = "crates/nm-platform" }
+nm-probes = { path = "crates/nm-probes" }
+
+thiserror = "2"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# CLAUDE.md: panicking APIs are forbidden in library code. `clippy.toml` re-allows them
+# inside `#[cfg(test)]`, where a failed assertion is the intended outcome.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,15 @@
+[package]
+name = "nm-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "OS abstraction traits for Network Monitor plus their per-platform implementations."
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

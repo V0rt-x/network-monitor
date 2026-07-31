@@ -1,0 +1,30 @@
+{
+  "app": {
+    "name": "Network Monitor",
+    "tagline": "Local, private network diagnostics"
+  },
+  "core": {
+    "heading": "Monitoring core",
+    "loading": "Connecting to the monitoring core…",
+    "unreachable": "The monitoring core did not respond",
+    "versionLabel": "Core version",
+    "platformLabel": "Platform backend",
+    "readiness": {
+      "ready": "Ready",
+      "unsupportedPlatform": "No backend for this operating system"
+    },
+    "platform": {
+      "windows": "Windows",
+      "linux": "Linux",
+      "macOs": "macOS",
+      "unsupported": "Unsupported"
+    }
+  },
+  "heartbeat": {
+    "label": "Core uptime",
+    "waiting": "Waiting for the first heartbeat…",
+    "unavailable": "The core event channel is not available",
+    "uptime": "{{seconds}} s",
+    "tickLabel": "tick {{seq}}"
+  }
+}

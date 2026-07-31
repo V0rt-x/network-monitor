@@ -1,0 +1,23 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Tauri — `gen/schemas` is regenerated from the capability files on every build.
+src-tauri/target/
+src-tauri/crates/nm-app/gen/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Test / tooling output
+coverage/
+*.tsbuildinfo
+.eslintcache

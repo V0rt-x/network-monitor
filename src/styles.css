@@ -1,0 +1,84 @@
+:root {
+  color-scheme: dark;
+  --nm-bg: #0f172a;
+  --nm-surface: #16213c;
+  --nm-border: #1e3a5f;
+  --nm-text: #e2e8f0;
+  --nm-muted: #94a3b8;
+  --nm-accent: #38bdf8;
+  --nm-warn: #fbbf24;
+
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--nm-bg);
+  color: var(--nm-text);
+}
+
+.nm-app {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.nm-app__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.nm-app__tagline {
+  margin: 0.25rem 0 2rem;
+  color: var(--nm-muted);
+}
+
+.nm-panel {
+  background: var(--nm-surface);
+  border: 1px solid var(--nm-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+}
+
+.nm-panel__heading {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--nm-muted);
+}
+
+.nm-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+}
+
+.nm-facts dt {
+  color: var(--nm-muted);
+}
+
+.nm-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.nm-state--degraded {
+  color: var(--nm-warn);
+}
+
+.nm-state--pending {
+  color: var(--nm-muted);
+}

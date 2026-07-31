@@ -1,0 +1,15 @@
+# Generated or vendored — never reformat.
+dist/
+node_modules/
+src-tauri/target/
+src-tauri/crates/nm-app/gen/
+src/bindings.ts
+package-lock.json
+
+# Project documents and tooling config are authored by hand; Prettier's Markdown and
+# JSON opinions would churn them on every run.
+CLAUDE.md
+PLAN.md
+README.md
+.claude/
+.github/
