@@ -27,6 +27,9 @@
 //! A confident-looking number the data does not support is worse than an admitted gap.
 
 #![warn(missing_docs)]
+// CLAUDE.md confines `unsafe` to `nm-platform`; here that rule is compiler-enforced
+// rather than a convention someone has to remember.
+#![forbid(unsafe_code)]
 
 mod error;
 

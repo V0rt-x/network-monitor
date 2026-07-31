@@ -1807,6 +1807,7 @@ name = "nm-platform"
 version = "0.1.0"
 dependencies = [
  "thiserror 2.0.19",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -8,8 +8,25 @@ repository.workspace = true
 publish.workspace = true
 description = "OS abstraction traits for Network Monitor plus their per-platform implementations."
 
+[features]
+# Opt-in tests that send real packets. Off by default so the offline suite stays
+# deterministic; CI and developers run them deliberately.
+network-tests = []
+
 [dependencies]
 thiserror.workspace = true
+
+# The IP Helper API (`IcmpSendEcho2Ex`) is what lets the app measure without a
+# packet-capture driver or administrator rights. `windows-sys` is raw FFI with no COM
+# machinery, and Tauri already pins this major version, so it adds no second copy.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    # `IcmpSendEcho2Ex` is declared behind this feature because its signature names
+    # `PIO_APC_ROUTINE`, even though the synchronous form we use passes no APC.
+    "Win32_System_IO",
+] }
 
 [lints]
 workspace = true

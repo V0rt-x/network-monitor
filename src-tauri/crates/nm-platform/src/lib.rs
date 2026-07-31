@@ -13,6 +13,8 @@
 
 mod error;
 
+pub mod icmp;
+
 pub use error::Error;
 
 /// The host platforms Network Monitor targets.

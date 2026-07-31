@@ -44,6 +44,16 @@ check that the generated IPC bindings are committed and current, `tsc --noEmit`,
 `eslint --max-warnings 0`, `prettier --check` and `vitest run`. The same command is the
 whole of CI, on a Windows runner.
 
+The suite stays offline and deterministic. Tests that send real packets are opt-in and
+run deliberately:
+
+```sh
+cargo test -p nm-platform --features network-tests -- --nocapture
+```
+
+They need a working internet connection and report what the network actually did, which
+is why they are also the instrument for the measurement-model reality check in `PLAN.md`.
+
 ## Layout
 
 ```

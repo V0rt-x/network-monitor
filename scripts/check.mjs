@@ -43,10 +43,18 @@ const bindingsAreCommitted = () => {
 const GATES = [
   { name: 'rustfmt', run: () => run('cargo fmt --all --check', rustRoot) },
   {
+    // `--all-features` so opt-in code — such as the tests that send real packets — is
+    // linted here, even though the suite below deliberately does not run it.
     name: 'clippy',
-    run: () => run('cargo clippy --workspace --all-targets -- -D warnings', rustRoot),
+    run: () =>
+      run('cargo clippy --workspace --all-targets --all-features -- -D warnings', rustRoot),
   },
-  { name: 'cargo test', run: () => run('cargo test --workspace', rustRoot) },
+  {
+    // No `--all-features`: the gate suite stays offline and deterministic. Network tests
+    // are run deliberately; see README.
+    name: 'cargo test',
+    run: () => run('cargo test --workspace', rustRoot),
+  },
   { name: 'bindings up to date', run: bindingsAreCommitted },
   { name: 'tsc', run: () => run('npm run typecheck', repoRoot) },
   { name: 'eslint', run: () => run('npm run lint', repoRoot) },

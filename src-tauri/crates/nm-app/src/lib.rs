@@ -9,6 +9,8 @@
 //! for the Windows loader constraint that forces this.
 
 #![warn(missing_docs)]
+// The app layer wires crates together; it has no business dereferencing raw pointers.
+#![forbid(unsafe_code)]
 
 mod commands;
 mod error;

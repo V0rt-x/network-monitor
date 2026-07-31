@@ -12,6 +12,8 @@
 //! probers and the scheduler land in Phase 2 (see `PLAN.md`).
 
 #![warn(missing_docs)]
+// Every OS call goes through a `nm-platform` trait, so this crate needs no `unsafe`.
+#![forbid(unsafe_code)]
 
 mod error;
 
