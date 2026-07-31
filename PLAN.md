@@ -136,12 +136,21 @@ Goal: real measurements against real hosts, still no per-app discovery.
       are direct, in the same session.
       — detection (`nm_core::address`, configurable ranges) and routing to the TLS probe
       (`select_kind`) done. The honest *labelling* in the UI remains, and depends on Phase 3.
-- [ ] **Endpoint labelling from the OS DNS cache** (candidate): Windows' resolver cache maps
-      the sentinel address back to the domain that produced it, so a tunnelled endpoint can
-      be shown by name rather than as a meaningless synthetic address — read-only, no capture,
-      no router access. Needs a stable API (`DnsGetCacheDataTable`) verified first; applications that
-      resolve over their own DoH will not appear in it.
-- [ ] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock.
+- [ ] **Endpoint labelling from the OS DNS cache** (candidate) — **deferred to Phase 4**, where
+      an endpoint list exists to label. Windows' resolver cache maps the sentinel address back to
+      the domain that produced it, so a tunnelled endpoint could be shown by name rather than as
+      a meaningless synthetic address — read-only, no capture, no router access.
+      *The precondition set here is not met*: `DnsGetCacheDataTable` does not appear anywhere in
+      `windows-sys` 0.61, i.e. it is absent from the Win32 metadata and is an undocumented
+      `dnsapi.dll` export whose structures have changed between Windows versions. Committing to
+      it would put an unsupported API in a tool that must not break on a Windows update. Decide
+      in Phase 4 between shipping without names, shelling out to a supported command, or
+      accepting the undocumented export behind a clearly optional feature. Applications that
+      resolve over their own DoH will not appear in the cache either way.
+- [x] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock.
+      — the cap is wired in `ProbeRunner::new` from `GLOBAL_PROBE_RATE_CAP_PER_SEC` and enforced
+      by `nm_core::scheduler`'s token bucket; tested with an injected clock, including that
+      targets over budget stay due rather than being dropped.
       **A TLS probe is still more expensive than an ICMP echo** — a connection setup and a few
       hundred bytes against a 32-byte echo — so tunnelled endpoints need a longer interval,
       with passive flow statistics covering the gaps. Much less expensive than first assumed,
@@ -153,7 +162,19 @@ Goal: real measurements against real hosts, still no per-app discovery.
   the path outward; `nm-probes`' sends a real `ClientHello` to three public resolvers. The
   offline suite covers the ICMP prober through a `mockall` platform mock, the TCP and TLS
   probers against loopback listeners, and the chain, backoff and runner as pure state machines
-  with an injected clock. Phase 2 is complete.*
+  with an injected clock.*
+
+**Phase 2 status: the probe engine is done; two items are deliberately open and neither can be
+closed here.**
+
+- Endpoint labelling from the DNS cache is a *candidate* whose stated precondition failed — see
+  above. Deferred to Phase 4 as a decision, not as work.
+- FakeIP handling is `[~]` because its remaining half is UI: detection, classification and probe
+  routing are done and tested, but "label the measurement honestly as end-to-end-through-a-tunnel"
+  needs somewhere to display it. Phase 3 builds that.
+
+Everything Phase 2 can finish on its own is finished; the rest is carried forward explicitly
+rather than marked done.
 
 What the spike settled (full report in `docs/measurement-reality-check.md`):
 
