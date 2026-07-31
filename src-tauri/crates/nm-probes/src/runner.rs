@@ -226,6 +226,53 @@ impl ProbeRunner {
         Ok(())
     }
 
+    /// Changes how often a target is probed.
+    ///
+    /// This is how the per-application endpoint cap is enforced without dropping anything:
+    /// an endpoint ranked past the cap, or one that has gone idle, is stretched to a longer
+    /// interval rather than unregistered. Failure history is kept — demotion says how often
+    /// we want to look, not that the endpoint's silence is forgiven.
+    ///
+    /// **The change takes effect from the next probe, not this one.** A deadline the target
+    /// has already been waiting on is left alone, so demotion never cancels a measurement
+    /// that was about to happen and — the other side of the same coin — promotion is not
+    /// felt until the pending probe lands. That is [`nm_core::scheduler::ProbeScheduler`]'s
+    /// documented behaviour, and it is what makes this safe to call on every discovery
+    /// sweep: re-stating an interval cannot push a deadline into the future forever, so a
+    /// target probed less often than the sweep rate still comes due.
+    ///
+    /// Returns `true` if the target is registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Core`] wrapping [`nm_core::Error::ZeroInterval`] for a zero
+    /// interval, which would make the target permanently due and starve every other one.
+    pub fn set_interval(
+        &mut self,
+        id: TargetId,
+        interval: Duration,
+        now: Instant,
+    ) -> Result<bool, Error> {
+        let Some(state) = self.targets.get_mut(&id) else {
+            return Ok(false);
+        };
+        if state.backoff.base() == interval {
+            return Ok(true);
+        }
+
+        state.backoff.rebase(interval)?;
+        let next = state.backoff.interval();
+        let in_flight = state.in_flight;
+
+        // A probe already out gets its new cadence when its report lands and the completion
+        // path reschedules from the backoff; rescheduling now would give the target two
+        // deadlines.
+        if !in_flight {
+            self.scheduler.schedule(id, next, now)?;
+        }
+        Ok(true)
+    }
+
     /// Stops measuring a target. Returns `true` if it was registered.
     ///
     /// A probe already in flight is not cancelled — nothing can un-send a packet — but its
@@ -761,6 +808,120 @@ mod tests {
             .unwrap();
 
         assert_eq!(runner.due(start)[0].target.source, Some(source));
+    }
+
+    #[test]
+    fn demoting_a_target_stretches_the_cadence_from_the_next_probe() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+        let demoted = DEFAULT_INTERVAL * 10;
+
+        // The probe it was already due for still happens: demotion slows a target down, it
+        // does not cancel a measurement that has already been waited for.
+        assert_eq!(runner.due(start).len(), 1);
+        assert!(runner.set_interval(id(0), demoted, start).unwrap());
+        runner.complete(&report(id(0), start, success()));
+
+        assert!(
+            runner.due(start + DEFAULT_INTERVAL).is_empty(),
+            "the old cadence must not survive the change"
+        );
+        assert_eq!(runner.due(start + demoted).len(), 1);
+    }
+
+    #[test]
+    fn promoting_a_target_restores_the_short_cadence() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+        let demoted = DEFAULT_INTERVAL * 10;
+
+        runner.due(start);
+        runner.set_interval(id(0), demoted, start).unwrap();
+        runner.complete(&report(id(0), start, success()));
+
+        let promoted_at = start + demoted;
+        assert_eq!(runner.due(promoted_at).len(), 1);
+        runner
+            .set_interval(id(0), DEFAULT_INTERVAL, promoted_at)
+            .unwrap();
+        runner.complete(&report(id(0), promoted_at, success()));
+
+        assert_eq!(runner.due(promoted_at + DEFAULT_INTERVAL).len(), 1);
+    }
+
+    #[test]
+    fn restating_the_same_interval_never_starves_a_target() {
+        // The caller re-states its decision on every discovery sweep. If each restatement
+        // rescheduled, a target probed less often than the sweep rate would have its
+        // deadline pushed out once a second and would never be probed again.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        let demoted = DEFAULT_INTERVAL * 10;
+        runner.set_interval(id(0), demoted, start).unwrap();
+
+        // A sweep every second, for longer than the demoted interval.
+        let mut now = start;
+        for _ in 0..30 {
+            now += Duration::from_secs(1);
+            runner.set_interval(id(0), demoted, now).unwrap();
+        }
+
+        assert_eq!(
+            runner.due(now).len(),
+            1,
+            "a repeatedly re-stated interval must still come due"
+        );
+    }
+
+    #[test]
+    fn changing_the_interval_keeps_the_failure_history() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+        run_rounds(&mut runner, start, 200, &timeout(ProbeKind::IcmpEcho));
+
+        let stretched_until = runner.next_deadline().expect("still scheduled");
+        runner.set_interval(id(0), DEFAULT_INTERVAL, start).unwrap();
+
+        // Re-stating the base interval says how often we want to look; it is not an
+        // amnesty. An endpoint silent for ages must not be handed full rate again.
+        assert_eq!(
+            runner.next_deadline(),
+            Some(stretched_until),
+            "a rank change must not pull a long-dead endpoint's probe forward"
+        );
+    }
+
+    #[test]
+    fn an_interval_for_an_unknown_target_is_reported_rather_than_invented() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        assert!(!runner.set_interval(id(7), DEFAULT_INTERVAL, start).unwrap());
+    }
+
+    #[test]
+    fn a_zero_interval_is_refused() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert!(runner.set_interval(id(0), Duration::ZERO, start).is_err());
+        // The refusal must leave the target probing exactly as it was.
+        assert_eq!(runner.due(start + DEFAULT_INTERVAL).len(), 1);
     }
 
     #[test]

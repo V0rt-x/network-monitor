@@ -69,6 +69,35 @@ impl Backoff {
             .min(self.max)
     }
 
+    /// The interval this target is probed at before any stretching.
+    #[must_use]
+    pub const fn base(&self) -> Duration {
+        self.base
+    }
+
+    /// Changes the base interval, keeping the failure history.
+    ///
+    /// Used when a target's priority changes — an endpoint demoted past the per-application
+    /// cap should be probed less often, but *how often we want to look* is a different
+    /// question from *how the endpoint has been behaving*. Discarding the failure count here
+    /// would put a long-dead endpoint back to full rate for another few probes every time
+    /// its ranking shifted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ZeroInterval`] for a zero base, for the same reason [`Self::new`]
+    /// does.
+    pub fn rebase(&mut self, base: Duration) -> Result<(), Error> {
+        if base.is_zero() {
+            return Err(Error::ZeroInterval);
+        }
+        self.base = base;
+        // Same rule as construction: a ceiling below the floor would silently probe faster
+        // than asked.
+        self.max = self.max.max(base);
+        Ok(())
+    }
+
     /// How many probes in a row have failed to say anything new.
     #[must_use]
     pub const fn consecutive_failures(&self) -> u32 {
@@ -240,5 +269,56 @@ mod tests {
             Duration::from_secs(5),
             "a nonsensical ceiling must not make probing faster than asked"
         );
+    }
+
+    #[test]
+    fn rebasing_changes_the_cadence() {
+        let mut backoff = backoff();
+        assert_eq!(backoff.base(), BASE);
+
+        backoff.rebase(Duration::from_secs(10)).unwrap();
+
+        assert_eq!(backoff.base(), Duration::from_secs(10));
+        assert_eq!(backoff.interval(), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn rebasing_keeps_what_the_endpoint_has_been_doing() {
+        // Demoting an endpoint says how often we want to look, not that its silence is
+        // forgiven; resetting here would restore full rate to a dead endpoint every time
+        // its ranking shifted.
+        let mut backoff = backoff();
+        fail(&mut backoff, FAILURES_BEFORE_STRETCHING + 2);
+        let stretched = backoff.consecutive_failures();
+
+        backoff.rebase(Duration::from_secs(2)).unwrap();
+
+        assert_eq!(backoff.consecutive_failures(), stretched);
+        assert!(
+            backoff.is_stretched(),
+            "a rebased backoff keeps its stretch"
+        );
+    }
+
+    #[test]
+    fn rebasing_past_the_ceiling_raises_it() {
+        let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(5)).unwrap();
+        backoff.rebase(Duration::from_secs(30)).unwrap();
+        fail(&mut backoff, 50);
+        assert_eq!(
+            backoff.interval(),
+            Duration::from_secs(30),
+            "the floor must never be capped below itself"
+        );
+    }
+
+    #[test]
+    fn rebasing_to_zero_is_refused() {
+        let mut backoff = backoff();
+        assert_eq!(
+            backoff.rebase(Duration::ZERO).unwrap_err(),
+            Error::ZeroInterval
+        );
+        assert_eq!(backoff.base(), BASE, "a refused rebase changes nothing");
     }
 }
