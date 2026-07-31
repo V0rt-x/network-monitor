@@ -100,11 +100,20 @@ Goal: real measurements against real hosts, still no per-app discovery.
 - [x] Source-address binding on all probers (probe egresses via a chosen local address/interface)
       — implemented and verified live for ICMP; carried into TCP-connect (bind before connect,
       with a mismatched address family refused rather than silently handed to the OS)
-- [ ] Async probe runner on tokio: timeouts, cancellation, per-target backoff on repeated failure.
+- [x] Async probe runner on tokio: timeouts, cancellation, per-target backoff on repeated failure.
       **Windows needs ~2 s to report a refused TCP connection** — measured on loopback, where the
       reset is instant; the stack retries the attempt before believing it. A TCP probe deadline
-      under that turns every closed port into fabricated packet loss, so TCP-connect needs its
-      own generous deadline and the runner must treat a slow TCP probe as normal.
+      under that turns every closed port into fabricated packet loss, so the connecting kinds get
+      six seconds (`timeout_for`) while an echo gets one.
+      — `nm_probes::runner` splits decisions from execution: `ProbeRunner` reads no clock and
+      opens no socket, so a day of scheduling, degradation and recovery is testable in
+      milliseconds on any OS; `drive` is the thin tokio loop. A dispatched target is
+      *unscheduled* until its answer arrives, so a probe outliving its own interval is never
+      issued twice and the rate cap is spent on probes that are actually happening.
+      Backoff (`nm_core::backoff`) stretches only on *unbroken* failure — an endpoint losing
+      every other packet keeps full resolution, because that loss is the measurement the user
+      came for. Switching probe kind resets it: the old kind's failures say nothing about its
+      replacement. Our own failures reach the caller but never touch the chain or the backoff.
 - [x] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
       — `nm_probes::chain::FallbackChain`, a pure state machine: no clock, no probes, so a
       whole session of degradation is testable without a network. An explicit "filtered"
@@ -140,9 +149,11 @@ Goal: real measurements against real hosts, still no per-app discovery.
       that made a full handshake unrepeatable. The long-lived-connection idea and TLS session
       resumption are no longer relevant — neither applies to a handshake we never finish.
 - **Accept**: integration test (feature-gated, run manually/CI-opt-in) probing localhost + a public anycast IP; unit suite runs offline via mocks.
-  *Partly met: `nm-platform`'s `network-tests` feature probes loopback, a public anycast IP and
-  walks the path outward. The offline suite covers the ICMP prober through a `mockall` platform
-  mock and the TCP prober against a loopback listener; the runner and the chain still to come.*
+  *Met: `nm-platform`'s `network-tests` feature probes loopback, a public anycast IP and walks
+  the path outward; `nm-probes`' sends a real `ClientHello` to three public resolvers. The
+  offline suite covers the ICMP prober through a `mockall` platform mock, the TCP and TLS
+  probers against loopback listeners, and the chain, backoff and runner as pure state machines
+  with an injected clock. Phase 2 is complete.*
 
 What the spike settled (full report in `docs/measurement-reality-check.md`):
 

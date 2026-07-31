@@ -34,6 +34,7 @@
 mod error;
 
 pub mod address;
+pub mod backoff;
 pub mod cidr;
 pub mod history;
 pub mod path;

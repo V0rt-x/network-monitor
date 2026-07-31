@@ -23,6 +23,7 @@ pub mod chain;
 pub mod icmp;
 pub mod path;
 pub mod probe;
+pub mod runner;
 pub mod tcp;
 pub mod tls;
 

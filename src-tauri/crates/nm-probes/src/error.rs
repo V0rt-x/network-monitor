@@ -67,4 +67,22 @@ pub enum Error {
         /// The probe kind whose task was lost.
         kind: ProbeKind,
     },
+
+    /// The scheduling core rejected a configuration.
+    #[error(transparent)]
+    Core(#[from] nm_core::Error),
+
+    /// A plan named a probe kind the runner was not given an implementation of.
+    ///
+    /// A wiring mistake in the application, not a network condition. Reporting it as a
+    /// timeout would blame an endpoint for our own missing configuration.
+    #[error("no {kind:?} prober is configured")]
+    NoProberFor {
+        /// The kind that was asked for.
+        kind: ProbeKind,
+    },
+
+    /// Every probe kind was ruled out but no path walker was configured to take over.
+    #[error("no path walker is configured")]
+    NoPathWalker,
 }

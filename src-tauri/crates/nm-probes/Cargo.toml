@@ -24,9 +24,16 @@ thiserror.workspace = true
 async-trait = "0.1"
 
 # `net` for the TCP prober's socket, `time` for probe deadlines, `rt` to move the blocking
-# ICMP call off the runtime's worker threads. No `macros`, no `rt-multi-thread`: the
-# runtime itself is `nm-app`'s to own.
-tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+# ICMP call off the runtime's worker threads, `sync` + `macros` for the runner's command
+# channel and its `select!`. No `rt-multi-thread`: the runtime itself is `nm-app`'s to own.
+tokio = { workspace = true, features = [
+    "io-util",
+    "macros",
+    "net",
+    "rt",
+    "sync",
+    "time",
+] }
 
 [dev-dependencies]
 mockall.workspace = true

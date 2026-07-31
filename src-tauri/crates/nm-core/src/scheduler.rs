@@ -150,6 +150,37 @@ impl ProbeScheduler {
         Ok(())
     }
 
+    /// Schedules `id` with its first probe a full `interval` from `now`.
+    ///
+    /// The counterpart to [`ProbeScheduler::schedule`] for a target that has just *finished*
+    /// a probe rather than just appeared. A driver that unschedules a target while its probe
+    /// is in flight — which is how it stops a slow probe from being issued twice — uses this
+    /// to put it back, so the interval is measured from the answer rather than from the
+    /// request. An expensive probe therefore spaces itself out instead of queueing behind
+    /// itself. Any existing deadline for `id` is replaced.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ZeroInterval`] if `interval` is zero.
+    pub fn schedule_after(
+        &mut self,
+        id: TargetId,
+        interval: Duration,
+        now: Instant,
+    ) -> Result<(), Error> {
+        if interval.is_zero() {
+            return Err(Error::ZeroInterval);
+        }
+        self.entries.insert(
+            id,
+            Schedule {
+                interval,
+                next_due: now.checked_add(interval).unwrap_or(now),
+            },
+        );
+        Ok(())
+    }
+
     /// Stops probing `id`. Returns `true` if it was scheduled.
     pub fn unschedule(&mut self, id: TargetId) -> bool {
         self.entries.remove(&id).is_some()
@@ -286,6 +317,54 @@ mod tests {
         scheduler.due(start, &mut out);
         assert_eq!(out, ids);
         assert_eq!(scheduler.next_deadline(), Some(start + SECOND));
+    }
+
+    #[test]
+    fn a_target_rescheduled_after_a_probe_waits_a_full_interval() {
+        // How a driver stops a slow probe being issued twice: unschedule on dispatch, put it
+        // back when the answer arrives. The interval must then run from the answer.
+        let start = Instant::now();
+        let (mut scheduler, ids) = with_targets(1, SECOND, 32, start);
+        let mut out = Vec::new();
+
+        scheduler.due(start, &mut out);
+        scheduler.unschedule(ids[0]);
+        assert!(scheduler.is_empty());
+
+        // The probe took five seconds; the next one is due a second after it finished.
+        let finished = start + Duration::from_secs(5);
+        scheduler.schedule_after(ids[0], SECOND, finished).unwrap();
+        assert_eq!(scheduler.next_deadline(), Some(finished + SECOND));
+
+        scheduler.due(finished, &mut out);
+        assert!(out.is_empty(), "not due until the interval has passed");
+        scheduler.due(finished + SECOND, &mut out);
+        assert_eq!(out, ids);
+    }
+
+    #[test]
+    fn rescheduling_after_a_probe_replaces_any_pending_deadline() {
+        let start = Instant::now();
+        let (mut scheduler, ids) = with_targets(1, SECOND, 32, start);
+        scheduler
+            .schedule_after(ids[0], Duration::from_secs(10), start)
+            .unwrap();
+        assert_eq!(
+            scheduler.next_deadline(),
+            Some(start + Duration::from_secs(10))
+        );
+    }
+
+    #[test]
+    fn rescheduling_after_a_probe_refuses_a_zero_interval() {
+        let start = Instant::now();
+        let (mut scheduler, ids) = with_targets(1, SECOND, 32, start);
+        assert_eq!(
+            scheduler
+                .schedule_after(ids[0], Duration::ZERO, start)
+                .unwrap_err(),
+            Error::ZeroInterval
+        );
     }
 
     #[test]
