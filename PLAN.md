@@ -198,7 +198,7 @@ What the spike settled (full report in `docs/measurement-reality-check.md`):
   into legs unless the user supplies the proxy's address.
 - **Windows returns TTL expiries with the hop's address**, so path probing gets the identity it
   needs; walks must step over silent hops rather than stop at the first.
-- **The Valve SDR hostnames were guesswork and do not resolve.** Phase 5 must take them from the
+- **The Valve SDR hostnames were guesswork and do not resolve.** Phase 6 must take them from the
   SDR configuration Steam publishes, not from a guessed naming scheme.
 
 ## Phase 3 — App shell & general network health (first usable build)
@@ -261,7 +261,7 @@ Goal: tray app a user can run during a game.
   by tests: `tests/monitor.rs` asserts domestic-clean-with-foreign-dead comes out as exactly that
   and that one failing member never turns its healthy siblings red.
   **Not yet verified: the CPU and RAM budget under a running game.** That needs a real gaming
-  session and a release build, and the numbers belong in the Phase 6 perf pass where they are
+  session and a release build, and the numbers belong in the Phase 7 perf pass where they are
   measured properly and written down. Nothing here should be read as a measured budget claim.
 
 Phase 3 decisions worth remembering:
@@ -436,7 +436,7 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       `unsafe` Windows code, and — because a picker holds a few hundred processes — a lazy
       per-process fetch to avoid megabytes of base64 crossing the IPC boundary for a list
       the user scrolls past. That is a feature's worth of platform code for decoration, so
-      it is deferred to Phase 6's polish pass; the picker searches by name instead. The
+      it is deferred to Phase 7's polish pass; the picker searches by name instead. The
       `[~]` on the process-enumeration item above stays for the same reason.
       The picker offers **every** running process, not only those already holding a socket:
       a game the user wants to watch *before* it connects is exactly the case where the
@@ -508,7 +508,90 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
 - [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 
-## Phase 5 — Service status, game reference pools & diagnosis verdicts
+## Phase 5 — Measuring the endpoint that answers nothing
+
+Goal: real figures for a game's **match server** — the endpoint the whole product exists to
+watch, and the one nothing we can send will ever answer.
+
+This phase was inserted after Phase 4 shipped and the app was run against a live match. The
+match server appeared, was proven alive by its own traffic, and carried **no round-trip
+time, no jitter and no loss** — three dashes where the product's headline number belongs.
+Everything Phase 4 built is worth little until this is closed.
+
+**What is off the table, and why.** Tools that show "ping to the match server" do one of
+three things: speak the game's protocol, capture packets with a driver, or read the game's
+own overlay out of its memory. The second and third are banned by `CLAUDE.md` and visible
+to anti-cheat; the first is per-game, fragile, and would have to be re-done for every title.
+So the product must not promise an in-game ping. It promises two honest quantities instead,
+and **never merges them into one number called "ping"** — see the rule added to `CLAUDE.md`.
+
+### A — the path, measured continuously
+
+- [ ] **Sustained path-edge probing**: find the deepest hop toward the match server that
+      answers consistently, then probe *that hop* at the normal cadence. `nm_probes::path`
+      already walks the route and `nm_core::path` already classifies where it dies; what is
+      missing is turning a one-off trace into a stream of samples with a history, so the
+      figure has dynamics rather than being a snapshot.
+      **A single hop is not evidence.** Routers rate-limit ICMP addressed *to themselves*
+      while forwarding perfectly, so a spike or loss at the last hop is as likely to be a
+      busy control plane as a bad path. Probe the last **two or three** responding hops and
+      believe a degradation only when it shows at all of them; a figure that moves on the
+      deepest hop alone is reported as the router's, not the path's. Without this rule the
+      metric lies, which is worse than having none.
+- [ ] **Honest labelling**: the figure is "to the last answering hop, N hops short of the
+      server", never "RTT to the server". The UI states the hop count and where that hop
+      sits (own network / ISP / carrier NAT / past a long-haul link — `nm_core::path`
+      already answers this).
+- [ ] Re-walk the route periodically and whenever the chosen hop stops answering, so a route
+      change is followed rather than reported as loss.
+- [ ] Budget: 2–3 probes/s for the *active* match endpoint only, inside the global 32/s cap.
+      Endpoints ranked below it keep the ordinary single probe.
+
+### B — the flow itself, measured passively
+
+The only signal that measures the user's actual game traffic rather than a substitute, and
+it costs almost nothing: the events are **already being delivered**.
+
+- [ ] **Spike first, and this phase's plan depends on its answer.** `docs/etw-privileges-spike.md`
+      established that events `1169`/`1170` fire per *send/receive call* and carry
+      `NumMessages`. Whether that gives per-datagram timing for a real game is unverified:
+      a title that batches sends would report `NumMessages > 1` and the arrival timing would
+      be lost. Measure on a live match: the distribution of `NumMessages`, the distribution
+      of inter-event intervals on the receive direction, and the event rate per endpoint.
+      Record it in `docs/`, and state plainly which of the metrics below survive.
+- [ ] **Arrival jitter**: spread of the intervals between datagrams arriving from the server.
+      This is what the player feels as stutter. It is **not** RTT and must never be labelled
+      as one — it also folds in the server's own send cadence, which is a feature rather than
+      a flaw: combined with a clean path (A) it is what points at a server-side problem.
+- [ ] **Rate asymmetry**: our send rate is fully known, so a receive rate that falls while
+      sending holds steady is loss or a stall on the far side.
+- [ ] **Stall detector**: sending continues, nothing comes back for N hundred milliseconds.
+      A one-way outage, visible instantly and without sending a single probe.
+- [ ] All of it pure in `nm-core`, clock-injected, tested against synthetic event streams —
+      the same discipline as every other metric.
+
+### C — free real RTT where the OS already has it
+
+- [ ] **Passive TCP RTT from event `1477`** (`RttUs`/`MinRttUs`/`MaxRttUs`), which the Phase 4
+      spike found on the same unelevated session the app already opens. Not the match server,
+      but a *true* round-trip time for the game's login, CDN and voice endpoints, at the cost
+      of one more event number in the filter. Moved here from Phase 8+, where it was parked
+      as expensive; it is not.
+
+### The UI rule this phase exists to protect
+
+- [ ] The match-server card shows **two columns, never one**: *path* (A, with how far it
+      actually reaches) and *flow* (B). Merging them into a single "ping" would make the
+      product lie in exactly the way it was built not to.
+
+- **Accept**: on a live match, the match server shows a moving path figure with its hop
+  count and an arrival-jitter figure from its own traffic; killing the route to the chosen
+  hop makes the app re-walk and pick another rather than report loss; a spike confined to the
+  deepest hop alone is *not* reported as path degradation (verify with a rate-limiting hop or
+  a simulated trace); no figure anywhere is labelled as a round trip to the server; the whole
+  thing stays inside the probe budget with five applications monitored.
+
+## Phase 6 — Service status, game reference pools & diagnosis verdicts
 
 Goal: at-a-glance "is it them or me", including "the game's servers are down (or partly)".
 
@@ -527,7 +610,7 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
       normal case under filtering, not an edge case.
 - **Accept**: page reflects a manually blocked host (hosts-file test) within one check interval; service list extendable by editing JSON only; simulated scenarios (mocked probe outcomes) produce correct verdicts incl. partial game-server outage; stale cache entries expire and never fake an outage.
 
-## Phase 6 — Polish, persistence, packaging
+## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view
 - [ ] Russian locale (`locales/ru/*`) — validates i18n discipline end-to-end
@@ -536,17 +619,11 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 - [ ] Error UX: offline mode, no-targets state, ETW-unavailable banner
 - **Accept**: signed-ready installer; budgets verified and documented; switching to ru requires zero code changes.
 
-## Phase 7+ — Later (do not start without explicit go-ahead)
+## Phase 8+ — Later (do not start without explicit go-ahead)
 
 - Linux support (`sock_diag` netlink + `/proc`, unprivileged-ICMP handling)
 - macOS support (`libproc`; note: Tauri e2e tooling unavailable on macOS — rely on unit/headless layers)
 - Endpoint enrichment: offline ASN/GeoIP database (licensing TBD), reverse DNS (user-toggleable — it generates visible DNS traffic)
-- Passive TCP RTT from the OS's own estimates as a complement to probing — **no longer
-  believed to need elevation**: the Phase 4 spike found `Microsoft-Windows-TCPIP` emitting
-  a per-connection summary carrying `RttUs`/`MinRttUs`/`MaxRttUs` to the same unelevated
-  session Phase 4 already opens. Still late and still opt-in, but for cost rather than for
-  privilege. (`GetPerTcpConnectionEStats` — the API this item originally meant — does
-  require elevation; the ETW route sidesteps it.)
 - Detection of known accelerator/VPN virtual adapters (ExitLag, WTFast, WireGuard, …) for
   clearer egress labeling and per-process-interceptor warnings
 - Alerts (jitter/loss thresholds → tray notification), overlay-friendly compact mode

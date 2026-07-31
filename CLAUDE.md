@@ -80,6 +80,19 @@ The app must run *alongside* a competitive game without affecting FPS or ping.
   per-protocol knowledge and packet capture — both banned. One pipeline serves per-app
   monitoring, baselines, and the status page; per-service differences are **data**
   (target lists, preferred probe kind), never separate code paths.
+- **Never one number called "ping".** A game's match server answers nothing we can send —
+  no echo, no connection, no hello — because nothing listens on a game port but the game.
+  Two honest quantities stand in for the round trip we cannot have, and they are always
+  shown, and named, separately:
+  *the path*, measured by probing the last hop that answers on the way to the server
+  (labelled with how far short of it that hop is), and *the flow*, measured passively from
+  the operating system's own flow events (arrival jitter of the traffic actually coming
+  back, rate asymmetry, stalls). Neither may be presented as the round-trip time to the
+  server, and they must never be merged into a single figure — the merge is precisely the
+  lie the product exists not to tell. Their disagreement is the diagnosis: a clean path with
+  ragged arrivals is the server's problem, not the user's.
+  Reading a game's own reported ping is out of the question in every form — it means the
+  game's protocol, a capture driver, or its process memory.
 - **Silent servers → probe the path**: many game servers (esp. AWS/GCP-hosted) drop ICMP
   and expose no TCP ports. The fallback of last resort is a **TTL-limited path probe**:
   measure RTT to the last responding hop before the target (typically the datacenter edge,
