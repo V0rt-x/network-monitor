@@ -11,5 +11,6 @@ package-lock.json
 CLAUDE.md
 PLAN.md
 README.md
+docs/
 .claude/
 .github/

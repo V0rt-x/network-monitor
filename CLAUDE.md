@@ -110,6 +110,13 @@ The app must run *alongside* a competitive game without affecting FPS or ping.
   network requests the user can see and expects: probes to monitored endpoints and the
   bundled/user-edited status-check lists.
 - All measurements and history stay on the local machine.
+- **Nothing measured on a developer's machine is committed.** Reports, docs and tests must
+  never carry observed addresses — not traceroute hops, not LAN or ISP addresses, not the
+  addresses services resolved to, not synthetic/tunnel sentinels. They describe a real
+  person's network. Describe results by role and provider ("ISP edge", "Akamai, direct")
+  and keep raw tool output local. Well-known constants used as *inputs* (probe targets such
+  as `1.1.1.1`, documented ranges such as `198.18.0.0/15`) are fine — they are not
+  observations.
 - Probe target lists (domestic baselines per country, foreign baselines, service status
   checks) live in versioned, human-readable config assets — auditable and user-editable.
 - No third-party analytics SDKs of any kind. Dependencies are chosen conservatively;
@@ -213,7 +220,8 @@ that, run the wrapper. If any gate fails, fix it; never bypass with `--no-verify
 ## Working agreements for Claude
 
 - The user communicates in Russian; code, comments, identifiers, commit messages, and UI
-  strings are English.
+  strings are English. **Documents under `docs/` are written in Russian** — they are the
+  deliverable the user actually reads, unlike code.
 - When a requirement is ambiguous, prefer the interpretation that protects the resource
   budget and user privacy; ask only when the choice is genuinely product-shaping.
 - Do not add features, dependencies, or configuration beyond what the current PLAN.md

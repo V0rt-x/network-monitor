@@ -72,14 +72,59 @@ Phase 1 decisions worth remembering:
 
 Goal: real measurements against real hosts, still no per-app discovery.
 
-- [ ] `Prober` trait + implementations: ICMP (`IcmpSendEcho2Ex` on Windows via `nm-platform`), TCP-connect, TLS-handshake, HTTP(S) HEAD
-- [ ] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies (ISP / border / destination)
-- [ ] Source-address binding on all probers (probe egresses via a chosen local address/interface)
+- [~] `Prober` trait + implementations: ICMP (`IcmpSendEcho2Ex` on Windows via `nm-platform`), TCP-connect, TLS-handshake, HTTP(S) HEAD
+      — ICMP done in `nm-platform`; the `nm-probes` trait and the TCP/TLS/HTTP probers remain.
+      **TLS/HTTP are no longer optional fallbacks**: they are the only probe kind that measures
+      a FakeIP-tunnelled endpoint at all (see the spike). TCP-connect must never be used as an
+      RTT source for such endpoints — it completes locally and reports a fake-*good* ~0.7 ms.
+- [~] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies (ISP / border / destination)
+      — the TTL mechanism works and is verified; the ISP/border/destination classification remains
+- [x] Source-address binding on all probers (probe egresses via a chosen local address/interface)
+      — implemented and verified live for ICMP; carried into each further prober as it lands
 - [ ] Async probe runner on tokio: timeouts, cancellation, per-target backoff on repeated failure
 - [ ] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
-- [ ] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
-- [ ] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock
+- [x] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
+      — see `docs/measurement-reality-check.md`
+- [ ] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
+      routers really do this, via podkop/sing-box). An endpoint inside `198.18.0.0/15` or
+      `fc00::/18` is a sentinel a local tunnel will remap, so ICMP measures nothing and
+      TCP-connect lies. Detect it, mark the endpoint as tunnelled, route it to a TLS/HTTP
+      probe, and label the measurement honestly as end-to-end-through-a-tunnel rather than
+      as an RTT to the server. The range must be configurable — sing-box's default is not
+      mandatory. Note that a real setup is a **mix**: some endpoints are tunnelled and some
+      are direct, in the same session.
+- [ ] **Endpoint labelling from the OS DNS cache** (candidate): Windows' resolver cache maps
+      the sentinel address back to the domain that produced it, so a tunnelled endpoint can
+      be shown by name rather than as a meaningless synthetic address — read-only, no capture,
+      no router access. Needs a stable API (`DnsGetCacheDataTable`) verified first; applications that
+      resolve over their own DoH will not appear in it.
+- [ ] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock.
+      **A TLS handshake is far more expensive than an ICMP echo** — in traffic, in CPU, and in
+      load on someone else's server — so tunnelled endpoints need a much longer interval, with
+      passive flow statistics covering the gaps. Worth designing: one long-lived connection
+      with periodic light requests instead of a full handshake per probe, and what TLS session
+      resumption does to the measured value.
 - **Accept**: integration test (feature-gated, run manually/CI-opt-in) probing localhost + a public anycast IP; unit suite runs offline via mocks.
+  *Partly met: `nm-platform`'s `network-tests` feature probes loopback, a public anycast IP and
+  walks the path outward. The offline mock suite arrives with the `nm-probes` engine.*
+
+What the spike settled (full report in `docs/measurement-reality-check.md`):
+
+- **8 of 12 pools answered ICMP directly**, so the model holds — but the fallback chain is a
+  routine path, not an edge case. Epic's AWS-hosted address ignored every echo while the path
+  probe still placed the failure at the destination's edge, 15 hops out and past the border.
+- **A FakeIP router turns some endpoints synthetic.** podkop/sing-box on the router answers DNS
+  with `198.18.0.0/15` sentinels and remaps them at connection time. Measured consequences:
+  ICMP leaks past the tunnel and dies inside the ISP; **TCP-connect returns ~0.7 ms because the
+  handshake completes locally** — a fake-*good* number, which is worse than a fake-bad one
+  because it would tell the user their network is fine; TLS handshake does traverse the real
+  path (170–180 ms vs 30 ms direct, genuine certificate) and is therefore the only usable probe
+  for these endpoints. The tunnel terminates on the router, so the PC cannot split the latency
+  into legs unless the user supplies the proxy's address.
+- **Windows returns TTL expiries with the hop's address**, so path probing gets the identity it
+  needs; walks must step over silent hops rather than stop at the first.
+- **The Valve SDR hostnames were guesswork and do not resolve.** Phase 5 must take them from the
+  SDR configuration Steam publishes, not from a guessed naming scheme.
 
 ## Phase 3 — App shell & general network health (first usable build)
 
