@@ -706,6 +706,16 @@ part of Phase 4 and nothing here waits on it.
       one. The cost is resolution, paid where it hurts least: **a slot shows its slowest
       sample**, so a spike inside it survives, and the note under the chart says so — a line
       of per-slot maxima sits above the mean in the row beside it, on purpose.
+      **The round-trip axis is logarithmic**, decided after seeing the live build: an
+      application's endpoints span two orders of magnitude — a hop inside the provider at a
+      few milliseconds beside a server across an ocean — and one spike flattened every other
+      line against the floor, which is both unreadable and impossible to put a pointer on. A
+      log axis gives every line the same room to move in and clips nothing; the alternative
+      considered and rejected was capping the range at a percentile, which would have hidden
+      the size of the very spike the user is looking for. A value a log axis cannot place —
+      zero, which needs a round trip faster than a microsecond — is drawn at the floor, and
+      that is a drawing decision stated as one: the row beside the chart carries the exact
+      figure.
       **Not verified against a real render.** jsdom has no canvas, so uPlot draws nothing in
       the test suite and the component's tests go through a stand-in that records what it was
       asked to draw. What the chart *contains* is tested; how it looks has not been seen.

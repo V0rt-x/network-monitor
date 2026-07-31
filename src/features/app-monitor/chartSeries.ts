@@ -18,6 +18,17 @@ export interface ChartLine {
 }
 
 /**
+ * The smallest round trip the chart's logarithmic axis can place, in milliseconds.
+ *
+ * A logarithmic scale has no zero, so a measurement of zero — which needs a round trip
+ * faster than a microsecond and cannot happen over a network — would break the axis rather
+ * than appear on it. Anything at or below this is drawn *at* the floor instead. That is a
+ * drawing decision and not a measurement: the exact figure is in the row beside the chart,
+ * where it is never rounded.
+ */
+export const LOG_FLOOR_MS = 0.01;
+
+/**
  * Pairs the shared time axis with every line, in the layout uPlot wants.
  *
  * Rust has already placed every endpoint's samples on one grid, so the arrays line up by
@@ -39,7 +50,8 @@ export const alignSeries = (
     if (age === null) return;
     xs.push(age);
     lines.forEach((line, index) => {
-      ys[index]?.push(line.values[slot] ?? null);
+      const value = line.values[slot] ?? null;
+      ys[index]?.push(value === null ? null : Math.max(value, LOG_FLOOR_MS));
     });
   });
   return [xs, ...ys];

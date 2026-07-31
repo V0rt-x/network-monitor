@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries } from './chartSeries';
+import { alignSeries, LOG_FLOOR_MS } from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
@@ -58,5 +58,20 @@ describe('alignSeries', () => {
   it('survives an axis with no slots and a chart with no lines', () => {
     expect(alignSeries([], [])).toEqual([[]]);
     expect(alignSeries([-1, 0], [])).toEqual([[-1, 0]]);
+  });
+
+  it('draws a value a logarithmic axis cannot place at the floor rather than breaking', () => {
+    // A logarithmic scale has no zero. A round trip of zero needs one faster than a
+    // microsecond and cannot happen over a network, but an axis that broke if it ever did
+    // would be a latent crash. The exact figure is in the row beside the chart.
+    const data = alignSeries([-1, 0], [line([0, -5])]);
+
+    expect(data[1]).toEqual([LOG_FLOOR_MS, LOG_FLOOR_MS]);
+  });
+
+  it('leaves an ordinary measurement exactly as it was measured', () => {
+    const data = alignSeries([-1, 0], [line([0.5, 240])]);
+
+    expect(data[1]).toEqual([0.5, 240]);
   });
 });

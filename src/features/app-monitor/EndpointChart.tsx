@@ -20,6 +20,16 @@ interface EndpointChartProps {
 
 const HEIGHT = 200;
 
+/**
+ * A tick label on the logarithmic axis.
+ *
+ * uPlot labels a log scale in exponents by default; whole milliseconds are what someone
+ * comparing latencies actually reads. Sub-millisecond ticks keep one decimal, which is the
+ * only place round trips on this chart are ever that small — a hop inside the machine.
+ */
+const formatAxisMs = (value: number): string =>
+  value >= 1 ? String(Math.round(value)) : value.toFixed(1);
+
 /** How dim a line gets while another endpoint is raised. */
 const DIMMED_ALPHA = '38';
 
@@ -106,10 +116,27 @@ export const EndpointChart = ({
             focus: { prox: HOVER_PROXIMITY },
             points: { show: false },
           },
-          scales: { x: { time: false } },
+          scales: {
+            x: { time: false },
+            // Round-trip times on one chart span two orders of magnitude — a hop inside the
+            // ISP at 4 ms beside a server across an ocean at 200 ms — and one spike to 400
+            // flattens everything else against the floor. A logarithmic axis gives every
+            // line the same vertical room to move in, which is what makes "which of these
+            // is the odd one out" answerable at a glance and what makes a line possible to
+            // put a pointer on. Nothing is clipped and no outlier is hidden; only the
+            // spacing changes.
+            y: { distr: 3, log: 10 },
+          },
           axes: [
             { stroke: '#94a3b8', grid: { stroke: '#1e3a5f' }, ticks: { stroke: '#1e3a5f' } },
-            { stroke: '#94a3b8', grid: { stroke: '#1e3a5f' }, ticks: { stroke: '#1e3a5f' } },
+            {
+              stroke: '#94a3b8',
+              grid: { stroke: '#1e3a5f' },
+              ticks: { stroke: '#1e3a5f' },
+              // Plain milliseconds rather than uPlot's exponent notation: the reader is
+              // comparing latencies, not reading a science plot.
+              values: (_chart, splits) => splits.map((value) => formatAxisMs(value)),
+            },
           ],
           series: [
             {},
