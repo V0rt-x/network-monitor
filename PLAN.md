@@ -331,10 +331,14 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       performs no elevation itself; it explains and leaves the action to the user.
       **Keyword and level are a budget decision, not a detail.** `ut:SendPath |
       ut:ReceivePath` at `Informational` yields the needed events; the same subscription at
-      full level produced sixteen times the volume. Even so the remaining rate is too high
-      to parse continuously, so kernel-side PID filtering (`EVENT_FILTER_TYPE_PID` on
-      `EnableTraceEx2`) is a **precondition of the CPU budget**, not an optimization — with
-      a five-application cap it reduces the stream to the processes the user picked.
+      full level produced sixteen times the volume. The measured ~400 events/s on an idle
+      machine fits the 1 %-of-a-core budget with room to spare; under load the rate reaches
+      thousands per second, where what decides the cost is the *per-event parse* — a cached
+      schema is fractions of a percent, a `TDH` lookup per event is the whole budget.
+      Kernel-side PID filtering (`EVENT_FILTER_TYPE_PID` on `EnableTraceEx2`) is therefore
+      the lever that matters: with the five-application cap it cuts the stream to the
+      processes the user picked and removes both the parse cost and the dependence on
+      whatever else the machine is doing.
       Event numbers come from the provider's manifest and may move between Windows
       versions; the consumer resolves by provider and number and degrades when a number is
       absent rather than failing.
