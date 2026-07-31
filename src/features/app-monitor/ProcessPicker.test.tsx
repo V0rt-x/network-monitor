@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
+import type { MonitoredBy } from './ProcessPicker';
 import { ProcessPicker } from './ProcessPicker';
 import type { ProcessListView } from '../../shared/ipc';
 
@@ -20,6 +21,8 @@ const listing = (overrides: Partial<ProcessListView> = {}): ProcessListView => (
   ...overrides,
 });
 
+const nothing = new Map<number, MonitoredBy>();
+
 describe('ProcessPicker', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -27,7 +30,15 @@ describe('ProcessPicker', () => {
   });
 
   it('lists the running processes with their identifiers', async () => {
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByText('Discord.exe')).toBeInTheDocument();
     expect(screen.getByText('PID 100')).toBeInTheDocument();
@@ -35,7 +46,15 @@ describe('ProcessPicker', () => {
   });
 
   it('filters by name as the user searches', async () => {
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
     await screen.findByText('Discord.exe');
 
     await userEvent.type(screen.getByRole('searchbox'), 'game');
@@ -44,9 +63,17 @@ describe('ProcessPicker', () => {
     expect(screen.queryByText('Discord.exe')).not.toBeInTheDocument();
   });
 
-  it('starts monitoring the process the user chooses', async () => {
+  it('seeds an application with the process the user chooses', async () => {
     const onMonitor = vi.fn();
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={onMonitor} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={onMonitor}
+        onForget={vi.fn()}
+      />,
+    );
     await screen.findByText('Discord.exe');
 
     // The first entry is Discord.exe — the list is sorted by name in Rust.
@@ -57,18 +84,79 @@ describe('ProcessPicker', () => {
     expect(onMonitor).toHaveBeenCalledWith(100);
   });
 
-  it('offers to stop a process that is already followed', async () => {
+  it('stops the application a monitored process belongs to, not the process', async () => {
+    // The identity that crosses the boundary is the application's: the process the user
+    // originally picked may be long gone while its children are still being measured.
     const onForget = vi.fn();
-    render(<ProcessPicker monitored={[200]} limit={5} onMonitor={vi.fn()} onForget={onForget} />);
+    const monitored = new Map<number, MonitoredBy>([[200, { app: 7, name: 'Example Game' }]]);
+    render(
+      <ProcessPicker
+        monitored={monitored}
+        count={1}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={onForget}
+      />,
+    );
     await screen.findByText('game.exe');
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
 
-    expect(onForget).toHaveBeenCalledWith(200);
+    expect(onForget).toHaveBeenCalledWith(7);
+  });
+
+  it('says which application already took a process', async () => {
+    // A grouping the user cannot inspect is one they cannot correct — and a process they
+    // never clicked can be taken, because an application adopts its namesakes and children.
+    const monitored = new Map<number, MonitoredBy>([[300, { app: 7, name: 'Example Game' }]]);
+    render(
+      <ProcessPicker
+        monitored={monitored}
+        count={1}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
+    await screen.findByText('svchost.exe');
+
+    expect(screen.getByText('Part of Example Game')).toBeInTheDocument();
+  });
+
+  it('counts applications rather than processes against the cap', async () => {
+    // One application holds several processes; measuring the cap in processes would refuse
+    // a second game to an Electron app that happens to run four helpers.
+    const monitored = new Map<number, MonitoredBy>([
+      [200, { app: 7, name: 'Example Game' }],
+      [300, { app: 7, name: 'Example Game' }],
+    ]);
+    render(
+      <ProcessPicker
+        monitored={monitored}
+        count={1}
+        limit={2}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
+    await screen.findByText('Discord.exe');
+
+    for (const button of screen.getAllByRole('button', { name: 'Monitor' })) {
+      expect(button).toBeEnabled();
+    }
   });
 
   it('refuses further choices at the cap rather than letting a click fail silently', async () => {
-    render(<ProcessPicker monitored={[200]} limit={1} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    const monitored = new Map<number, MonitoredBy>([[200, { app: 7, name: 'Example Game' }]]);
+    render(
+      <ProcessPicker
+        monitored={monitored}
+        count={1}
+        limit={1}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
     await screen.findByText('Discord.exe');
 
     for (const button of screen.getAllByRole('button', { name: 'Monitor' })) {
@@ -80,7 +168,15 @@ describe('ProcessPicker', () => {
 
   it('reports a refused enumeration instead of an empty list', async () => {
     fetchProcesses.mockResolvedValue(listing({ processes: [], problem: 'refused' }));
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The system refused to list running processes',
@@ -89,7 +185,15 @@ describe('ProcessPicker', () => {
 
   it('reports a platform with no process enumerator at all', async () => {
     fetchProcesses.mockResolvedValue(listing({ processes: [], problem: 'unsupportedPlatform' }));
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This build cannot list processes on this operating system',
@@ -97,7 +201,15 @@ describe('ProcessPicker', () => {
   });
 
   it('says a search matched nothing rather than looking broken', async () => {
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
     await screen.findByText('Discord.exe');
 
     await userEvent.type(screen.getByRole('searchbox'), 'nothing-like-this');
@@ -106,7 +218,15 @@ describe('ProcessPicker', () => {
   });
 
   it('re-reads the list when asked, rather than polling for it', async () => {
-    render(<ProcessPicker monitored={[]} limit={5} onMonitor={vi.fn()} onForget={vi.fn()} />);
+    render(
+      <ProcessPicker
+        monitored={nothing}
+        count={0}
+        limit={5}
+        onMonitor={vi.fn()}
+        onForget={vi.fn()}
+      />,
+    );
     await screen.findByText('Discord.exe');
     expect(fetchProcesses).toHaveBeenCalledTimes(1);
 

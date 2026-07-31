@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "applications": [
+    {
+      "id": "discord",
+      "label": "Discord",
+      "executables": ["Discord.exe"]
+    },
+    {
+      "id": "dota2",
+      "label": "Dota 2",
+      "executables": ["dota2.exe"]
+    },
+    {
+      "id": "cs2",
+      "label": "Counter-Strike 2",
+      "executables": ["cs2.exe"]
+    },
+    {
+      "id": "apex-legends",
+      "label": "Apex Legends",
+      "executables": ["r5apex.exe", "r5apex_dx12.exe"]
+    },
+    {
+      "id": "valorant",
+      "label": "VALORANT",
+      "executables": ["VALORANT.exe", "VALORANT-Win64-Shipping.exe"]
+    },
+    {
+      "id": "fortnite",
+      "label": "Fortnite",
+      "executables": [
+        "FortniteClient-Win64-Shipping.exe",
+        "FortniteLauncher.exe",
+        "FortniteClient-Win64-Shipping_EAC_EOS.exe"
+      ]
+    }
+  ]
+}

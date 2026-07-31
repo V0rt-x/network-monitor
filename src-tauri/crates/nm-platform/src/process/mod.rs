@@ -69,6 +69,19 @@ pub struct ProcessInfo {
     /// Not a path and not unique — several copies of one game can run at once, which is
     /// exactly why the [`Pid`] is the identity and this is only a label.
     pub name: String,
+    /// Identifier of the process that created it, when the OS reports one.
+    ///
+    /// A **claim, not a handle**, and weaker than it looks: the parent may have exited long
+    /// ago, and the identifier it left behind may since have been handed to something
+    /// unrelated. Callers must only ever resolve it against a process in the same snapshot,
+    /// which is what makes the answer self-consistent even if it is stale.
+    ///
+    /// Present because it is the one relation that joins a launcher to the title it
+    /// starts — Riot Client to Valorant, the EA app to the game — and no other free signal
+    /// does. Toolhelp reports it in the same structure as the name, so it costs nothing:
+    /// no handle, no extra call. Linux reads it from `/proc/<pid>/stat`, macOS from
+    /// `proc_bsdinfo`.
+    pub parent: Option<Pid>,
 }
 
 /// Lists the processes running on this machine.

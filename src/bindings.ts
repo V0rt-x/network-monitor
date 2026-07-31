@@ -28,17 +28,25 @@ export const commands = {
 	 */
 	listProcesses: () => __TAURI_INVOKE<ProcessListView>("list_processes"),
 	/**
-	 *  Starts discovering and probing one running process's remote endpoints.
+	 *  Starts monitoring the application a running process belongs to.
 	 * 
-	 *  The process identifier crosses the boundary as a plain number because that is what the
-	 *  operating system's own listing returns and what the picker will hand back. A process
-	 *  that has already exited, or one chosen past the five-application cap, is simply not
-	 *  monitored: nothing is reported back yet, because until the process picker exists there
-	 *  is no UI able to say anything useful about it.
+	 *  The process identifier is the **seed**, not the identity. What gets monitored is the
+	 *  application formed around it — every process running the same executable, every
+	 *  descendant of those, and anything a bundled preset joins to them — and that application
+	 *  keeps the identity reported in [`crate::AppEndpoints`] as its processes come and go. A
+	 *  process that has already exited, one already part of a monitored application, or one
+	 *  chosen past the five-application cap is simply not adopted; the picker shows what is
+	 *  monitored, so the outcome is visible without an error to report.
 	 */
 	monitorApp: (pid: number) => __TAURI_INVOKE<void>("monitor_app", { pid }),
-	/**  Stops following one process, releasing the endpoints nothing else is measuring. */
-	forgetApp: (pid: number) => __TAURI_INVOKE<void>("forget_app", { pid }),
+	/**
+	 *  Stops following one application, releasing the endpoints nothing else is measuring.
+	 * 
+	 *  Takes the application identity from [`crate::AppEndpoints`], not a process identifier:
+	 *  the process the user originally picked may be long gone while the application is still
+	 *  being watched through its children.
+	 */
+	forgetApp: (app: number) => __TAURI_INVOKE<void>("forget_app", { app }),
 	/**
 	 *  Gives the tray menu its labels, translated by the UI.
 	 * 
@@ -86,12 +94,36 @@ export type AppEndpoints = {
 	apps: AppView[],
 };
 
+/**  One process an application currently consists of. */
+export type AppProcessView = {
+	/**  Its identifier. */
+	pid: number,
+	/**  Its executable file name. */
+	name: string,
+};
+
 /**  One monitored application and everything it is talking to. */
 export type AppView = {
-	/**  The process being followed. */
-	pid: number,
-	/**  Its executable name, as it was when monitoring started. */
+	/**
+	 *  The identity to forget it by.
+	 * 
+	 *  Not a process identifier. The user chose an application, and the processes it is
+	 *  made of come and go under it — a launcher exits once the title is running, an
+	 *  anti-cheat re-launches the game — while this stays the same for as long as the
+	 *  choice does.
+	 */
+	id: number,
+	/**  What to call it: the preset's name for it, or the chosen executable's file name. */
 	name: string,
+	/**
+	 *  The processes it currently consists of.
+	 * 
+	 *  Shown rather than summarised: a grouping the user cannot inspect is one they cannot
+	 *  correct. An empty list is a real state and says so — the application was chosen and
+	 *  nothing is running under it yet, which is exactly what arming the monitor before a
+	 *  match looks like.
+	 */
+	processes: AppProcessView[],
 	/**
 	 *  How many of its endpoints are in each state.
 	 * 

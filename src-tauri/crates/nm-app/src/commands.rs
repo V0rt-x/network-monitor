@@ -13,6 +13,7 @@
 // apply here.
 #![allow(clippy::needless_pass_by_value)]
 
+use nm_core::endpoint::AppId;
 use nm_platform::process::Pid;
 use nm_platform::HostPlatform;
 use serde::{Deserialize, Serialize};
@@ -216,24 +217,30 @@ pub fn list_processes() -> ProcessListView {
     }
 }
 
-/// Starts discovering and probing one running process's remote endpoints.
+/// Starts monitoring the application a running process belongs to.
 ///
-/// The process identifier crosses the boundary as a plain number because that is what the
-/// operating system's own listing returns and what the picker will hand back. A process
-/// that has already exited, or one chosen past the five-application cap, is simply not
-/// monitored: nothing is reported back yet, because until the process picker exists there
-/// is no UI able to say anything useful about it.
+/// The process identifier is the **seed**, not the identity. What gets monitored is the
+/// application formed around it — every process running the same executable, every
+/// descendant of those, and anything a bundled preset joins to them — and that application
+/// keeps the identity reported in [`crate::AppEndpoints`] as its processes come and go. A
+/// process that has already exited, one already part of a monitored application, or one
+/// chosen past the five-application cap is simply not adopted; the picker shows what is
+/// monitored, so the outcome is visible without an error to report.
 #[tauri::command]
 #[specta::specta]
 pub fn monitor_app(state: State<'_, AppState>, pid: u32) {
     state.monitor_app(Pid::new(pid));
 }
 
-/// Stops following one process, releasing the endpoints nothing else is measuring.
+/// Stops following one application, releasing the endpoints nothing else is measuring.
+///
+/// Takes the application identity from [`crate::AppEndpoints`], not a process identifier:
+/// the process the user originally picked may be long gone while the application is still
+/// being watched through its children.
 #[tauri::command]
 #[specta::specta]
-pub fn forget_app(state: State<'_, AppState>, pid: u32) {
-    state.forget_app(Pid::new(pid));
+pub fn forget_app(state: State<'_, AppState>, app: u32) {
+    state.forget_app(AppId::new(app));
 }
 
 /// Gives the tray menu its labels, translated by the UI.

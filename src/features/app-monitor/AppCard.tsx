@@ -9,7 +9,7 @@ interface AppCardProps {
   readonly app: AppView;
   /** Span the byte counts cover. */
   readonly trafficWindowSecs: number;
-  readonly onForget: (pid: number) => void;
+  readonly onForget: (app: number) => void;
 }
 
 /** Which counts are worth showing, and in what order of severity. */
@@ -30,6 +30,12 @@ const DISTRIBUTION = [
  * that is not happening or a failure that is being hidden. Partial failure inside one
  * application is the normal case under filtering, not an edge case — its endpoints sit in
  * different networks and a tunnel may cover some of them and not others.
+ *
+ * The processes it currently consists of are listed rather than counted. An application is
+ * a group Rust formed — the picked process, its namesakes, its descendants — and a grouping
+ * the user cannot inspect is one they cannot correct. An empty list is a real state: the
+ * application was chosen and nothing is running under it, which is exactly what arming the
+ * monitor before a match looks like.
  */
 export const AppCard = ({ app, trafficWindowSecs, onForget }: AppCardProps) => {
   const { t, i18n } = useTranslation();
@@ -45,13 +51,23 @@ export const AppCard = ({ app, trafficWindowSecs, onForget }: AppCardProps) => {
       <header className="nm-appcard__header">
         <div>
           <h3 className="nm-appcard__title">{app.name}</h3>
-          <p className="nm-appcard__pid">{t('apps.pid', { pid: app.pid })}</p>
+          {app.processes.length === 0 ? (
+            <p className="nm-appcard__processes nm-state--pending">{t('apps.processes.none')}</p>
+          ) : (
+            <ul className="nm-appcard__processes" aria-label={t('apps.processes.label')}>
+              {app.processes.map((process) => (
+                <li key={process.pid}>
+                  {t('apps.processes.entry', { name: process.name, pid: process.pid })}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <button
           type="button"
           className="nm-button nm-button--quiet"
           onClick={() => {
-            onForget(app.pid);
+            onForget(app.id);
           }}
         >
           {t('apps.stop')}

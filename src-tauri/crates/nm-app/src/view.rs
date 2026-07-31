@@ -533,14 +533,36 @@ const fn severity(health: HealthView) -> u8 {
     }
 }
 
+/// One process an application currently consists of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppProcessView {
+    /// Its identifier.
+    pub pid: u32,
+    /// Its executable file name.
+    pub name: String,
+}
+
 /// One monitored application and everything it is talking to.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppView {
-    /// The process being followed.
-    pub pid: u32,
-    /// Its executable name, as it was when monitoring started.
+    /// The identity to forget it by.
+    ///
+    /// Not a process identifier. The user chose an application, and the processes it is
+    /// made of come and go under it — a launcher exits once the title is running, an
+    /// anti-cheat re-launches the game — while this stays the same for as long as the
+    /// choice does.
+    pub id: u32,
+    /// What to call it: the preset's name for it, or the chosen executable's file name.
     pub name: String,
+    /// The processes it currently consists of.
+    ///
+    /// Shown rather than summarised: a grouping the user cannot inspect is one they cannot
+    /// correct. An empty list is a real state and says so — the application was chosen and
+    /// nothing is running under it yet, which is exactly what arming the monitor before a
+    /// match looks like.
+    pub processes: Vec<AppProcessView>,
     /// How many of its endpoints are in each state.
     ///
     /// The headline. There is deliberately no single verdict per application: a
@@ -554,7 +576,12 @@ pub struct AppView {
 impl AppView {
     /// Renders one application's endpoints, worst first.
     #[must_use]
-    pub fn of(pid: u32, name: String, reports: &[EndpointReport]) -> Self {
+    pub fn of(
+        id: u32,
+        name: String,
+        processes: Vec<AppProcessView>,
+        reports: &[EndpointReport],
+    ) -> Self {
         let mut counts = HealthCounts::default();
         for report in reports {
             counts.record(report.health);
@@ -570,8 +597,9 @@ impl AppView {
         });
 
         Self {
-            pid,
+            id,
             name,
+            processes,
             counts: counts.into(),
             endpoints,
         }

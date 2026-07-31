@@ -505,7 +505,135 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       fixed product name stays, because reclaiming a session orphaned by a crash is worth
       more than the collision it costs, but reclaiming must never be indistinguishable from
       *being* reclaimed.
-- [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
+- [x] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
+      — `assets/apps/presets.json`, compiled in like the target lists, with the schema and
+      the rules for adding an entry in `assets/apps/README.md`. They are the *data half* of
+      amendment 1 below: most grouping needs no data at all, and a preset exists only for a
+      title the executable name and the process tree cannot join.
+      **The one rule that protects the user is enforced by a test**: an executable several
+      applications share — `steam.exe`, `EpicGamesLauncher.exe`, `RiotClientServices.exe`,
+      an anti-cheat service — must never appear in a preset, because listing it would
+      silently merge two applications the user chose separately into one wrong endpoint
+      list. Parsing refuses an executable claimed by two presets for the same reason: which
+      application a process joined would otherwise depend on file order.
+      **The port ranges are deliberately not shipped.** The only thing they could be used
+      for is guessing which endpoint carries the match traffic, and the app already knows
+      that by measurement — the flow counters say where the bytes are actually going, and
+      the ranking that picks the endpoint worth a path edge reads exactly those counters. A
+      bundled range would be a weaker duplicate of a fact we hold, going stale in the
+      direction of pointing at the wrong endpoint. The reasoning is written down in the
+      asset README so it is not silently re-litigated.
+
+### Amendments from use (recorded 2026-07-31) — in descending order of importance
+
+Stated by the user after Phase 5A landed, and ordered as they stated them. The first two
+change what Phase 4 shipped and come before Phase 6; the third is explicitly the least
+important of the three and stays in Phase 8+, where endpoint enrichment already lives.
+
+- [x] **1. An application is a set of processes, not a pid.** The picker, the caps, the endpoint
+      lists and the IPC surface are all keyed on one process id today, and that is not the thing
+      the user chose. A desktop application is several processes: Discord is a main process plus
+      helpers, a launcher spawns the title as a child (Riot Client → Valorant, EA app → the game),
+      an anti-cheat shim may re-exec the game, so the pid the user picked can be dead before the
+      first packet of the match. Nobody wants to know which of them opened the socket; they asked
+      to watch *Discord* and *Apex*. What this changes:
+      – **The grouping key is a decision, not a guess.** Candidates: the executable path (all
+        instances of one binary, catches helpers that share it), the install directory (catches
+        launcher + title under one vendor tree, at the risk of over-grouping), the file-version
+        `ProductName`, and the process tree (a child joins its parent's application — the only
+        rule that catches launcher → game). Likely a documented combination, with the
+        awkward titles expressed as *data* so a wrong grouping is fixable without a build; that
+        is the same file as the known-app presets item above.
+      – **Membership is live.** A process dying must not end monitoring while its siblings live,
+        and a newly spawned child must be adopted on the discovery beat. That is exactly the
+        launcher-starts-the-game case, and it is what lets a user arm the monitor *before* a match
+        rather than scramble for the picker once the game is already connected.
+      – **The caps move up a level**: five monitored *applications*, sixteen probed endpoints per
+        *application*, deduplicated across its processes, with the group's byte counters merged for
+        ranking. Under the current pid keying five helper processes of one Electron app would eat
+        the whole allowance the user meant for five games.
+      – **The flow filter takes a changing set of pids.** `nm_app::discovery` already selects on
+        process id inside the ETW callback, so this is a set-membership test that has to be
+        refreshed as membership moves — not new platform work.
+      – **`monitor_app`/`forget_app` and the `AppEndpoints` event take an application identity**
+        instead of a pid. The UI must show which processes an application currently consists of:
+        a grouping the user cannot inspect is one they cannot correct.
+      — `nm_app::applications`, pure and clock-free: the process snapshot is passed in, so
+      adoption, expiry, the tree walk, the caps and the conflicts between two applications
+      wanting one process replay in tests on any operating system without a process ever
+      being enumerated. `nm_platform::process::ProcessInfo` gained `parent`, which Toolhelp
+      reports in the same structure as the name and therefore costs nothing — no handle, no
+      second call.
+      **The grouping key is three rules, not one**, and each earns its place: the chosen
+      process; every process running under the same executable *name* (which catches an
+      Electron application's helpers); every *descendant* of a member (the only relation
+      that joins a launcher to the title it starts, and the only one that survives an
+      anti-cheat re-launch). Presets are the fourth, for what those cannot see. The
+      executable **path** was considered and rejected as the everyday rule: it is stronger,
+      and reading it means opening a handle to every candidate process, which contradicts
+      the promise that this app touches no process it was not asked about. Where the name
+      groups wrongly the fix is a preset entry rather than a build.
+      **Membership is sticky, but only under the same executable name.** A member that is
+      still running keeps its place even after the parent it was adopted through exits;
+      Windows reissues process identifiers, so a pid that came back running something else
+      is dropped rather than kept.
+      **An application with no running process is kept, not dropped** — that is the whole
+      point of arming the monitor before a match, and the page says plainly that nothing is
+      running under it. It costs one of the five slots, which is the user's to spend.
+      **The refresh is not on the discovery beat, and the reason is measured**: a Toolhelp
+      sweep of a real desktop (284 processes) takes ~8 ms, so once a second would spend most
+      of the whole 1 % CPU budget on bookkeeping. Membership is recomputed every five
+      seconds, on the blocking pool, and not at all while nothing is monitored; a user
+      action takes its own snapshot rather than waiting for the beat. A test in `nm-platform`
+      pins the 8 ms so it cannot quietly grow.
+      A per-application cap of 64 processes bounds what the descendant rule can do — a user
+      who picks a shell would otherwise turn one click into a membership set the size of the
+      machine, tested against on every flow event.
+- [ ] **2. Show every endpoint of a selected application at once, on one chart.** The page today
+      is a list of endpoints each with its own sparkline, which answers "how is this endpoint"
+      and not the question the user actually has — "which of these is the odd one out". One
+      multi-series time chart per application (uPlot, one line per endpoint) with the list beside
+      it; hovering a line names its endpoint and raises its detail — probe kind, jitter, loss,
+      throughput, egress, path panel — dimming the others rather than hiding them, and a click
+      pins that selection. Constraints it must respect:
+      – **An endpoint with no round trip must not vanish from the picture.** The silent match
+        server has no RTT series to draw and it is the endpoint the whole product exists to
+        watch; it is represented by its *path* figure, drawn distinctly and labelled as what it
+        is. A path figure sharing an axis with round trips must never read as one — the Phase 5
+        rule, applied to a chart.
+      – Gaps stay gaps: no spanning of nulls, as on the dashboard, so an outage is a break.
+      – Colour is assigned stably per endpoint and legible in both themes, and it never carries
+        state on its own: the worst-first ordered list remains the authority on health, the chart
+        is additive.
+      – Sixteen series at ≤ 4 Hz, redrawn only while the window is visible. The chart must not
+        become the thing that breaks the render budget.
+      – The hover detail must be reachable without a mouse.
+- [ ] **3. Name the destination: ASN / provider per endpoint.** Least important of the three; it
+      belongs to the Phase 8+ enrichment item and is recorded here so the options are written
+      down. An address means nothing to a user; "Akamai", "an AWS region", "your own ISP's
+      network" means something, and it is what turns the path panel and Phase 6's verdicts from
+      a list of numbers into a sentence. Options, cheapest first:
+      – **(a) Bundled published cloud/CDN prefix lists.** AWS, GCP, Azure, Cloudflare and Fastly
+        publish their ranges as stable machine-readable files. This is data of exactly the kind
+        `assets/targets/` already holds, needs no ASN database, and covers a large share of game
+        servers — but it names only those providers, never a transit network or an ISP.
+      – **(b) A bundled offline IP→ASN table**, the real answer. Candidates to evaluate:
+        iptoasn.com's RouteViews-derived table (small, permissively licensed), DB-IP's lite ASN
+        database, MaxMind's GeoLite2-ASN (widest coverage, but an account and an EULA).
+        **Licensing must be verified before anything is bundled, not assumed** — the current
+        "(licensing TBD)" is doing real work. Whatever ships updates with releases and never
+        auto-fetches, exactly like the target lists. Cost against the < 50 MB core budget is
+        real but small: a sorted prefix array, binary-searched, loaded lazily and only if the
+        feature is enabled.
+      – **(c) Runtime lookup — RDAP, whois, or Team Cymru's DNS interface — is rejected rather
+        than deferred.** It tells a third party which servers this user is playing on, from a
+        machine under surveillance, and that is the phone-home the product promises never to
+        make. The same objection as reverse DNS, which is why *that* one is user-toggleable.
+      – **(d) GeoIP location is a weaker claim than ASN and must be presented as one.** Anycast
+        and cloud regions routinely put a database's "city" thousands of kilometres from the
+        machine that answered. Useful as "which region did the game put me in"; never as a
+        distance to check a round trip against — the measured RTT is the better evidence of
+        distance, not the other way round.
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 
 ## Phase 5 — Measuring the endpoint that answers nothing
@@ -671,7 +799,10 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 
 - Linux support (`sock_diag` netlink + `/proc`, unprivileged-ICMP handling)
 - macOS support (`libproc`; note: Tauri e2e tooling unavailable on macOS — rely on unit/headless layers)
-- Endpoint enrichment: offline ASN/GeoIP database (licensing TBD), reverse DNS (user-toggleable — it generates visible DNS traffic)
+- Endpoint enrichment: offline ASN/GeoIP database (licensing TBD), reverse DNS (user-toggleable
+  — it generates visible DNS traffic). **The options are worked out in Phase 4's amendment 3**,
+  including which lookups are rejected outright on privacy grounds; this line is the home of the
+  work, that one is the reasoning.
 - Detection of known accelerator/VPN virtual adapters (ExitLag, WTFast, WireGuard, …) for
   clearer egress labeling and per-process-interceptor warnings
 - Alerts (jitter/loss thresholds → tray notification), overlay-friendly compact mode

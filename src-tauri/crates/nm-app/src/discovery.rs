@@ -38,7 +38,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nm_core::address::AddressPolicy;
-use nm_core::endpoint::{AppId, EndpointKey};
+use nm_core::endpoint::EndpointKey;
 use nm_platform::connection::{Connection, ConnectionTable, Protocol};
 use nm_platform::flow::{FlowEvent, FlowEventSource, FlowSink};
 use nm_platform::process::Pid;
@@ -59,11 +59,18 @@ pub const POLL_PERIOD: Duration = Duration::from_secs(1);
 /// nothing on the heap.
 const OBSERVATION_QUEUE: usize = 512;
 
-/// One sighting of a monitored application using a remote endpoint.
+/// One sighting of a monitored process using a remote endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Observation {
-    /// Which application.
-    pub app: AppId,
+    /// Which process.
+    ///
+    /// A process, not an application: the operating system reports process identifiers and
+    /// nothing else, and which application one belongs to is a question with an answer that
+    /// changes while this is in flight — a game re-launched by its anti-cheat is a new
+    /// process of the same application. [`crate::applications`] holds that mapping and it
+    /// is applied where the observation is consumed, once, rather than guessed at in two
+    /// discovery sources on two different threads.
+    pub pid: Pid,
     /// The endpoint it was seen using.
     pub endpoint: EndpointKey,
     /// The local address its flow egresses from, so a probe can follow the same route.
@@ -103,16 +110,6 @@ pub enum FlowStatus {
     Unavailable,
 }
 
-/// The identity the endpoint tracker keys an application by.
-///
-/// A process identifier, deliberately: within one session it names one running program,
-/// and a game that is restarted comes back with a different one — which is the right
-/// answer, because its endpoints are new and its old measurements say nothing about them.
-#[must_use]
-pub const fn app_of(pid: Pid) -> AppId {
-    AppId::new(pid.get())
-}
-
 /// Whether an endpoint is one the probe engine could say anything about.
 ///
 /// Two refusals, both of which would otherwise become an endpoint that is listed forever
@@ -133,7 +130,7 @@ pub fn is_worth_tracking(policy: &AddressPolicy, endpoint: EndpointKey) -> bool 
 pub fn from_connection(row: &Connection) -> Option<Observation> {
     let peer = row.active_peer()?;
     Some(Observation {
-        app: app_of(row.pid),
+        pid: row.pid,
         endpoint: endpoint_key(row.protocol, peer),
         source: egress(row.local.ip()),
         bytes: None,
@@ -150,7 +147,7 @@ pub fn from_flow(event: &FlowEvent) -> Option<Observation> {
         return None;
     }
     Some(Observation {
-        app: app_of(event.pid),
+        pid: event.pid,
         endpoint: endpoint_key(event.protocol, event.remote),
         source: egress(event.local.ip()),
         bytes: Some(event.bytes),

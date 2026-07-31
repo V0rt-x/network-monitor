@@ -445,12 +445,20 @@ body {
 
 .nm-picker__entry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* Name, identifier, the application that already claimed it, the button. The owner
+     column collapses to nothing when the process is free, which is the common case. */
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 0.75rem;
   padding: 0.3rem 0.5rem;
   border: 1px solid var(--nm-border);
   border-radius: 0.4rem;
+}
+
+.nm-picker__owner {
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .nm-picker__name {
@@ -488,8 +496,15 @@ body {
   font-size: 1.05rem;
 }
 
-.nm-appcard__pid {
+/* The processes an application currently consists of. Listed rather than counted: a
+   grouping the user cannot inspect is one they cannot correct. */
+.nm-appcard__processes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
   margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
   color: var(--nm-muted);
   font-size: 0.78rem;
 }

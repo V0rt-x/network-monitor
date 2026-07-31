@@ -15,7 +15,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use nm_app::apps::AppMonitor;
-use nm_app::{AppView, HealthCountsView, HealthView, ProbeKindView, TransportView};
+use nm_app::{AppProcessView, AppView, HealthCountsView, HealthView, ProbeKindView, TransportView};
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
@@ -25,6 +25,7 @@ use nm_probes::probe::ProbeKind;
 
 const APP: AppId = AppId::new(1);
 const PID: u32 = 4242;
+const APP_ID: u32 = 1;
 
 /// Enough samples to clear the minimum a verdict needs: one lost packet is not an outage,
 /// and the thresholds refuse to judge below that.
@@ -75,7 +76,15 @@ fn fill(monitor: &mut AppMonitor, id: TargetId, now: Instant, outcome: ProbeOutc
 }
 
 fn view(monitor: &AppMonitor, now: Instant) -> AppView {
-    AppView::of(PID, "game.exe".to_owned(), &monitor.endpoints(APP, now))
+    AppView::of(
+        APP_ID,
+        "game.exe".to_owned(),
+        vec![AppProcessView {
+            pid: PID,
+            name: "game.exe".to_owned(),
+        }],
+        &monitor.endpoints(APP, now),
+    )
 }
 
 #[test]
@@ -134,8 +143,16 @@ fn an_application_is_a_distribution_and_not_one_colour() {
     assert_eq!(view.counts.ok, 1);
     assert_eq!(view.counts.unreachable, 1);
     assert_eq!(view.counts.degraded, 0);
-    assert_eq!(view.pid, PID);
+    assert_eq!(view.id, APP_ID);
     assert_eq!(view.name, "game.exe");
+    assert_eq!(
+        view.processes
+            .iter()
+            .map(|process| process.pid)
+            .collect::<Vec<_>>(),
+        vec![PID],
+        "the processes an application consists of are shown, not summarised"
+    );
 }
 
 #[test]

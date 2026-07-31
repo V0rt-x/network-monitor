@@ -27,8 +27,9 @@ const ENDPOINTS: AppEndpoints = {
   flowStatus: 'active',
   apps: [
     {
-      pid: 4242,
+      id: 1,
       name: 'game.exe',
+      processes: [{ pid: 4242, name: 'game.exe' }],
       counts: { ok: 1, degraded: 0, unreachable: 1, blocked: 0, carryingTraffic: 0, unknown: 0 },
       endpoints: [
         {
@@ -105,6 +106,39 @@ describe('AppMonitorPage', () => {
     expect(await screen.findByRole('heading', { name: 'game.exe' })).toBeInTheDocument();
     expect(screen.getByText('1.1.1.1:27015')).toBeInTheDocument();
     expect(screen.getByText('Figures cover the last 60 s')).toBeInTheDocument();
+  });
+
+  it('marks every process an application holds, not only the one that was picked', async () => {
+    // An application adopts its namesakes and its children, so the picker has to answer
+    // "is this taken" for processes the user never clicked.
+    fetchProcesses.mockResolvedValue({
+      processes: [
+        { pid: 4242, name: 'game.exe' },
+        { pid: 4300, name: 'title.exe' },
+        { pid: 900, name: 'unrelated.exe' },
+      ],
+      problem: null,
+    });
+    const emitter = captureEmitter();
+    render(<AppMonitorPage />);
+    const emit = emitter();
+
+    act(() => {
+      emit?.({
+        ...ENDPOINTS,
+        apps: ENDPOINTS.apps.map((app) => ({
+          ...app,
+          processes: [
+            { pid: 4242, name: 'game.exe' },
+            { pid: 4300, name: 'title.exe' },
+          ],
+        })),
+      });
+    });
+
+    expect(await screen.findAllByText('Part of game.exe')).toHaveLength(2);
+    // And the one nothing claimed can still be chosen.
+    expect(screen.getAllByRole('button', { name: 'Monitor' })).toHaveLength(1);
   });
 
   it('explains a missing tracing session instead of showing an application as quiet', async () => {

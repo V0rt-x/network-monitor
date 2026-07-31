@@ -21,6 +21,7 @@ import type {
  */
 export type {
   AppEndpoints,
+  AppProcessView,
   AppView,
   BaselineGroup,
   CoreHeartbeat,
@@ -73,9 +74,11 @@ export const subscribeToAppEndpoints = (
 
 export const fetchProcesses = (): Promise<ProcessListView> => commands.listProcesses();
 
+/** Starts monitoring the application a running process belongs to; the pid is the seed. */
 export const monitorApp = (pid: number): Promise<void> => commands.monitorApp(pid);
 
-export const forgetApp = (pid: number): Promise<void> => commands.forgetApp(pid);
+/** Stops monitoring one application, by the identity its endpoints are reported under. */
+export const forgetApp = (app: number): Promise<void> => commands.forgetApp(app);
 
 export const fetchSettings = (): Promise<SettingsView> => commands.getSettings();
 

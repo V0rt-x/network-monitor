@@ -36,19 +36,48 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
 });
 
 const app = (overrides: Partial<AppView> = {}): AppView => ({
-  pid: 4242,
+  id: 1,
   name: 'game.exe',
+  processes: [{ pid: 4242, name: 'game.exe' }],
   counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
   endpoints: [endpoint()],
   ...overrides,
 });
 
 describe('AppCard', () => {
-  it('names the process it is following', () => {
+  it('names the application it is following', () => {
     render(<AppCard app={app()} trafficWindowSecs={30} onForget={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'game.exe' })).toBeInTheDocument();
-    expect(screen.getByText('PID 4242')).toBeInTheDocument();
+    expect(screen.getByText('game.exe · PID 4242')).toBeInTheDocument();
+  });
+
+  it('lists every process the application currently consists of', () => {
+    // A grouping the user cannot inspect is one they cannot correct: a launcher, the title
+    // it started and an anti-cheat shim are one application, and they can see so.
+    render(
+      <AppCard
+        app={app({
+          name: 'Example Game',
+          processes: [
+            { pid: 100, name: 'launcher.exe' },
+            { pid: 300, name: 'title.exe' },
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('launcher.exe · PID 100')).toBeInTheDocument();
+    expect(screen.getByText('title.exe · PID 300')).toBeInTheDocument();
+  });
+
+  it('says an armed application has nothing running rather than showing an empty list', () => {
+    // The user picked it before starting the game. Silence here would read as a bug.
+    render(<AppCard app={app({ processes: [] })} trafficWindowSecs={30} onForget={vi.fn()} />);
+
+    expect(screen.getByText(/Nothing is running under this application yet/)).toBeInTheDocument();
   });
 
   it('shows a distribution and never one verdict for the whole application', () => {
@@ -237,12 +266,14 @@ describe('AppCard', () => {
     expect(screen.getByText('Nothing discovered yet for this application')).toBeInTheDocument();
   });
 
-  it('lets the user stop following the process', async () => {
+  it('lets the user stop following the application', async () => {
+    // By application identity, never by process: the one the user picked may be long gone
+    // while its children are still being measured.
     const onForget = vi.fn();
-    render(<AppCard app={app()} trafficWindowSecs={30} onForget={onForget} />);
+    render(<AppCard app={app({ id: 7 })} trafficWindowSecs={30} onForget={onForget} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
 
-    expect(onForget).toHaveBeenCalledWith(4242);
+    expect(onForget).toHaveBeenCalledWith(7);
   });
 });

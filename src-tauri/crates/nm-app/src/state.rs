@@ -8,6 +8,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use nm_core::endpoint::AppId;
 use nm_platform::process::Pid;
 use tokio::sync::watch;
 
@@ -88,17 +89,17 @@ impl AppState {
         }
     }
 
-    /// Starts following one process's endpoints.
+    /// Starts monitoring the application a running process belongs to.
     ///
-    /// The seam the process picker plugs into: nothing in the IPC surface calls this yet,
-    /// because a user cannot choose a process until that page exists.
+    /// The process is the seed the application is formed around — its namesakes and its
+    /// descendants — not the identity it is followed by afterwards.
     pub fn monitor_app(&self, pid: Pid) {
         self.monitor.send(MonitorCommand::MonitorApp(pid));
     }
 
-    /// Stops following one process's endpoints.
-    pub fn forget_app(&self, pid: Pid) {
-        self.monitor.send(MonitorCommand::ForgetApp(pid));
+    /// Stops following one application's endpoints.
+    pub fn forget_app(&self, app: AppId) {
+        self.monitor.send(MonitorCommand::ForgetApp(app));
     }
 
     /// Records that the tray now has a menu.

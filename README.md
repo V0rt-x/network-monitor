@@ -19,17 +19,39 @@ and `PLAN.md` for the roadmap.
 
 | Tool                      | Version                                                          |
 | ------------------------- | ---------------------------------------------------------------- |
-| Rust                      | stable (1.82+), `x86_64-pc-windows-msvc`                          |
+| Rust                      | stable (1.83+), `x86_64-pc-windows-msvc`                          |
 | Visual Studio Build Tools | 2022, "Desktop development with C++" workload + Windows SDK       |
 | Node.js                   | 22+                                                              |
 | WebView2 runtime          | preinstalled on Windows 11                                       |
 
-## Getting started
+## Running the app
+
+Once, after cloning:
 
 ```sh
 npm install
+```
+
+Then, to run it:
+
+```sh
 npm run tauri dev      # or: just dev
 ```
+
+That compiles the Rust workspace, starts Vite on `localhost:1420` and opens the desktop
+window against it; the frontend hot-reloads on save, and a change under `src-tauri/`
+rebuilds the core and restarts the window. The first build is a cold compile of the whole
+dependency tree and takes a few minutes — subsequent ones are seconds. No administrator
+rights are needed, in development or in a release build.
+
+For a real, optimised build:
+
+```sh
+npm run tauri build
+```
+
+The executable and the Windows installers land under `src-tauri/target/release/` and
+`src-tauri/target/release/bundle/`.
 
 ## Quality gates
 

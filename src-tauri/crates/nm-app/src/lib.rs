@@ -33,10 +33,12 @@ mod shell;
 mod state;
 mod view;
 
+pub mod applications;
 pub mod apps;
 pub mod baselines;
 pub mod discovery;
 pub mod monitor;
+pub mod presets;
 pub mod settings;
 
 pub use commands::{
@@ -46,9 +48,9 @@ pub use error::Error;
 pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth};
 pub use shell::TrayLabels;
 pub use view::{
-    AppView, EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView, LivenessView,
-    ProbeKindView, ProbingView, ProcessListProblem, ProcessListView, ProcessView, TargetView,
-    TransportView, SERIES_POINTS,
+    AppProcessView, AppView, EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView,
+    LivenessView, ProbeKindView, ProbingView, ProcessListProblem, ProcessListView, ProcessView,
+    TargetView, TransportView, SERIES_POINTS,
 };
 
 use std::path::PathBuf;

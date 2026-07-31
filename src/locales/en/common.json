@@ -90,10 +90,16 @@
     "pid": "PID {{pid}}",
     "start": "Monitor",
     "stop": "Stop",
+    "processes": {
+      "label": "Processes in this application",
+      "entry": "{{name}} · PID {{pid}}",
+      "none": "Nothing is running under this application yet — it will be picked up when it starts"
+    },
     "sparklineLabel": "Round-trip time over time for {{endpoint}}",
     "picker": {
       "heading": "Running processes",
-      "hint": "Pick up to {{limit}} applications. Nothing is read from inside them — only which addresses they talk to.",
+      "hint": "Pick up to {{limit}} applications. Choosing a process monitors the whole application it belongs to — its other processes and anything it launches. Nothing is read from inside them — only which addresses they talk to.",
+      "partOf": "Part of {{name}}",
       "searchLabel": "Search",
       "searchPlaceholder": "Filter by name",
       "refresh": "Refresh",

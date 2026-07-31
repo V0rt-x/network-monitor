@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { forgetApp, monitorApp } from '../../shared/ipc';
 import { AppCard } from './AppCard';
 import { flowStatusKey } from './labels';
+import type { MonitoredBy } from './ProcessPicker';
 import { ProcessPicker } from './ProcessPicker';
 import { useAppEndpoints } from './useAppEndpoints';
 
@@ -28,8 +30,20 @@ export const AppMonitorPage = () => {
   const state = useAppEndpoints();
 
   const endpoints = state.kind === 'measuring' ? state.endpoints : null;
-  const apps = endpoints?.apps ?? [];
-  const monitored = apps.map((app) => app.pid);
+  const apps = useMemo(() => endpoints?.apps ?? [], [endpoints]);
+
+  // Every process of every monitored application, so the picker can mark one the user
+  // never clicked — an application is a set of processes, and the ones it adopted are as
+  // taken as the one that seeded it.
+  const monitored = useMemo(() => {
+    const owners = new Map<number, MonitoredBy>();
+    for (const app of apps) {
+      for (const process of app.processes) {
+        owners.set(process.pid, { app: app.id, name: app.name });
+      }
+    }
+    return owners;
+  }, [apps]);
 
   return (
     <div className="nm-apps">
@@ -47,12 +61,13 @@ export const AppMonitorPage = () => {
 
       <ProcessPicker
         monitored={monitored}
+        count={apps.length}
         limit={MAX_APPS}
         onMonitor={(pid) => {
           void monitorApp(pid);
         }}
-        onForget={(pid) => {
-          void forgetApp(pid);
+        onForget={(app) => {
+          void forgetApp(app);
         }}
       />
 
@@ -68,11 +83,11 @@ export const AppMonitorPage = () => {
           <div className="nm-apps__list">
             {apps.map((app) => (
               <AppCard
-                key={app.pid}
+                key={app.id}
                 app={app}
                 trafficWindowSecs={endpoints.trafficWindowSecs}
-                onForget={(pid) => {
-                  void forgetApp(pid);
+                onForget={(id) => {
+                  void forgetApp(id);
                 }}
               />
             ))}

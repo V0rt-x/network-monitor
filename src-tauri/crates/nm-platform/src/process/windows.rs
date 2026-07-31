@@ -116,6 +116,20 @@ impl Drop for ProcessHandle {
     }
 }
 
+/// Reads a Toolhelp parent identifier, refusing the ones that name nothing.
+///
+/// Zero is what Toolhelp writes when it will not name a creator, and pid 0 is the idle
+/// process rather than a parent anything could have. Turning it into `Some` would put every
+/// such process under one imaginary root, which for a rule that adopts descendants is the
+/// difference between "the launcher's children" and "half the machine".
+const fn parent_of(raw: u32) -> Option<Pid> {
+    if raw == 0 {
+        None
+    } else {
+        Some(Pid::new(raw))
+    }
+}
+
 /// Lists processes through the Windows Toolhelp API.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WindowsProcessEnumerator;
@@ -154,6 +168,10 @@ impl ProcessEnumerator for WindowsProcessEnumerator {
             processes.push(ProcessInfo {
                 pid: Pid::new(entry.th32ProcessID),
                 name: name_from_wide(&entry.szExeFile),
+                // Zero is not a process: Toolhelp writes it for a system process whose
+                // creator it will not name, and reading it as a parent would make every
+                // such process a child of the same fiction.
+                parent: parent_of(entry.th32ParentProcessID),
             });
 
             // SAFETY: same invariants as the `Process32FirstW` call above; the snapshot
@@ -267,6 +285,61 @@ mod tests {
         assert_eq!(path.file_name(), expected.file_name());
         assert!(path.is_absolute(), "an image path is always absolute");
         assert!(path.is_file(), "the image of a running process exists");
+    }
+
+    #[test]
+    fn a_parent_identifier_is_reported_and_resolves_inside_the_same_snapshot() {
+        let processes = WindowsProcessEnumerator.processes().unwrap();
+
+        let me = processes
+            .iter()
+            .find(|process| process.pid == Pid::new(std::process::id()))
+            .unwrap();
+        let parent = me
+            .parent
+            .expect("a test harness is always started by something");
+        assert!(
+            processes.iter().any(|process| process.pid == parent),
+            "the parent of a live process is normally in the same snapshot"
+        );
+    }
+
+    #[test]
+    fn the_idle_process_is_nobodys_parent() {
+        // Toolhelp writes zero for a process whose creator it will not name. Read as a
+        // parent, that single fiction would adopt half the machine into one application.
+        assert_eq!(parent_of(0), None);
+        assert_eq!(parent_of(4), Some(Pid::new(4)));
+
+        let processes = WindowsProcessEnumerator.processes().unwrap();
+        assert!(processes
+            .iter()
+            .all(|process| process.parent != Some(Pid::new(0))));
+    }
+
+    #[test]
+    fn a_sweep_is_cheap_enough_to_repeat_on_the_discovery_beat() {
+        // Application membership is recomputed from a fresh sweep every few seconds, so
+        // what this costs is a standing charge against the < 1 % CPU budget rather than a
+        // one-off. Measured rather than assumed: the ceiling is deliberately loose (a
+        // busy machine running the whole test suite is not a quiet desktop), and it is
+        // there to catch a sweep that became tens of milliseconds, which would make the
+        // periodic refresh untenable and have to move off the beat.
+        let rounds = 20;
+        let started = std::time::Instant::now();
+        let mut counted = 0;
+        for _ in 0..rounds {
+            counted += WindowsProcessEnumerator.processes().unwrap().len();
+        }
+        let each = started.elapsed() / rounds;
+        eprintln!(
+            "process sweep: {each:?} for {} processes",
+            counted / rounds as usize
+        );
+        assert!(
+            each < std::time::Duration::from_millis(25),
+            "a process sweep took {each:?}"
+        );
     }
 
     #[test]

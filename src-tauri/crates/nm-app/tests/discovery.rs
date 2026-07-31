@@ -16,10 +16,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use nm_app::discovery::{
-    app_of, from_connection, from_flow, is_worth_tracking, Discovery, FlowStatus, Observation,
+    from_connection, from_flow, is_worth_tracking, Discovery, FlowStatus, Observation,
 };
 use nm_core::address::AddressPolicy;
-use nm_core::endpoint::{AppId, EndpointKey, Transport};
+use nm_core::endpoint::{EndpointKey, Transport};
 use nm_platform::connection::{Connection, ConnectionTable, Protocol, TcpState};
 use nm_platform::flow::{FlowDirection, FlowEvent, FlowEventSource, FlowSink};
 use nm_platform::process::Pid;
@@ -66,7 +66,7 @@ fn an_established_connection_becomes_an_endpoint() {
     let observation = from_connection(&tcp_row(GAME, TcpState::Established, Some(server(443))))
         .expect("an established row names a peer");
 
-    assert_eq!(observation.app, app_of(GAME));
+    assert_eq!(observation.pid, GAME);
     assert_eq!(observation.endpoint.transport, Transport::Tcp);
     assert_eq!(observation.endpoint.address, server(443));
     assert_eq!(
@@ -125,7 +125,7 @@ fn a_flow_event_carries_its_byte_count() {
     let observation =
         from_flow(&udp_flow(GAME, server(27_015), 1_280)).expect("a flow names its peer");
 
-    assert_eq!(observation.app, app_of(GAME));
+    assert_eq!(observation.pid, GAME);
     assert_eq!(observation.endpoint, EndpointKey::udp(server(27_015)));
     assert_eq!(observation.source, Some(client(50_000).ip()));
     assert_eq!(
@@ -144,8 +144,14 @@ fn a_flow_with_no_real_peer_is_discarded() {
 }
 
 #[test]
-fn the_application_identity_is_the_process_identifier() {
-    assert_eq!(app_of(GAME), AppId::new(GAME.get()));
+fn an_observation_names_a_process_and_leaves_the_application_to_be_resolved() {
+    // Two sources on two threads report process identifiers, which is all the operating
+    // system knows. Which application one belongs to is a question whose answer changes
+    // while an observation is in flight — an anti-cheat re-launch is a new process of the
+    // same application — so that mapping is applied once, where the sighting is consumed,
+    // rather than guessed at in each source.
+    let observation = from_flow(&udp_flow(GAME, server(27_015), 64)).unwrap();
+    assert_eq!(observation.pid, GAME);
 }
 
 // ---------------------------------------------------------------- filtering
@@ -295,13 +301,13 @@ async fn the_table_reports_only_the_processes_being_watched() {
     discovery.watch(&[GAME]);
 
     let observation = next(&mut observations).await.expect("the channel is open");
-    assert_eq!(observation.app, app_of(GAME));
+    assert_eq!(observation.pid, GAME);
     assert_eq!(observation.endpoint.address, server(443));
 
     // The next thing to arrive is the same endpoint on the following poll, never the
     // other process's.
     let observation = next(&mut observations).await.expect("the channel is open");
-    assert_eq!(observation.app, app_of(GAME));
+    assert_eq!(observation.pid, GAME);
 }
 
 #[tokio::test]

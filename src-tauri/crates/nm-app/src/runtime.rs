@@ -30,11 +30,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nm_core::address::{AddressClass, AddressPolicy};
-use nm_core::endpoint::LifecyclePolicy;
+use nm_core::endpoint::{AppId, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::ProbeSample;
 use nm_core::target::{TargetId, TargetRegistry, TargetTag};
-use nm_platform::process::Pid;
+use nm_platform::process::{Pid, ProcessInfo};
 use nm_probes::icmp::IcmpEchoProber;
 use nm_probes::path::PathProbe;
 use nm_probes::runner::{
@@ -46,13 +46,15 @@ use tauri::{AppHandle, Wry};
 use tauri_specta::Event as _;
 use tokio::sync::mpsc;
 
+use crate::applications::{Application, Applications};
 use crate::apps::{AppMonitor, TargetChange};
 use crate::baselines::{self, BaselineGroup, BaselineTarget};
-use crate::discovery::{self, Discovery, FlowStatus, Observation};
+use crate::discovery::{Discovery, FlowStatus, Observation};
 use crate::events::AppEndpoints;
 use crate::monitor::{health_window, BaselineMonitor};
+use crate::presets::PresetList;
 use crate::settings::Settings;
-use crate::view::AppView;
+use crate::view::{AppProcessView, AppView};
 use crate::Error;
 
 /// How often a snapshot is pushed to a visible window.
@@ -60,6 +62,21 @@ use crate::Error;
 /// One hertz: the ≤ 4 Hz IPC budget is a ceiling, not a target, and baselines are probed
 /// every few seconds — emitting faster would only resend the same numbers.
 pub const EMIT_PERIOD: Duration = Duration::from_secs(1);
+
+/// How often each application's set of processes is recomputed.
+///
+/// Much slower than the discovery beat, and the reason is measured rather than assumed: a
+/// Toolhelp sweep of a real desktop — 284 processes — takes about 8 ms, so doing it once a
+/// second would spend most of the product's whole 1 % CPU budget on bookkeeping. A test in
+/// `nm-platform` pins that figure so it cannot quietly grow.
+///
+/// What five seconds costs is latency: a game started by its launcher joins the
+/// application, and its endpoints start being measured, up to five seconds after it
+/// appears. That is the right trade for the case this exists to serve — arming the monitor
+/// *before* a match — and the sweep does not run at all while nothing is monitored.
+///
+/// A user action does not wait for it: choosing a process takes its own snapshot.
+pub const MEMBERSHIP_PERIOD: Duration = Duration::from_secs(5);
 
 /// How many completed probes may queue before the loop must drain them.
 const REPORT_QUEUE: usize = 64;
@@ -81,14 +98,15 @@ pub enum MonitorCommand {
     /// Visibility itself is read from the shared flag this task was given — this command
     /// only exists so a freshly shown window is never blank for a second.
     WindowRevealed,
-    /// Start discovering and probing one process's endpoints.
+    /// Start monitoring the application one running process belongs to.
     ///
-    /// Refused past the five-application cap; the refusal is not reported back because no
-    /// caller can act on it yet. The process picker, which is where a user can be told,
-    /// arrives with the app-monitor page.
+    /// A process identifier is the *seed*, not the identity: the application is formed
+    /// around it — its namesakes and its descendants — and keeps its own identity as those
+    /// processes come and go. Refused past the five-application cap, and for a process that
+    /// is already part of a monitored application.
     MonitorApp(Pid),
-    /// Stop following a process and release the endpoints nothing else uses.
-    ForgetApp(Pid),
+    /// Stop following an application and release the endpoints nothing else uses.
+    ForgetApp(AppId),
 }
 
 /// Handle for talking to the running monitor task.
@@ -121,17 +139,6 @@ pub fn spawn(app: AppHandle<Wry>, settings: Settings, visible: Arc<AtomicBool>) 
     MonitorHandle { commands }
 }
 
-/// One process the user chose to follow.
-///
-/// The name is taken once, when monitoring starts, and kept: it is a label for a process
-/// identifier that is already the identity, and re-reading it every second would mean a
-/// full process sweep per tick for a string that cannot change.
-#[derive(Debug, Clone)]
-struct Watched {
-    pid: Pid,
-    name: String,
-}
-
 /// Why a monitoring session ended.
 enum SessionEnd {
     /// Settings changed; start again with these.
@@ -142,7 +149,7 @@ enum SessionEnd {
 
 /// Runs one session after another, rebuilding whenever the settings change.
 ///
-/// The set of monitored processes lives out here, above the session, so that changing the
+/// The monitored applications live out here, above the session, so that changing the
 /// country or the probe interval does not silently stop following the user's game. Their
 /// measured history does not survive — the session that held it is gone — and that is the
 /// same bargain the baselines make.
@@ -153,9 +160,15 @@ async fn run(
     visible: Arc<AtomicBool>,
 ) {
     let started = Instant::now();
-    // A list rather than a set: at most five, and the page shows them in the order the user
-    // chose them, which a set ordered by process identifier would scramble.
-    let mut watched: Vec<Watched> = Vec::new();
+    let presets = PresetList::bundled().unwrap_or_else(|error| {
+        // The bundled file is validated by a test, so this is close to unreachable. If it
+        // ever happens, grouping by executable name and by process tree still works and the
+        // awkward titles are the only casualty — which is a far better outcome than
+        // refusing to monitor anything.
+        eprintln!("network-monitor: the application presets could not be loaded: {error}");
+        PresetList::empty()
+    });
+    let mut applications = Applications::new(presets);
 
     loop {
         let end = session(
@@ -164,7 +177,7 @@ async fn run(
             &mut commands,
             &visible,
             started,
-            &mut watched,
+            &mut applications,
         )
         .await;
         match end {
@@ -186,7 +199,7 @@ async fn session(
     commands: &mut mpsc::Receiver<MonitorCommand>,
     visible: &AtomicBool,
     started: Instant,
-    watched: &mut Vec<Watched>,
+    applications: &mut Applications,
 ) -> SessionEnd {
     let interval = settings.baseline_interval();
     let policy = AddressPolicy::default();
@@ -234,11 +247,15 @@ async fn session(
     let mut pending: VecDeque<ProbeCommand> = VecDeque::new();
     // Applications the user chose before this session started — a settings change, most
     // likely — are picked up again rather than quietly forgotten.
-    watched.retain(|process| apps.monitor(discovery::app_of(process.pid)).is_ok());
-    discovery.watch(&pids_of(watched));
+    for id in applications.iter().map(Application::id).collect::<Vec<_>>() {
+        let _ = apps.monitor(id);
+    }
+    discovery.watch(&applications.watched_pids());
 
     let mut ticker = tokio::time::interval(EMIT_PERIOD);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut membership = tokio::time::interval(MEMBERSHIP_PERIOD);
+    membership.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         flush(&mut pending, &probe_commands);
@@ -248,16 +265,27 @@ async fn session(
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
                 Some(MonitorCommand::WindowRevealed) => {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, watched, discovery.flow_status());
+                    emit_apps(app, &apps, applications, discovery.flow_status());
                 }
                 Some(MonitorCommand::MonitorApp(pid)) => {
-                    watch_process(&mut apps, watched, pid, &mut discovery);
+                    // A fresh snapshot rather than the last periodic one: the user has just
+                    // clicked a process the picker listed a moment ago, and a game that
+                    // started since the last sweep must not be refused as "not running".
+                    if let Some(snapshot) = snapshot_processes().await {
+                        if let Some(id) = applications.adopt(pid, &snapshot) {
+                            if apps.monitor(id).is_err() {
+                                applications.forget(id);
+                            }
+                            discovery.watch(&applications.watched_pids());
+                        }
+                    }
                 }
-                Some(MonitorCommand::ForgetApp(pid)) => {
-                    watched.retain(|process| process.pid != pid);
-                    discovery.watch(&pids_of(watched));
-                    let changes = apps.forget(&mut registry, discovery::app_of(pid));
-                    queue(&mut pending, changes, &refusals);
+                Some(MonitorCommand::ForgetApp(id)) => {
+                    if applications.forget(id) {
+                        discovery.watch(&applications.watched_pids());
+                        let changes = apps.forget(&mut registry, id);
+                        queue(&mut pending, changes, &refusals);
+                    }
                 }
                 None => return SessionEnd::Shutdown,
             },
@@ -265,8 +293,18 @@ async fn session(
                 let changes = fold_in(&mut baselines, &mut apps, &mut registry, &completed);
                 queue(&mut pending, changes, &refusals);
             }
-            Some(observation) = observations.recv() => observe(&mut apps, observation),
+            Some(observation) = observations.recv() => observe(&mut apps, applications, observation),
             Some(id) = refused.recv() => apps.note_unmeasurable(id),
+            _ = membership.tick(), if !applications.is_empty() => {
+                // What an application consists of changes underneath it: a launcher exits
+                // once the title is running, an anti-cheat re-launches the game, a helper
+                // comes and goes. Nothing is asked of the operating system while no
+                // application is monitored, which is what the guard is for.
+                if let Some(snapshot) = snapshot_processes().await {
+                    applications.refresh(&snapshot);
+                    discovery.watch(&applications.watched_pids());
+                }
+            }
             _ = ticker.tick() => {
                 // All of this runs whether the window is visible or not: hidden means "stop
                 // drawing", never "stop measuring" — and a tracing session that fell over
@@ -276,60 +314,41 @@ async fn session(
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, watched, discovery.flow_status());
+                    emit_apps(app, &apps, applications, discovery.flow_status());
                 }
             }
         }
     }
 }
 
-/// The watched processes as the discovery sources want them.
-fn pids_of(watched: &[Watched]) -> Vec<Pid> {
-    watched.iter().map(|process| process.pid).collect()
+/// Takes a process snapshot without blocking the monitoring loop's thread.
+///
+/// A Toolhelp sweep is roughly 8 ms of synchronous system call — an eternity on an async
+/// worker, which is why it goes to the blocking pool. The loop still waits for the answer,
+/// because it has nothing useful to do without one; what it must not do is occupy a runtime
+/// thread while the kernel copies a few hundred process entries.
+async fn snapshot_processes() -> Option<Vec<ProcessInfo>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let enumerator = nm_platform::process::system_enumerator().ok()?;
+        enumerator.processes().ok()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
-/// Starts following one process, if it exists and there is room for it.
+/// Records one sighting from discovery, if it belongs to a monitored application.
 ///
-/// The name is read here, from the same read-only sweep the picker uses. A process
-/// identifier that no longer names anything is refused rather than monitored: a dead
-/// process would hold one of the five slots and never produce an endpoint.
-fn watch_process(
-    apps: &mut AppMonitor,
-    watched: &mut Vec<Watched>,
-    pid: Pid,
-    discovery: &mut Discovery,
-) {
-    if watched.iter().any(|process| process.pid == pid) {
-        return;
-    }
-    let Some(name) = process_name(pid) else {
+/// The process-to-application mapping is applied here and nowhere else. A process the user
+/// stopped watching between a poll being taken and its rows arriving maps to nothing and
+/// the sighting is dropped — that race is normal rather than a fault, and so is a process
+/// that has not yet been adopted into the application it will belong to.
+fn observe(apps: &mut AppMonitor, applications: &Applications, observation: Observation) {
+    let Some(app) = applications.app_of(observation.pid) else {
         return;
     };
-    if apps.monitor(discovery::app_of(pid)).is_err() {
-        return;
-    }
-    watched.push(Watched { pid, name });
-    discovery.watch(&pids_of(watched));
-}
-
-/// The executable name of a running process, or [`None`] if it is not running.
-fn process_name(pid: Pid) -> Option<String> {
-    let enumerator = nm_platform::process::system_enumerator().ok()?;
-    let processes = enumerator.processes().ok()?;
-    processes
-        .into_iter()
-        .find(|process| process.pid == pid)
-        .map(|process| process.name)
-}
-
-/// Records one sighting from discovery.
-///
-/// An observation for an application that is no longer monitored is dropped: the user can
-/// stop watching a process between a poll being taken and its rows arriving, and that race
-/// is normal rather than a fault.
-fn observe(apps: &mut AppMonitor, observation: Observation) {
     let _ = apps.observe(
-        observation.app,
+        app,
         observation.endpoint,
         observation.source,
         observation.bytes,
@@ -485,15 +504,28 @@ fn emit_health(app: &AppHandle<Wry>, monitor: &BaselineMonitor, started: Instant
 fn emit_apps(
     app: &AppHandle<Wry>,
     apps: &AppMonitor,
-    watched: &[Watched],
+    applications: &Applications,
     flow_status: FlowStatus,
 ) {
     let now = Instant::now();
-    let views = watched
+    let views = applications
         .iter()
-        .map(|process| {
-            let reports = apps.endpoints(discovery::app_of(process.pid), now);
-            AppView::of(process.pid.get(), process.name.clone(), &reports)
+        .map(|application| {
+            let reports = apps.endpoints(application.id(), now);
+            let processes = application
+                .members()
+                .iter()
+                .map(|member| AppProcessView {
+                    pid: member.pid.get(),
+                    name: member.name.clone(),
+                })
+                .collect();
+            AppView::of(
+                application.id().get(),
+                application.label().to_owned(),
+                processes,
+                &reports,
+            )
         })
         .collect();
 

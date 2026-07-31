@@ -19,6 +19,13 @@ pub enum Error {
         reason: String,
     },
 
+    /// The bundled known-application presets are not usable.
+    #[error("the application presets are unusable: {reason}")]
+    AppPresets {
+        /// What is wrong with them.
+        reason: String,
+    },
+
     /// No domestic baseline list is bundled for this country code.
     #[error("no baseline list is bundled for country {country:?}")]
     UnknownCountry {

@@ -5,13 +5,29 @@ import { formatCount } from '../../shared/format';
 import { processProblemKey } from './labels';
 import { useProcessList } from './useProcessList';
 
+/** One application a listed process already belongs to. */
+export interface MonitoredBy {
+  /** Identity to stop it by. */
+  readonly app: number;
+  /** What that application is called, so the entry can say which one took the process. */
+  readonly name: string;
+}
+
 interface ProcessPickerProps {
-  /** Processes already being followed, so they are offered as chosen rather than twice. */
-  readonly monitored: readonly number[];
+  /**
+   * Which application each already-monitored process belongs to.
+   *
+   * Keyed by process rather than by application because that is the question this list
+   * asks of every row — and because one application holds several of them, so a process
+   * the user did not pick can still turn out to be taken.
+   */
+  readonly monitored: ReadonlyMap<number, MonitoredBy>;
+  /** How many applications are being monitored. */
+  readonly count: number;
   /** How many applications may be monitored at once. */
   readonly limit: number;
   readonly onMonitor: (pid: number) => void;
-  readonly onForget: (pid: number) => void;
+  readonly onForget: (app: number) => void;
 }
 
 /** How many matches are rendered at once. */
@@ -27,8 +43,19 @@ const SHOWN = 40;
  * The list is fetched when this mounts and when the user asks again — never on a timer. A
  * process list is stale the instant it is taken, so polling would spend budget to be no
  * fresher, and Rust re-checks the identifier when monitoring actually starts.
+ *
+ * What a click starts is an *application*, not this process: Rust forms one around it from
+ * its namesakes, its descendants and any bundled preset. So a process the user never picked
+ * can appear here as already taken, and the entry says which application took it — a
+ * grouping nobody can inspect is one nobody can correct.
  */
-export const ProcessPicker = ({ monitored, limit, onMonitor, onForget }: ProcessPickerProps) => {
+export const ProcessPicker = ({
+  monitored,
+  count,
+  limit,
+  onMonitor,
+  onForget,
+}: ProcessPickerProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const { state, refresh } = useProcessList();
@@ -47,7 +74,7 @@ export const ProcessPicker = ({ monitored, limit, onMonitor, onForget }: Process
     return found.slice(0, SHOWN);
   }, [processes, search]);
 
-  const full = monitored.length >= limit;
+  const full = count >= limit;
 
   return (
     <section className="nm-picker">
@@ -97,23 +124,28 @@ export const ProcessPicker = ({ monitored, limit, onMonitor, onForget }: Process
 
       <ul className="nm-picker__list">
         {matches.map((process) => {
-          const chosen = monitored.includes(process.pid);
+          const owner = monitored.get(process.pid);
           return (
             <li key={process.pid} className="nm-picker__entry">
               <span className="nm-picker__name">{process.name}</span>
               <span className="nm-picker__pid">{t('apps.pid', { pid: process.pid })}</span>
+              {owner !== undefined && (
+                <span className="nm-picker__owner">
+                  {t('apps.picker.partOf', { name: owner.name })}
+                </span>
+              )}
               <button
                 type="button"
                 className="nm-button"
                 // The cap is enforced in Rust; disabling here explains *why* nothing would
                 // happen rather than letting the click fail silently.
-                disabled={!chosen && full}
+                disabled={owner === undefined && full}
                 onClick={() => {
-                  if (chosen) onForget(process.pid);
-                  else onMonitor(process.pid);
+                  if (owner === undefined) onMonitor(process.pid);
+                  else onForget(owner.app);
                 }}
               >
-                {chosen ? t('apps.stop') : t('apps.start')}
+                {owner === undefined ? t('apps.start') : t('apps.stop')}
               </button>
             </li>
           );
