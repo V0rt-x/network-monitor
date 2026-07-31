@@ -515,6 +515,9 @@ body {
 .nm-endpointchart {
   margin-top: 0.75rem;
   width: 100%;
+  /* Reserves the chart's height before it is drawn. Without it the card jumps as data
+     arrives, and a chart that failed to draw is invisible rather than obviously absent. */
+  min-height: 200px;
 }
 
 .nm-appcard__chartnote {

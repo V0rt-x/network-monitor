@@ -99,7 +99,8 @@
       "label": "Round-trip time over time for every endpoint of {{name}}",
       "pathSeries": "Route to {{endpoint}}",
       "note": "One line per endpoint, each point the slowest round trip in a {{seconds}} s slot — so a spike is never smoothed away, and the line sits above the average beside it. The scale is logarithmic, so 4 ms and 400 ms are both readable; nothing is clipped. A dashed line is the route to an endpoint that answers nothing: the round-trip time to a router on the way there, not to the endpoint itself. A break in a line is probes that did not come back.",
-      "highlight": "Highlight on the chart"
+      "highlight": "Highlight on the chart",
+      "failed": "The chart could not be drawn ({{reason}}). Every figure it would show is in the list below."
     },
     "picker": {
       "heading": "Running applications",

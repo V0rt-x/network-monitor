@@ -18,6 +18,25 @@ export interface ChartLine {
 }
 
 /**
+ * A tick label on the chart's logarithmic round-trip axis.
+ *
+ * uPlot labels a log scale in exponents by default; whole milliseconds are what someone
+ * comparing latencies actually reads. Sub-millisecond ticks keep one decimal, which is the
+ * only place a round trip on this chart is ever that small.
+ *
+ * **A split can be `null`.** A log axis runs its splits through a filter that blanks the
+ * minor ticks between powers, and the filtered array is what reaches here. Treating one of
+ * those as a number throws in the middle of a draw — which leaves an empty canvas, no error
+ * anywhere, and a note underneath still describing a chart that is not there. It cost an
+ * afternoon once; the test beside this exists so it cannot cost another.
+ */
+export const formatAxisMs = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '';
+  if (!Number.isFinite(value)) return '';
+  return value >= 1 ? String(Math.round(value)) : value.toFixed(1);
+};
+
+/**
  * The smallest round trip the chart's logarithmic axis can place, in milliseconds.
  *
  * A logarithmic scale has no zero, so a measurement of zero — which needs a round trip

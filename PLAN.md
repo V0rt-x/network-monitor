@@ -716,9 +716,20 @@ part of Phase 4 and nothing here waits on it.
       zero, which needs a round trip faster than a microsecond — is drawn at the floor, and
       that is a drawing decision stated as one: the row beside the chart carries the exact
       figure.
-      **Not verified against a real render.** jsdom has no canvas, so uPlot draws nothing in
-      the test suite and the component's tests go through a stand-in that records what it was
-      asked to draw. What the chart *contains* is tested; how it looks has not been seen.
+      **Verified against a real render** on 2026-08-01, with Apex Legends monitored during a
+      session: nine endpoints on one axis, the silent match server drawn as a dashed route
+      line while its own round trip, jitter and loss stayed dashes in the row beneath, and
+      the route panel naming the hop it belongs to. jsdom still has no canvas, so the
+      component's own tests go through a stand-in — what the chart *contains* is tested, how
+      it looks was checked by eye.
+      Getting there cost two failures worth recording. The chart drew nothing at all and
+      **said nothing about it**: the tick formatter treated a blanked minor tick as a number
+      and threw in the middle of a draw, leaving an empty canvas, no error anywhere, and a
+      note underneath still describing a chart that was not there. The formatter is now a
+      tested function of its own, and a chart that cannot be drawn says so where the chart
+      would have been. The second was mechanical and wasted more time than the first: an
+      orphaned Vite server kept port 1420, so a restarted app was served a stale frontend and
+      every fix appeared to do nothing.
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 
 **Phase 4 status: every item is built, and the acceptance criterion is partly met. The gap

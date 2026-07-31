@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries, LOG_FLOOR_MS } from './chartSeries';
+import { alignSeries, formatAxisMs, LOG_FLOOR_MS } from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
@@ -73,5 +73,31 @@ describe('alignSeries', () => {
     const data = alignSeries([-1, 0], [line([0.5, 240])]);
 
     expect(data[1]).toEqual([0.5, 240]);
+  });
+});
+
+describe('formatAxisMs', () => {
+  it('labels a blanked minor tick with nothing rather than throwing', () => {
+    // The bug this exists for: a logarithmic axis runs its splits through a filter that
+    // blanks the minor ticks between powers, and the filtered array is what reaches the
+    // formatter. Treating one of those as a number threw in the middle of a draw, which
+    // left an empty canvas, no error anywhere, and a note underneath still describing a
+    // chart that was not there.
+    expect(formatAxisMs(null)).toBe('');
+    expect(formatAxisMs(undefined)).toBe('');
+    expect(formatAxisMs(Number.NaN)).toBe('');
+    expect(formatAxisMs(Number.POSITIVE_INFINITY)).toBe('');
+  });
+
+  it('labels milliseconds the way someone comparing latencies reads them', () => {
+    expect(formatAxisMs(100)).toBe('100');
+    expect(formatAxisMs(1000)).toBe('1000');
+    expect(formatAxisMs(23.6)).toBe('24');
+    expect(formatAxisMs(1)).toBe('1');
+  });
+
+  it('keeps a decimal below a millisecond, where rounding would print zero', () => {
+    expect(formatAxisMs(0.4)).toBe('0.4');
+    expect(formatAxisMs(0.05)).toBe('0.1');
   });
 });

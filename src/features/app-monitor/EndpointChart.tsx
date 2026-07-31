@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import uPlot from 'uplot';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries } from './chartSeries';
+import { alignSeries, formatAxisMs } from './chartSeries';
 
 interface EndpointChartProps {
   /** Seconds before now for each slot — negative, ascending, shared by every line. */
@@ -19,16 +20,6 @@ interface EndpointChartProps {
 }
 
 const HEIGHT = 200;
-
-/**
- * A tick label on the logarithmic axis.
- *
- * uPlot labels a log scale in exponents by default; whole milliseconds are what someone
- * comparing latencies actually reads. Sub-millisecond ticks keep one decimal, which is the
- * only place round trips on this chart are ever that small — a hop inside the machine.
- */
-const formatAxisMs = (value: number): string =>
-  value >= 1 ? String(Math.round(value)) : value.toFixed(1);
 
 /** How dim a line gets while another endpoint is raised. */
 const DIMMED_ALPHA = '38';
@@ -68,8 +59,10 @@ export const EndpointChart = ({
   onSelect,
   label,
 }: EndpointChartProps) => {
+  const { t } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
   const plot = useRef<uPlot | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
 
   // Read by uPlot's stroke callbacks at draw time. Kept in refs so that hovering a line
   // recolours the chart with a redraw rather than by tearing it down and rebuilding it.
@@ -77,6 +70,8 @@ export const EndpointChart = ({
   currentLines.current = lines;
   const currentHighlight = useRef<string | null>(highlighted);
   currentHighlight.current = highlighted;
+  const currentAges = useRef<readonly (number | null)[]>(ageSecs);
+  currentAges.current = ageSecs;
   const notifyHover = useRef(onHover);
   notifyHover.current = onHover;
   const notifySelect = useRef(onSelect);
@@ -91,6 +86,7 @@ export const EndpointChart = ({
     const element = host.current;
     if (!element) return undefined;
 
+    setFailure(null);
     const drawn = currentLines.current;
     const stroke = (index: number) => () => {
       const line = currentLines.current[index];
@@ -125,7 +121,14 @@ export const EndpointChart = ({
             // is the odd one out" answerable at a glance and what makes a line possible to
             // put a pointer on. Nothing is clipped and no outlier is hidden; only the
             // spacing changes.
-            y: { distr: 3, log: 10 },
+            y: {
+              distr: 3,
+              log: 10,
+              // Fitted to the data rather than rounded out to whole decades: a chart whose
+              // lines all sit at 150 ms must not spend half its height on the empty space
+              // between 1 ms and 100 ms.
+              range: (_chart, min, max) => uPlot.rangeLog(min, max, 10, false),
+            },
           },
           axes: [
             { stroke: '#94a3b8', grid: { stroke: '#1e3a5f' }, ticks: { stroke: '#1e3a5f' } },
@@ -135,7 +138,8 @@ export const EndpointChart = ({
               ticks: { stroke: '#1e3a5f' },
               // Plain milliseconds rather than uPlot's exponent notation: the reader is
               // comparing latencies, not reading a science plot.
-              values: (_chart, splits) => splits.map((value) => formatAxisMs(value)),
+              values: (_chart, splits) =>
+                (splits as unknown as (number | null)[]).map((value) => formatAxisMs(value)),
             },
           ],
           series: [
@@ -159,12 +163,17 @@ export const EndpointChart = ({
             ],
           },
         },
-        [[], ...drawn.map(() => [])] as unknown as uPlot.AlignedData,
+        // Built with the data it will draw, not with empty arrays. A logarithmic scale has
+        // no range to compute from nothing, and uPlot decides its scales at construction.
+        alignSeries(currentAges.current, drawn) as unknown as uPlot.AlignedData,
         element,
       );
-    } catch {
-      // No canvas context — a headless renderer, or a WebView that lost its surface. Every
-      // figure the chart would draw is in the list beside it, so it simply does not appear.
+    } catch (error) {
+      // A headless renderer with no canvas, a WebView that lost its surface, or data no
+      // scale can place. Said out loud rather than swallowed: a chart that silently is not
+      // there looks exactly like a chart that is broken, and the note underneath goes on
+      // describing one.
+      setFailure(error instanceof Error ? error.message : String(error));
       chart = null;
     }
     plot.current = chart;
@@ -189,18 +198,25 @@ export const EndpointChart = ({
   }, [highlighted]);
 
   return (
-    <div
-      className="nm-endpointchart"
-      ref={host}
-      role="img"
-      aria-label={label}
-      onMouseLeave={() => {
-        onHover(null);
-      }}
-      onClick={() => {
-        // uPlot has already told us which line the cursor is nearest; a click pins it.
-        if (highlighted !== null) onSelect(highlighted);
-      }}
-    />
+    <>
+      <div
+        className="nm-endpointchart"
+        ref={host}
+        role="img"
+        aria-label={label}
+        onMouseLeave={() => {
+          onHover(null);
+        }}
+        onClick={() => {
+          // uPlot has already told us which line the cursor is nearest; a click pins it.
+          if (highlighted !== null) onSelect(highlighted);
+        }}
+      />
+      {failure !== null && (
+        <p className="nm-state--degraded" role="alert">
+          {t('apps.chart.failed', { reason: failure })}
+        </p>
+      )}
+    </>
   );
 };
