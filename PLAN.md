@@ -35,12 +35,38 @@ Phase 0 notes (deviations worth remembering):
 
 Goal: all measurement math exists and is bulletproof before any OS integration.
 
-- [ ] Metric types: RTT sample, probe outcome (success/timeout/unreachable/icmp-blocked), target identity
-- [ ] Fixed-capacity ring buffers for sample history (no unbounded growth)
-- [ ] Sliding-window stats: avg/min/max RTT, jitter (RFC 3550 mean deviation + stddev), loss % from timeouts, percentiles (p50/p95/p99)
-- [ ] Probe scheduler model: per-target interval, global rate cap, monotonic-clock based, testable with a fake clock
-- [ ] Target registry: add/remove/tag targets (per-app endpoint, baseline, status service)
+- [x] Metric types: RTT sample, probe outcome (success/timeout/unreachable/icmp-blocked), target identity
+- [x] Fixed-capacity ring buffers for sample history (no unbounded growth)
+- [x] Sliding-window stats: avg/min/max RTT, jitter (RFC 3550 mean deviation + stddev), loss % from timeouts, percentiles (p50/p95/p99)
+- [x] Probe scheduler model: per-target interval, global rate cap, monotonic-clock based, testable with a fake clock
+- [x] Target registry: add/remove/tag targets (per-app endpoint, baseline, status service)
 - **Accept**: exhaustive unit tests incl. edge cases (empty window, all-timeouts, clock jumps); `nm-core` has zero platform/tokio deps.
+  *Verified: 77 unit tests; `cargo tree -p nm-core` is `thiserror` and its proc-macro crates, nothing else.*
+
+Phase 1 decisions worth remembering:
+
+- **Absent knowledge is `None`, never zero.** A window with no delivery test reports no loss
+  percentage rather than `0 %`. `Blocked` (the probe kind is filtered) is excluded from the
+  loss denominator entirely — counting it as loss would invent 100 % packet loss on a healthy
+  link, which is exactly the fake-zero failure CLAUDE.md forbids. `Unreachable` is likewise a
+  definitive answer, not a lost packet.
+- **RTT is stored as `u32` microseconds**, not a float: exact, totally ordered (so percentile
+  sorting can never meet a `NaN`), 4 bytes per sample. Statistics are presented in `f64` ms.
+- **Percentiles use nearest rank** with integer ceiling division, so boundaries do not depend
+  on floating-point rounding. Jitter is RFC 3550's `J += (|D| - J)/16` over consecutive
+  *replies* — round-trip differences stand in for the one-way transit differences the RFC
+  defines, since a round-trip probe cannot observe transit; failures are skipped rather than
+  treated as gaps.
+- **Scheduling priority is interval length, not a separate rank.** Ordering due targets by how
+  overdue they are makes oversubscription stretch every effective interval fairly and rules out
+  starvation by construction; a strict priority order could freeze out low-priority targets
+  forever. Deadlines are set forward from *now*, never from the missed deadline, so a backlog
+  can never become the burst the rate cap exists to prevent. The token bucket's burst allowance
+  is an eighth of a second's budget — 4 probes at the product's 32/s cap.
+- **No type in `nm-core` reads a clock.** Callers pass `now` in, which is what lets the tests
+  simulate ten seconds of scheduling across a hundred targets in microseconds. All arithmetic
+  on `Instant`/`Duration` is checked or saturating, so a clock that appears to move backwards
+  yields no panic and no windfall of probe budget.
 
 ## Phase 2 — Probe engine
 
