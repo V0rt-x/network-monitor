@@ -18,5 +18,14 @@ thiserror.workspace = true
 # is the standard, minimal way to bridge that gap.
 async-trait = "0.1"
 
+# `net` for the TCP prober's socket, `time` for probe deadlines, `rt` to move the blocking
+# ICMP call off the runtime's worker threads. No `macros`, no `rt-multi-thread`: the
+# runtime itself is `nm-app`'s to own.
+tokio = { workspace = true, features = ["net", "rt", "time"] }
+
+[dev-dependencies]
+mockall.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [lints]
 workspace = true

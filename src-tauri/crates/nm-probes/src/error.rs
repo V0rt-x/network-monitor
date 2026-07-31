@@ -1,7 +1,11 @@
 //! Error type for [`crate`].
 
+use std::io;
+
 use nm_core::address::AddressClass;
 use thiserror::Error as ThisError;
+
+use crate::probe::ProbeKind;
 
 /// Failures raised by the probe engine.
 ///
@@ -24,5 +28,43 @@ pub enum Error {
     NothingUsable {
         /// What the address was classified as.
         class: AddressClass,
+    },
+
+    /// A probe kind that needs a port was handed a target that has none.
+    ///
+    /// A configuration mistake rather than a network condition: guessing a port would
+    /// measure a service the user never asked about.
+    #[error("a {kind:?} probe needs a port and this target has none")]
+    PortRequired {
+        /// The probe kind that was asked for.
+        kind: ProbeKind,
+    },
+
+    /// The egress address and the target belong to different address families.
+    ///
+    /// Binding an IPv4 source to reach an IPv6 host cannot work, and letting the OS pick
+    /// instead would silently measure a different route than the one being diagnosed —
+    /// which defeats the point of source binding. The addresses are deliberately left out
+    /// of the message: they describe the user's own network.
+    #[error("the egress address family does not match the target's")]
+    SourceFamilyMismatch,
+
+    /// The probe could not be carried out on this machine.
+    ///
+    /// Distinct from a timeout on purpose: our own socket failing is not the destination
+    /// dropping a packet, and must never reach the loss ratio.
+    #[error("a {kind:?} probe failed locally: {reason:?}")]
+    LocalFailure {
+        /// The probe kind that failed.
+        kind: ProbeKind,
+        /// What the operating system reported.
+        reason: io::ErrorKind,
+    },
+
+    /// A probe running on the blocking pool never returned its result.
+    #[error("the {kind:?} probe task did not complete")]
+    ProbeTaskLost {
+        /// The probe kind whose task was lost.
+        kind: ProbeKind,
     },
 }

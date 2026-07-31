@@ -10,7 +10,10 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+# 1.83 for `io::ErrorKind::HostUnreachable` and `NetworkUnreachable`: without them a
+# connect failure that the OS *did* classify would fall into `Uncategorized` and have to be
+# reported as our own failure rather than as a measurement of the destination.
+rust-version = "1.83"
 license = "MIT"
 repository = "https://github.com/mixmi/network-monitor"
 publish = false
@@ -21,6 +24,14 @@ nm-platform = { path = "crates/nm-platform" }
 nm-probes = { path = "crates/nm-probes" }
 
 thiserror = "2"
+
+# The runtime the app already carries through Tauri; features are chosen per crate so a
+# library crate never pulls in more of it than it uses.
+tokio = { version = "1", default-features = false }
+
+# Test-only. CLAUDE.md names it: platform traits are mocked so probe-engine logic is
+# testable on any OS, including the Windows-only ICMP path.
+mockall = "0.13"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

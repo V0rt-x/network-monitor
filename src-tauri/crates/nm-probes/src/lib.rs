@@ -8,8 +8,8 @@
 //! The crate holds no OS-specific code of its own — every syscall goes through a
 //! `nm-platform` trait, which is what makes the engine testable with mocks.
 //!
-//! Phase 0 only establishes the crate and the budget it will have to honour; the
-//! probers and the scheduler land in Phase 2 (see `PLAN.md`).
+//! Phase 2 in progress: the [`probe`] seam, the ICMP and TCP probers. The TLS prober, the
+//! fallback chain and the async runner are still to come (see `PLAN.md`).
 
 #![warn(missing_docs)]
 // Every OS call goes through a `nm-platform` trait, so this crate needs no `unsafe`.
@@ -17,7 +17,9 @@
 
 mod error;
 
+pub mod icmp;
 pub mod probe;
+pub mod tcp;
 
 pub use error::Error;
 

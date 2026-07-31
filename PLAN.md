@@ -73,15 +73,21 @@ Phase 1 decisions worth remembering:
 Goal: real measurements against real hosts, still no per-app discovery.
 
 - [~] `Prober` trait + implementations: ICMP (`IcmpSendEcho2Ex` on Windows via `nm-platform`), TCP-connect, TLS-handshake, HTTP(S) HEAD
-      — ICMP done in `nm-platform`; the `nm-probes` trait and the TCP/TLS/HTTP probers remain.
+      — trait, `select_kind` gate, ICMP and TCP-connect probers done; TLS/HTTP remain.
       **TLS/HTTP are no longer optional fallbacks**: they are the only probe kind that measures
       a FakeIP-tunnelled endpoint at all (see the spike). TCP-connect must never be used as an
       RTT source for such endpoints — it completes locally and reports a fake-*good* ~0.7 ms.
+      Enforced by `select_kind`, which refuses ICMP and TCP outright for a tunnel sentinel.
 - [~] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies (ISP / border / destination)
       — the TTL mechanism works and is verified; the ISP/border/destination classification remains
 - [x] Source-address binding on all probers (probe egresses via a chosen local address/interface)
-      — implemented and verified live for ICMP; carried into each further prober as it lands
-- [ ] Async probe runner on tokio: timeouts, cancellation, per-target backoff on repeated failure
+      — implemented and verified live for ICMP; carried into TCP-connect (bind before connect,
+      with a mismatched address family refused rather than silently handed to the OS)
+- [ ] Async probe runner on tokio: timeouts, cancellation, per-target backoff on repeated failure.
+      **Windows needs ~2 s to report a refused TCP connection** — measured on loopback, where the
+      reset is instant; the stack retries the attempt before believing it. A TCP probe deadline
+      under that turns every closed port into fabricated packet loss, so TCP-connect needs its
+      own generous deadline and the runner must treat a slow TCP probe as normal.
 - [ ] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
 - [x] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
       — see `docs/measurement-reality-check.md`
@@ -106,7 +112,8 @@ Goal: real measurements against real hosts, still no per-app discovery.
       resumption does to the measured value.
 - **Accept**: integration test (feature-gated, run manually/CI-opt-in) probing localhost + a public anycast IP; unit suite runs offline via mocks.
   *Partly met: `nm-platform`'s `network-tests` feature probes loopback, a public anycast IP and
-  walks the path outward. The offline mock suite arrives with the `nm-probes` engine.*
+  walks the path outward. The offline suite covers the ICMP prober through a `mockall` platform
+  mock and the TCP prober against a loopback listener; the runner and the chain still to come.*
 
 What the spike settled (full report in `docs/measurement-reality-check.md`):
 
