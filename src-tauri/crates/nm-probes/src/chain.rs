@@ -1,0 +1,405 @@
+//! Deciding, over time, which probe kind can actually measure one endpoint.
+//!
+//! A single probe cannot tell a filtered probe kind from a dead host: both produce silence.
+//! The difference only appears across attempts and across kinds. If ICMP stays silent but a
+//! TCP handshake to the same endpoint completes, then the host is up and echoes are being
+//! dropped — and that is *proof*, not a guess. This state machine is where that inference
+//! lives.
+//!
+//! It never invents a measurement. It decides what to try next and records what has been
+//! ruled out, so the UI can say "ICMP is filtered on this path" when that has been
+//! established and stay quiet when it has not.
+//!
+//! # Why silence has to be given a few chances
+//!
+//! Falling back on the first timeout would abandon ICMP over ordinary packet loss and spend
+//! the rest of the session on a more expensive kind. Waiting too long leaves an endpoint
+//! unmeasured while a working kind sits untried. [`SILENCE_BEFORE_FALLBACK`] consecutive
+//! silences is the compromise: at the usual one-second interval that is a few seconds, which
+//! moderate loss almost never produces in an unbroken run, and the cost of being wrong is
+//! only that a cheaper kind is retried later.
+
+use nm_core::address::AddressClass;
+use nm_core::sample::ProbeOutcome;
+
+use crate::probe::{preferred_kinds, ProbeKind};
+use crate::Error;
+
+/// How many consecutive silent probes make a kind suspect enough to step past.
+pub const SILENCE_BEFORE_FALLBACK: u32 = 3;
+
+/// What to do next for an endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChainStep {
+    /// Probe with this kind.
+    Probe(ProbeKind),
+    /// Every kind has been ruled out; walk the path to learn where it stops instead.
+    WalkThePath,
+    /// Nothing left can say anything honest about this endpoint.
+    ///
+    /// Reached for an address a local tunnel remaps once the end-to-end probe has failed: a
+    /// TTL walk from this machine would map the route to the tunnel, not to the destination,
+    /// so offering it would be worse than admitting the gap.
+    Nothing,
+}
+
+/// Why a probe kind was set aside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RuledOutBecause {
+    /// The probe itself reported being filtered — a reset on the hello, a local firewall.
+    ItReportedFiltering,
+    /// It went silent for long enough that another kind was worth trying.
+    ItWentSilent,
+}
+
+/// A probe kind that has been set aside for an endpoint, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuledOut {
+    /// The kind no longer being used.
+    pub kind: ProbeKind,
+    /// What set it aside.
+    pub because: RuledOutBecause,
+}
+
+/// Tracks which probe kind is measuring one endpoint, and what has been ruled out.
+///
+/// One chain per endpoint. It holds no clock and issues no probes: the caller probes with
+/// whatever [`FallbackChain::step`] returns and hands the outcome back to
+/// [`FallbackChain::record`], which is what makes an entire session's worth of degradation
+/// testable without a network.
+#[derive(Debug, Clone)]
+pub struct FallbackChain {
+    class: AddressClass,
+    order: Vec<ProbeKind>,
+    position: usize,
+    consecutive_silent: u32,
+    ruled_out: Vec<RuledOut>,
+    filtering_confirmed: bool,
+}
+
+impl FallbackChain {
+    /// Starts a chain for an endpoint of `class`, given the probe kinds that exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NothingUsable`] when no available kind can honestly measure an
+    /// address of this class — the same refusal [`crate::probe::select_kind`] makes, at the
+    /// point where a chain would otherwise be created that could never do anything.
+    pub fn new(class: AddressClass, available: &[ProbeKind]) -> Result<Self, Error> {
+        let order = preferred_kinds(class, available);
+        if order.is_empty() {
+            return Err(Error::NothingUsable { class });
+        }
+        Ok(Self {
+            class,
+            order,
+            position: 0,
+            consecutive_silent: 0,
+            ruled_out: Vec::new(),
+            filtering_confirmed: false,
+        })
+    }
+
+    /// What to do for the next probe.
+    #[must_use]
+    pub fn step(&self) -> ChainStep {
+        match self.current_kind() {
+            Some(kind) => ChainStep::Probe(kind),
+            // A TTL walk times routers with ICMP. That is informative for an address this
+            // machine really routes to, and meaningless for one a local tunnel intercepts.
+            None if self.class.trusts_transport_rtt() => ChainStep::WalkThePath,
+            None => ChainStep::Nothing,
+        }
+    }
+
+    /// The kind currently in use, if any kind is left.
+    #[must_use]
+    pub fn current_kind(&self) -> Option<ProbeKind> {
+        self.order.get(self.position).copied()
+    }
+
+    /// Every kind set aside for this endpoint, in the order they were.
+    #[must_use]
+    pub fn ruled_out(&self) -> &[RuledOut] {
+        &self.ruled_out
+    }
+
+    /// Whether a probe kind has been *proven* to be filtered on this path.
+    ///
+    /// True only once a later kind has succeeded after an earlier one was set aside: that is
+    /// what separates "echoes are being dropped" from "the host is down", and without it the
+    /// UI must not claim either.
+    #[must_use]
+    pub const fn filtering_confirmed(&self) -> bool {
+        self.filtering_confirmed
+    }
+
+    /// Folds one probe result into the decision.
+    pub fn record(&mut self, outcome: ProbeOutcome) {
+        let Some(kind) = self.current_kind() else {
+            // Walking the path, or out of options entirely: there is nothing left to demote.
+            return;
+        };
+
+        match outcome {
+            ProbeOutcome::Success(_) => {
+                self.consecutive_silent = 0;
+                if !self.ruled_out.is_empty() {
+                    self.filtering_confirmed = true;
+                }
+            }
+            // A definitive answer *about the destination*, delivered by a working path. It
+            // says nothing against the probe kind, so it must not cost the cheapest kind its
+            // place — an endpoint that is simply down would otherwise walk the whole chain.
+            ProbeOutcome::Unreachable => self.consecutive_silent = 0,
+            ProbeOutcome::Blocked => self.set_aside(kind, RuledOutBecause::ItReportedFiltering),
+            ProbeOutcome::Timeout => {
+                self.consecutive_silent = self.consecutive_silent.saturating_add(1);
+                if self.consecutive_silent >= SILENCE_BEFORE_FALLBACK {
+                    self.set_aside(kind, RuledOutBecause::ItWentSilent);
+                }
+            }
+        }
+    }
+
+    /// Returns to the preferred kind and forgets what was ruled out.
+    ///
+    /// Filtering is not permanent — a route change or a firewall edit can restore a kind that
+    /// was dropped hours ago — but re-testing costs probes and risks a stretch of silence on
+    /// an endpoint that was being measured perfectly well. The chain therefore never decides
+    /// on its own when to try again; the scheduler does, rarely.
+    pub fn reconsider(&mut self) {
+        self.position = 0;
+        self.consecutive_silent = 0;
+        self.ruled_out.clear();
+        self.filtering_confirmed = false;
+    }
+
+    fn set_aside(&mut self, kind: ProbeKind, because: RuledOutBecause) {
+        self.ruled_out.push(RuledOut { kind, because });
+        self.position += 1;
+        self.consecutive_silent = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nm_core::sample::Rtt;
+
+    use super::*;
+
+    const ALL: &[ProbeKind] = &[
+        ProbeKind::IcmpEcho,
+        ProbeKind::TcpConnect,
+        ProbeKind::TlsHello,
+    ];
+
+    fn chain() -> FallbackChain {
+        FallbackChain::new(AddressClass::Routable, ALL).unwrap()
+    }
+
+    fn success() -> ProbeOutcome {
+        ProbeOutcome::Success(Rtt::from_micros(12_000))
+    }
+
+    /// Feeds `outcome` in `times` times.
+    fn repeat(chain: &mut FallbackChain, outcome: ProbeOutcome, times: u32) {
+        for _ in 0..times {
+            chain.record(outcome);
+        }
+    }
+
+    #[test]
+    fn a_direct_endpoint_starts_on_the_cheapest_kind() {
+        let chain = chain();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+        assert!(chain.ruled_out().is_empty());
+        assert!(!chain.filtering_confirmed());
+    }
+
+    #[test]
+    fn an_endpoint_nothing_can_measure_is_refused_a_chain() {
+        assert_eq!(
+            FallbackChain::new(AddressClass::Loopback, ALL).unwrap_err(),
+            Error::NothingUsable {
+                class: AddressClass::Loopback
+            }
+        );
+        assert!(FallbackChain::new(AddressClass::Routable, &[]).is_err());
+    }
+
+    #[test]
+    fn a_kind_that_reports_filtering_is_set_aside_at_once() {
+        // No reason to wait: the probe did not merely fail, it said it cannot work here.
+        let mut chain = chain();
+        chain.record(ProbeOutcome::Blocked);
+
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TcpConnect));
+        assert_eq!(
+            chain.ruled_out(),
+            &[RuledOut {
+                kind: ProbeKind::IcmpEcho,
+                because: RuledOutBecause::ItReportedFiltering
+            }]
+        );
+    }
+
+    #[test]
+    fn silence_is_given_a_few_chances_before_a_kind_is_set_aside() {
+        let mut chain = chain();
+        repeat(
+            &mut chain,
+            ProbeOutcome::Timeout,
+            SILENCE_BEFORE_FALLBACK - 1,
+        );
+        assert_eq!(
+            chain.step(),
+            ChainStep::Probe(ProbeKind::IcmpEcho),
+            "ordinary packet loss must not cost the cheapest kind its place"
+        );
+
+        chain.record(ProbeOutcome::Timeout);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TcpConnect));
+        assert_eq!(
+            chain.ruled_out(),
+            &[RuledOut {
+                kind: ProbeKind::IcmpEcho,
+                because: RuledOutBecause::ItWentSilent
+            }]
+        );
+    }
+
+    #[test]
+    fn the_run_of_silence_has_to_be_unbroken() {
+        // Losing every other packet is a measurement of a bad link, not evidence that echoes
+        // are filtered — and switching kinds would replace that measurement with a different
+        // one instead of reporting it.
+        let mut chain = chain();
+        for _ in 0..10 {
+            repeat(
+                &mut chain,
+                ProbeOutcome::Timeout,
+                SILENCE_BEFORE_FALLBACK - 1,
+            );
+            chain.record(success());
+        }
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+        assert!(chain.ruled_out().is_empty());
+    }
+
+    #[test]
+    fn a_definitive_unreachable_does_not_cost_a_kind_its_place() {
+        // The endpoint is answering, with a "no". Walking the chain would swap a good
+        // measurement for an expensive one that reports exactly the same thing.
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Unreachable, 20);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+        assert!(chain.ruled_out().is_empty());
+    }
+
+    #[test]
+    fn filtering_is_only_claimed_once_another_kind_proves_the_host_is_up() {
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        assert!(
+            !chain.filtering_confirmed(),
+            "silence alone is equally consistent with a dead host"
+        );
+
+        chain.record(success());
+        assert!(
+            chain.filtering_confirmed(),
+            "a working TCP handshake proves the host is up and the echoes were dropped"
+        );
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TcpConnect));
+    }
+
+    #[test]
+    fn a_first_kind_that_simply_works_claims_nothing() {
+        let mut chain = chain();
+        repeat(&mut chain, success(), 50);
+        assert!(!chain.filtering_confirmed());
+        assert!(chain.ruled_out().is_empty());
+    }
+
+    #[test]
+    fn the_chain_is_walked_in_preference_order() {
+        let mut chain = chain();
+        chain.record(ProbeOutcome::Blocked);
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TcpConnect));
+        chain.record(ProbeOutcome::Blocked);
+        assert_eq!(chain.current_kind(), Some(ProbeKind::TlsHello));
+    }
+
+    #[test]
+    fn a_direct_endpoint_that_exhausts_every_kind_falls_back_to_the_path() {
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Blocked, 3);
+
+        assert_eq!(chain.current_kind(), None);
+        assert_eq!(chain.step(), ChainStep::WalkThePath);
+        assert_eq!(chain.ruled_out().len(), 3);
+    }
+
+    #[test]
+    fn a_tunnelled_endpoint_that_exhausts_its_kind_admits_the_gap() {
+        // A TTL walk from this machine would map the route to the tunnel, not to the
+        // destination. Offering it would be worse than saying nothing.
+        let mut chain = FallbackChain::new(AddressClass::TunnelSentinel, ALL).unwrap();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
+
+        chain.record(ProbeOutcome::Blocked);
+        assert_eq!(chain.step(), ChainStep::Nothing);
+    }
+
+    #[test]
+    fn results_arriving_after_every_kind_is_gone_change_nothing() {
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Blocked, 3);
+        let before = chain.ruled_out().len();
+
+        // A path walk's outcome, or a probe still in flight when the last kind was dropped.
+        chain.record(success());
+        chain.record(ProbeOutcome::Timeout);
+
+        assert_eq!(chain.step(), ChainStep::WalkThePath);
+        assert_eq!(chain.ruled_out().len(), before);
+        assert!(!chain.filtering_confirmed());
+    }
+
+    #[test]
+    fn reconsidering_returns_to_the_cheapest_kind_with_a_clean_slate() {
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        chain.record(success());
+        assert!(chain.filtering_confirmed());
+
+        chain.reconsider();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+        assert!(chain.ruled_out().is_empty());
+        assert!(
+            !chain.filtering_confirmed(),
+            "a claim of filtering must not outlive the evidence for it"
+        );
+    }
+
+    #[test]
+    fn reconsidering_does_not_inherit_a_part_finished_run_of_silence() {
+        let mut chain = chain();
+        repeat(
+            &mut chain,
+            ProbeOutcome::Timeout,
+            SILENCE_BEFORE_FALLBACK - 1,
+        );
+        chain.reconsider();
+
+        chain.record(ProbeOutcome::Timeout);
+        assert_eq!(
+            chain.step(),
+            ChainStep::Probe(ProbeKind::IcmpEcho),
+            "a single timeout after a reset must not immediately abandon the kind"
+        );
+    }
+}

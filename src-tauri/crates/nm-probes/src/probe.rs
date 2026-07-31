@@ -125,21 +125,40 @@ pub trait Prober: Send + Sync {
 /// Returns [`Error::NothingUsable`] when no available kind can honestly measure the
 /// address.
 pub fn select_kind(class: AddressClass, available: &[ProbeKind]) -> Result<ProbeKind, Error> {
-    if !class.worth_probing() {
-        return Err(Error::NothingUsable { class });
-    }
-
-    let preference = if class.trusts_transport_rtt() {
-        DIRECT_PREFERENCE
-    } else {
-        TUNNELLED_PREFERENCE
-    };
-
-    preference
+    preference_for(class)
         .iter()
         .find(|kind| available.contains(kind))
         .copied()
         .ok_or(Error::NothingUsable { class })
+}
+
+/// Every kind that may honestly measure an address, in the order to try them.
+///
+/// The same gate as [`select_kind`], kept whole rather than reduced to its head, because a
+/// fallback chain needs to know what comes next after a kind is ruled out. A kind missing
+/// from this list is not a kind held in reserve — it is one whose number would be a lie.
+#[must_use]
+pub fn preferred_kinds(class: AddressClass, available: &[ProbeKind]) -> Vec<ProbeKind> {
+    preference_for(class)
+        .iter()
+        .filter(|kind| available.contains(kind))
+        .copied()
+        .collect()
+}
+
+/// The preference order for an address class, before intersecting with what exists.
+///
+/// Empty for a class not worth probing at all, which is what makes both callers above refuse
+/// it without a special case.
+const fn preference_for(class: AddressClass) -> &'static [ProbeKind] {
+    if !class.worth_probing() {
+        return &[];
+    }
+    if class.trusts_transport_rtt() {
+        DIRECT_PREFERENCE
+    } else {
+        TUNNELLED_PREFERENCE
+    }
 }
 
 #[cfg(test)]
@@ -226,6 +245,44 @@ mod tests {
     #[test]
     fn no_available_prober_is_an_error_rather_than_a_silent_skip() {
         assert!(select_kind(AddressClass::Routable, &[]).is_err());
+    }
+
+    #[test]
+    fn the_whole_preference_order_is_available_for_a_direct_address() {
+        assert_eq!(
+            preferred_kinds(AddressClass::Routable, ALL),
+            vec![
+                ProbeKind::IcmpEcho,
+                ProbeKind::TcpConnect,
+                ProbeKind::TlsHello
+            ]
+        );
+        assert_eq!(
+            preferred_kinds(AddressClass::Routable, &[ProbeKind::TlsHello]),
+            vec![ProbeKind::TlsHello]
+        );
+    }
+
+    #[test]
+    fn a_tunnelled_address_offers_only_the_kind_that_survives_a_tunnel() {
+        // A chain must not be able to fall back onto a kind the gate refused: the list it
+        // walks is the list of honest kinds, not a longer one it is trusted to stop early on.
+        assert_eq!(
+            preferred_kinds(AddressClass::TunnelSentinel, ALL),
+            vec![ProbeKind::TlsHello]
+        );
+    }
+
+    #[test]
+    fn an_address_not_worth_probing_offers_nothing() {
+        for class in [
+            AddressClass::Unusable,
+            AddressClass::Loopback,
+            AddressClass::Private,
+            AddressClass::CarrierGrade,
+        ] {
+            assert!(preferred_kinds(class, ALL).is_empty(), "{class:?}");
+        }
     }
 
     #[test]

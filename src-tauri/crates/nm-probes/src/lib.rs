@@ -19,6 +19,7 @@ mod error;
 
 mod socket;
 
+pub mod chain;
 pub mod icmp;
 pub mod path;
 pub mod probe;

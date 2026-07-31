@@ -105,7 +105,16 @@ Goal: real measurements against real hosts, still no per-app discovery.
       reset is instant; the stack retries the attempt before believing it. A TCP probe deadline
       under that turns every closed port into fabricated packet loss, so TCP-connect needs its
       own generous deadline and the runner must treat a slow TCP probe as normal.
-- [ ] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
+- [x] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
+      — `nm_probes::chain::FallbackChain`, a pure state machine: no clock, no probes, so a
+      whole session of degradation is testable without a network. An explicit "filtered"
+      outcome sets a kind aside at once; silence needs an unbroken run, because falling back
+      on the first timeout would abandon ICMP over ordinary packet loss. An `Unreachable` never
+      costs a kind its place — the endpoint is answering, with a "no".
+      **Filtering is only *claimed* once a later kind succeeds**: silence alone is equally
+      consistent with a dead host, and the UI must not say "ICMP blocked" without the proof.
+      A tunnelled endpoint that exhausts TLS gets `Nothing`, not a path walk — a TTL walk from
+      this machine would map the route to the tunnel rather than to the destination.
 - [x] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
       — see `docs/measurement-reality-check.md`
 - [~] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
@@ -178,8 +187,21 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
 - [ ] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
       lists with live RTT/jitter/loss + throughput, per-endpoint sparkline; "probe blocked"
       honest state
+- [ ] **Per-endpoint state, never a single per-app verdict.** Filtering rarely hits everything
+      an application talks to: within one app some endpoints stay clean, some lose packets, and
+      some are unreachable outright — commonly at the same moment, because they sit in different
+      networks (a login service on a CDN, voice on one provider, the game server on another),
+      and because a FakeIP router tunnels some and routes others directly. The UI must therefore
+      show state **per endpoint** and summarise an app as a distribution ("4 clean, 2 degraded,
+      1 unreachable"), never collapse it to one colour: an app rolled up to its worst endpoint
+      reads as "the game is broken" when the game is fine, and rolled up to its best hides the
+      failure the user came to find. The per-endpoint state must also carry *why* — measured,
+      degraded, probe filtered (which kind), unreachable, or not measurable — since
+      `nm_probes::chain` already distinguishes these and flattening them would throw away the
+      one thing that makes the verdict actionable. Sorting/grouping by severity, so the broken
+      few are visible without hunting through a long list.
 - [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
-- **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
+- **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 
 ## Phase 5 — Service status, game reference pools & diagnosis verdicts
 
@@ -193,7 +215,11 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 - [ ] Learned endpoint history: persist endpoints the user connected to, tagged per game preset (cap ~32/game, LRU, expire after N days unseen); cold start covered by bundled seeds
 - [ ] Reference-pool trickle probing (round-robin, active only while the game is monitored or on explicit "Diagnose"), inside the global probe budget
 - [ ] Diagnosis verdict engine in `nm-core`: pure rules combining baselines + app metrics + path-probe death point + reference-pool response ratio + platform-API status into verdicts (ISP / border / routing-to-game / game servers down / partial outage); every matrix row unit-tested; verdicts phrased as network-level facts only
-- [ ] Verdict surfacing in UI (dashboard + app-monitor banner)
+- [ ] Verdict surfacing in UI (dashboard + app-monitor banner). A verdict covers *the endpoints
+      it actually explains* and says which — an app whose voice endpoint is blocked while its
+      game server is clean gets a verdict about that endpoint, not about the app. See the
+      per-endpoint state requirement in Phase 4: partial failure inside one application is the
+      normal case under filtering, not an edge case.
 - **Accept**: page reflects a manually blocked host (hosts-file test) within one check interval; service list extendable by editing JSON only; simulated scenarios (mocked probe outcomes) produce correct verdicts incl. partial game-server outage; stale cache entries expire and never fake an outage.
 
 ## Phase 6 — Polish, persistence, packaging
