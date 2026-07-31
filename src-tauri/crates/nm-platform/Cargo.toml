@@ -23,9 +23,17 @@ thiserror.workspace = true
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
+    # `AF_INET`/`AF_INET6`, which select the address family of a connection table. Taken
+    # from the headers rather than written as 2 and 23 so the values cannot rot.
+    "Win32_Networking_WinSock",
+    # Toolhelp process enumeration: identity without opening a handle to anything.
+    "Win32_System_Diagnostics_ToolHelp",
     # `IcmpSendEcho2Ex` is declared behind this feature because its signature names
     # `PIO_APC_ROUTINE`, even though the synchronous form we use passes no APC.
     "Win32_System_IO",
+    # `OpenProcess`/`QueryFullProcessImageNameW` for the image path of a process the user
+    # selected — `PROCESS_QUERY_LIMITED_INFORMATION` only, which cannot read memory.
+    "Win32_System_Threading",
 ] }
 
 [lints]

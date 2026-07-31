@@ -290,7 +290,29 @@ Phase 3 decisions worth remembering:
 
 Goal: the headline feature. Riskiest OS work — budget extra care and testing.
 
-- [ ] `nm-platform` Windows: process enumeration (name, pid, icon), TCP table snapshot w/ PID (`GetExtendedTcpTable`), UDP table
+- [~] `nm-platform` Windows: process enumeration (name, pid, icon), TCP table snapshot w/ PID (`GetExtendedTcpTable`), UDP table
+      — `nm_platform::process` and `nm_platform::connection`: the traits, the platform-free
+      parsing, and the Windows backends. Both address families for both protocols, because a
+      build that read only IPv4 would silently lose every endpoint of a game on a v6 connection.
+      **A UDP row names only the local socket.** UDP is connectionless, so the kernel has no
+      peer to report — not even for a socket the application has `connect`ed — and `remote` is
+      `None` rather than a guess. That absence is the exact size of the hole ETW exists to
+      fill: polling alone can never discover the endpoints a game actually plays over. A test
+      asserts it, so nobody later "fixes" the `None` into a listening port.
+      **The sweep opens no process handle.** Toolhelp reports pid and executable name without
+      touching a process, so an anti-cheat driver has nothing to see. The one call that does
+      need a handle (`executable_path`) asks for `PROCESS_QUERY_LIMITED_INFORMATION` — the
+      weakest right there is, unable to read memory — and runs only for a process the user
+      selected, not for the few hundred a desktop has running. Being denied is `None`, not an
+      error: a process at a higher integrity level is a fact about permission, and a picker
+      that raised an error every time a process exited would be unusable.
+      Ports are the subtle part. The tables carry them in network byte order inside a `DWORD`,
+      so reading the low 16 bits yields a byte-swapped port that fails *silently* — every
+      probe goes somewhere plausible and nothing ever answers. Pinned by a unit test and by a
+      live one that reads back a port this process just bound on loopback.
+      **Icons are not done**, deliberately: they belong with the process picker below, which
+      is where the decision about extracting and encoding them for the `WebView` has to be
+      made anyway.
 - [ ] ETW session (`Microsoft-Windows-Kernel-Network` via ferrisetw): per-process UDP/TCP flow events → remote endpoint discovery + per-flow byte counters; graceful degradation to table-polling-only if ETW unavailable
 - [ ] Endpoint lifecycle: appear/idle/gone; dedup; enforced caps (≤ 5 monitored apps,
       ≤ 16 probed endpoints/app prioritized by recent traffic, 32 probes/s global) —

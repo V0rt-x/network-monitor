@@ -13,7 +13,9 @@
 
 mod error;
 
+pub mod connection;
 pub mod icmp;
+pub mod process;
 
 pub use error::Error;
 

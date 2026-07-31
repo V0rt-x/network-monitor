@@ -28,4 +28,17 @@ pub enum Error {
         /// Windows `IP_STATUS` or system error code.
         code: u32,
     },
+
+    /// An operating-system call failed.
+    ///
+    /// `api` names the call rather than the operation, because these codes are only
+    /// actionable next to the function that produced them: "access denied" means
+    /// something different from `OpenProcess` than from `GetExtendedTcpTable`.
+    #[error("the {api} call failed with code {code}")]
+    Os {
+        /// The OS entry point that failed.
+        api: &'static str,
+        /// The system error code it reported.
+        code: u32,
+    },
 }
