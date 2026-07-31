@@ -42,6 +42,21 @@ pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(1);
 /// enough that its recovery is noticed while the user is still looking at the screen.
 pub const MAX_INTERVAL: Duration = Duration::from_secs(30);
 
+/// How long a mapped route is trusted before it is walked again.
+///
+/// **A walk is not a probe.** It is up to [`crate::path::DEFAULT_MAX_HOPS`] echoes issued one
+/// after another — most of a second of the product's entire global budget — spent on one
+/// endpoint, and the scheduler counts it as a single piece of work because that is what it
+/// dispatched. Running it at an endpoint's probe cadence would therefore quietly spend the
+/// whole budget on one silent server and starve the baselines, while measuring nothing new:
+/// a walk maps the route, and routes do not change every second.
+///
+/// Five minutes puts a full walk at a tenth of a probe per second. What produces a *figure*
+/// between walks is the edge of hops the walk chose (see [`nm_core::edge`]), each probed as
+/// an ordinary target; a route change is noticed by those hops going quiet, and the layer
+/// above asks for an early walk with [`Command::WalkNow`].
+pub const DEFAULT_WALK_INTERVAL: Duration = Duration::from_secs(300);
+
 /// How long to wait for a probe of a given kind before calling it silence.
 ///
 /// Not one number, because the kinds fail on different timescales. An echo that has not come
@@ -156,6 +171,7 @@ pub struct ProbeRunner {
     available: Vec<ProbeKind>,
     interval: Duration,
     max_interval: Duration,
+    walk_interval: Duration,
     due_buffer: Vec<TargetId>,
 }
 
@@ -178,6 +194,7 @@ impl ProbeRunner {
             available,
             interval: DEFAULT_INTERVAL,
             max_interval: MAX_INTERVAL,
+            walk_interval: DEFAULT_WALK_INTERVAL,
             due_buffer: Vec::new(),
         })
     }
@@ -187,6 +204,13 @@ impl ProbeRunner {
     pub const fn with_intervals(mut self, interval: Duration, max_interval: Duration) -> Self {
         self.interval = interval;
         self.max_interval = max_interval;
+        self
+    }
+
+    /// Uses a different gap between walks of one route.
+    #[must_use]
+    pub const fn with_walk_interval(mut self, walk_interval: Duration) -> Self {
+        self.walk_interval = walk_interval;
         self
     }
 
@@ -476,9 +500,37 @@ impl ProbeRunner {
             Measured::Path(_) | Measured::Failed(_) => {}
         }
 
+        // A walk costs up to thirty probes, so it goes back on its own long cadence rather
+        // than the endpoint's — see [`DEFAULT_WALK_INTERVAL`]. The backoff still wins if it
+        // has stretched further, because a route that has been dead for a while is not owed
+        // more attention than one that has not.
+        let interval = match &report.measured {
+            Measured::Path(_) => self.walk_interval.max(state.backoff.interval()),
+            _ => state.backoff.interval(),
+        };
         let _ = self
             .scheduler
-            .schedule_after(report.id, state.backoff.interval(), report.at);
+            .schedule_after(report.id, interval, report.at);
+    }
+
+    /// Asks for the route to a target to be walked again now.
+    ///
+    /// The counterpart to the long walk cadence: the layer above watches the hops a walk
+    /// chose, and when they stop answering the route has probably moved, which is worth a
+    /// walk long before the periodic one is due. Refused for a target that still has a probe
+    /// kind to try, so this can never be used to jump the queue past the rate cap for an
+    /// ordinary endpoint. Returns `true` if a walk was brought forward.
+    pub fn walk_now(&mut self, id: TargetId, now: Instant) -> bool {
+        let Some(state) = self.targets.get(&id) else {
+            return false;
+        };
+        if state.in_flight || state.chain.step() != ChainStep::WalkThePath {
+            return false;
+        }
+        // Removed first: scheduling an already-scheduled target only changes its interval,
+        // which would leave the deadline exactly where it was.
+        self.scheduler.unschedule(id);
+        self.scheduler.schedule(id, self.interval, now).is_ok()
     }
 }
 
@@ -636,6 +688,12 @@ pub enum Command {
     },
     /// Give a target's ruled-out probe kinds another chance.
     Reconsider(TargetId),
+    /// Walk the route to a target again without waiting out the walk interval.
+    ///
+    /// Without a reply channel like the two above: it is refused for a target that is not
+    /// walking the path at all, and a caller that wanted one cannot do anything useful with
+    /// the refusal — the next periodic walk is what happens instead.
+    WalkNow(TargetId),
 }
 
 /// How many completed probes may queue up before the loop must drain them.
@@ -725,6 +783,9 @@ fn apply(runner: &mut ProbeRunner, command: Command) {
         }
         Command::Reconsider(id) => {
             runner.reconsider(id, Instant::now());
+        }
+        Command::WalkNow(id) => {
+            runner.walk_now(id, Instant::now());
         }
     }
 }
@@ -1111,6 +1172,88 @@ mod tests {
         }
 
         assert_eq!(runner.due(now)[0].action, PlannedAction::WalkThePath);
+    }
+
+    /// Silences every probe kind for `id` so the chain falls through to the path walk.
+    fn exhaust_kinds(runner: &mut ProbeRunner, id: TargetId, start: Instant) -> Instant {
+        let mut now = start;
+        for _ in 0..3 {
+            let planned = runner.due(now);
+            let Some(PlannedAction::Probe(kind)) = planned.first().map(|first| first.action) else {
+                unreachable!("a probe kind remains")
+            };
+            runner.complete(&report(
+                id,
+                now,
+                Measured::Probe {
+                    kind,
+                    outcome: ProbeOutcome::Blocked,
+                },
+            ));
+            now += DEFAULT_INTERVAL;
+        }
+        now
+    }
+
+    #[test]
+    fn a_walk_runs_on_its_own_long_cadence_rather_than_the_endpoints() {
+        // A walk is up to thirty echoes issued back to back — most of a second of the whole
+        // product's budget. Repeating it once a second, as an ordinary probe would be, spends
+        // that budget on one silent endpoint and starves everything else, and it measures
+        // nothing new: routes do not change every second.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+        let now = exhaust_kinds(&mut runner, id(0), start);
+
+        let planned = runner.due(now);
+        assert_eq!(planned[0].action, PlannedAction::WalkThePath);
+        runner.complete(&report(
+            id(0),
+            now,
+            Measured::Path(Box::new(PathTrace::new(Vec::new(), false))),
+        ));
+
+        assert!(
+            runner.due(now + Duration::from_secs(60)).is_empty(),
+            "a walk must not be repeated at the endpoint's probe cadence"
+        );
+        assert_eq!(runner.due(now + DEFAULT_WALK_INTERVAL).len(), 1);
+    }
+
+    #[test]
+    fn a_walk_can_be_asked_for_early_when_the_route_looks_like_it_moved() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+        let now = exhaust_kinds(&mut runner, id(0), start);
+        runner.due(now);
+        runner.complete(&report(
+            id(0),
+            now,
+            Measured::Path(Box::new(PathTrace::new(Vec::new(), false))),
+        ));
+
+        let asked_at = now + Duration::from_secs(90);
+        assert!(runner.walk_now(id(0), asked_at));
+        assert_eq!(runner.due(asked_at)[0].action, PlannedAction::WalkThePath);
+    }
+
+    #[test]
+    fn an_early_walk_is_refused_for_an_endpoint_that_can_still_be_probed() {
+        // Otherwise it would be a way to jump an ordinary endpoint past the rate cap.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert!(!runner.walk_now(id(0), start));
+        assert!(!runner.walk_now(id(7), start), "and an unknown target too");
     }
 
     #[test]
