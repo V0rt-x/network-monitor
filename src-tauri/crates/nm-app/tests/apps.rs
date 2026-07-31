@@ -784,6 +784,37 @@ fn a_hops_measurements_become_the_endpoints_path_figure() {
 }
 
 #[test]
+fn a_silent_endpoint_is_on_the_chart_by_its_path_and_not_by_a_round_trip() {
+    // The endpoint the whole product exists to watch has no round trip to draw. Leaving it
+    // off the chart would hide it; drawing its path figure as a round trip would be the lie
+    // this product was built not to tell. So it appears, on its own series.
+    let (mut monitor, mut registry, now, endpoint, _) = silent_but_busy();
+    let hops =
+        registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
+    for step in 0..6 {
+        let at = now + Duration::from_secs(step);
+        for id in &hops {
+            monitor.record(
+                *id,
+                ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(40_000))),
+            );
+        }
+    }
+
+    let report = &monitor.endpoints(APP, now + Duration::from_secs(6))[0];
+
+    assert!(
+        report.chart_rtt_ms.iter().all(Option::is_none),
+        "nothing measured a round trip to this endpoint, so its own line stays empty"
+    );
+    assert!(
+        report.chart_path_ms.iter().any(Option::is_some),
+        "and the route to it is what puts it on the chart at all"
+    );
+    assert_eq!(report.chart_path_ms.len(), monitor.chart_ages_secs().len());
+}
+
+#[test]
 fn a_silent_endpoint_carrying_traffic_is_never_reported_as_unmeasured() {
     // Once the chain has fallen through to the route, no future probe will say anything more
     // about the endpoint — so "not measured yet" has stopped being the honest word, and the

@@ -132,6 +132,14 @@ export type AppView = {
 	 *  is the normal case under filtering rather than an edge case.
 	 */
 	counts: HealthCountsView,
+	/**
+	 *  Seconds before now for each slot of the chart, negative and ascending.
+	 * 
+	 *  One axis for the whole application, which is the point: a list of sparklines answers
+	 *  "how is this endpoint" and the question the user actually has is "which of these is
+	 *  the odd one out". Every endpoint's `chartRttMs` and `chartPathMs` are aligned to it.
+	 */
+	chartAgeSecs: (number | null)[],
 	/**  Its endpoints, worst first. */
 	endpoints: EndpointView[],
 };
@@ -246,10 +254,26 @@ export type EndpointView = {
 	 *  needs no stand-in.
 	 */
 	path: PathView | null,
-	/**  Seconds before now for each point of the series — negative, ascending. */
-	seriesAgeSecs: (number | null)[],
-	/**  Round-trip time at each point, or `null` where the probe did not come back. */
-	seriesRttMs: (number | null)[],
+	/**
+	 *  Round-trip time in each slot of the application's chart, or `null` for a slot with
+	 *  no answer in it.
+	 * 
+	 *  Aligned to [`AppView::chart_age_secs`], which every endpoint of the application
+	 *  shares — that shared axis is what makes "which of these is the odd one out" a
+	 *  question the chart can answer. Gaps stay gaps: nothing is drawn across a `null`.
+	 */
+	chartRttMs: (number | null)[],
+	/**
+	 *  Round-trip time to the *reported hop of the route to this endpoint*, in the same
+	 *  slots.
+	 * 
+	 *  What keeps a silent match server on the chart instead of leaving the endpoint the
+	 *  whole product exists to watch as a blank row. It shares the axis with the round trips
+	 *  and is **not** one: it belongs to a router short of the endpoint, at an unknown
+	 *  distance from it, so the chart draws it distinctly and names it for what it is. All
+	 *  `null` for an endpoint that answers for itself and needs no stand-in.
+	 */
+	chartPathMs: (number | null)[],
 };
 
 /**  Whether per-process flow events are available, as the UI must explain it. */

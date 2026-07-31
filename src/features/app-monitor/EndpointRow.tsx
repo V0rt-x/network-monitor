@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { formatBytes, formatMs, formatPct } from '../../shared/format';
 import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
-import { Sparkline } from '../dashboard/Sparkline';
 import { livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
 
@@ -11,6 +10,16 @@ interface EndpointRowProps {
   readonly endpoint: EndpointView;
   /** Span the byte count covers, so the traffic figure can say what it is a count of. */
   readonly trafficWindowSecs: number;
+  /** The colour this endpoint's line is drawn in, so the row can be tied to it. */
+  readonly colour: string;
+  /** Whether this is the endpoint currently raised on the chart. */
+  readonly raised: boolean;
+  /** Whether another endpoint is raised, so this one steps back. */
+  readonly dimmed: boolean;
+  /** Whether the raise is pinned to this endpoint rather than following the cursor. */
+  readonly pinned: boolean;
+  readonly onPin: () => void;
+  readonly onHover: (endpoint: string | null) => void;
 }
 
 /**
@@ -36,15 +45,60 @@ interface EndpointRowProps {
  * second panel for the route to it. It sits below the endpoint's own figures and never
  * replaces them: the dashes stay dashes, because nothing measured the server, and the panel
  * says in as many words which router its numbers do belong to.
+ *
+ * **The row is the keyboard path to the chart.** Selecting it raises this endpoint's line
+ * and dims the others — the same thing hovering a line does, reachable without a mouse. The
+ * colour swatch is what ties the two together; it names a line and says nothing about
+ * health, which the badge beside it states in words.
  */
-export const EndpointRow = ({ endpoint, trafficWindowSecs }: EndpointRowProps) => {
+export const EndpointRow = ({
+  endpoint,
+  trafficWindowSecs,
+  colour,
+  raised,
+  dimmed,
+  pinned,
+  onPin,
+  onHover,
+}: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
 
+  const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <li className="nm-endpoint">
+    <li
+      className={`nm-endpoint ${modifiers}`.trimEnd()}
+      onMouseEnter={() => {
+        onHover(endpoint.key);
+      }}
+      onMouseLeave={() => {
+        onHover(null);
+      }}
+    >
       <div className="nm-endpoint__identity">
-        <span className="nm-endpoint__address">{endpoint.address}</span>
+        <button
+          type="button"
+          className="nm-endpoint__select"
+          aria-pressed={pinned}
+          onClick={onPin}
+          onFocus={() => {
+            onHover(endpoint.key);
+          }}
+          onBlur={() => {
+            onHover(null);
+          }}
+        >
+          <span
+            className="nm-endpoint__swatch"
+            style={{ backgroundColor: colour }}
+            aria-hidden="true"
+          />
+          <span className="nm-endpoint__address">{endpoint.address}</span>
+          <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
+        </button>
         <span className="nm-endpoint__transport">{t(transportKey(endpoint.transport))}</span>
       </div>
 
@@ -99,13 +153,6 @@ export const EndpointRow = ({ endpoint, trafficWindowSecs }: EndpointRowProps) =
           ? t('apps.egress.unknown')
           : t('apps.egress.via', { address: endpoint.egress })}
       </p>
-
-      <Sparkline
-        ageSecs={endpoint.seriesAgeSecs}
-        rttMs={endpoint.seriesRttMs}
-        health={endpoint.health}
-        label={t('apps.sparklineLabel', { endpoint: endpoint.address })}
-      />
     </li>
   );
 };

@@ -95,7 +95,12 @@
       "entry": "{{name}} · PID {{pid}}",
       "none": "Nothing is running under this application yet — it will be picked up when it starts"
     },
-    "sparklineLabel": "Round-trip time over time for {{endpoint}}",
+    "chart": {
+      "label": "Round-trip time over time for every endpoint of {{name}}",
+      "pathSeries": "Route to {{endpoint}}",
+      "note": "One line per endpoint. A dashed line is the route to an endpoint that answers nothing — it is the round-trip time to a router on the way there, not to the endpoint itself. Breaks in a line are probes that did not come back.",
+      "highlight": "Highlight on the chart"
+    },
     "picker": {
       "heading": "Running processes",
       "hint": "Pick up to {{limit}} applications. Choosing a process monitors the whole application it belongs to — its other processes and anything it launches. Nothing is read from inside them — only which addresses they talk to.",

@@ -31,6 +31,7 @@ const ENDPOINTS: AppEndpoints = {
       name: 'game.exe',
       processes: [{ pid: 4242, name: 'game.exe' }],
       counts: { ok: 1, degraded: 0, unreachable: 1, blocked: 0, carryingTraffic: 0, unknown: 0 },
+      chartAgeSecs: [],
       endpoints: [
         {
           key: 'udp/1.1.1.1:27015',
@@ -50,8 +51,8 @@ const ENDPOINTS: AppEndpoints = {
           jitterMs: null,
           lossPct: 100,
           path: null,
-          seriesAgeSecs: [],
-          seriesRttMs: [],
+          chartRttMs: [],
+          chartPathMs: [],
         },
       ],
     },

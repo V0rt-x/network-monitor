@@ -524,6 +524,7 @@ fn emit_apps(
                 application.id().get(),
                 application.label().to_owned(),
                 processes,
+                apps.chart_ages_secs(),
                 &reports,
             )
         })

@@ -509,6 +509,68 @@ body {
   font-size: 0.78rem;
 }
 
+/* One chart per application, every endpoint on it. The list below is the authority on
+   health; this answers "which of these is the odd one out", which a column of separate
+   sparklines cannot. */
+.nm-endpointchart {
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.nm-appcard__chartnote {
+  margin: 0.35rem 0 0;
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+}
+
+/* Raised and dimmed, never shown and hidden: the endpoint the user is not looking at is
+   still a row they can read. */
+.nm-endpoint--raised {
+  border-color: var(--nm-accent);
+}
+
+.nm-endpoint--dimmed {
+  opacity: 0.55;
+}
+
+.nm-endpoint__select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nm-endpoint__select:focus-visible {
+  outline: 2px solid var(--nm-accent);
+  outline-offset: 2px;
+}
+
+/* Ties a row to its line on the chart. It carries identity, never state — the badge
+   beside it says the health, in words. */
+.nm-endpoint__swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 0.15rem;
+  flex: none;
+}
+
+.nm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .nm-appcard__distribution {
   display: flex;
   flex-wrap: wrap;

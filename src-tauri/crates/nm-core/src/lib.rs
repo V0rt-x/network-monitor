@@ -46,6 +46,7 @@ pub mod path;
 pub mod ring;
 pub mod sample;
 pub mod scheduler;
+pub mod series;
 pub mod stats;
 pub mod target;
 pub mod time;

@@ -6,10 +6,30 @@ import '../../i18n';
 import { AppCard } from './AppCard';
 import type { AppView, EndpointView } from '../../shared/ipc';
 
-// uPlot draws to a canvas, which jsdom does not implement. The chart carries no information
-// the row does not also state in text, so the tests replace it outright.
-vi.mock('../dashboard/Sparkline', () => ({
-  Sparkline: ({ label }: { label: string }) => <div data-testid="sparkline" aria-label={label} />,
+// uPlot draws to a canvas, which jsdom does not implement. The chart is additive — every
+// figure it draws is also stated in the list beside it — so the tests replace it with a
+// stand-in that records what it was asked to draw.
+vi.mock('./EndpointChart', () => ({
+  EndpointChart: ({
+    lines,
+    label,
+  }: {
+    lines: { label: string; isPath: boolean }[];
+    label: string;
+  }) => (
+    <div data-testid="chart" aria-label={label}>
+      {lines.map((line) => (
+        // In an attribute rather than as text: the addresses are already on the page, in the
+        // list, and a stand-in that repeated them would make every query ambiguous.
+        <span
+          key={line.label}
+          data-testid="chart-line"
+          data-label={line.label}
+          data-path={String(line.isPath)}
+        />
+      ))}
+    </div>
+  ),
 }));
 
 const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
@@ -30,8 +50,8 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   jitterMs: 3,
   lossPct: 0,
   path: null,
-  seriesAgeSecs: [-2, -1, 0],
-  seriesRttMs: [24, null, 25],
+  chartRttMs: [24, null, 25],
+  chartPathMs: [null, null, null],
   ...overrides,
 });
 
@@ -40,6 +60,7 @@ const app = (overrides: Partial<AppView> = {}): AppView => ({
   name: 'game.exe',
   processes: [{ pid: 4242, name: 'game.exe' }],
   counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
+  chartAgeSecs: [-2, -1, 0],
   endpoints: [endpoint()],
   ...overrides,
 });
@@ -275,5 +296,148 @@ describe('AppCard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
 
     expect(onForget).toHaveBeenCalledWith(7);
+  });
+
+  // ------------------------------------------------------- one chart, every endpoint
+
+  const lines = () =>
+    screen.queryAllByTestId('chart-line').map((node) => ({
+      label: node.getAttribute('data-label'),
+      isPath: node.getAttribute('data-path') === 'true',
+    }));
+
+  it('draws every endpoint on one chart', () => {
+    // The question the page has to answer during a match is "which of these is the odd one
+    // out", and only a shared axis answers it.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:27015' }),
+            endpoint({ key: 'b', address: '1.1.1.2:443' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(lines()).toEqual([
+      { label: '1.1.1.1:27015', isPath: false },
+      { label: '1.1.1.2:443', isPath: false },
+    ]);
+  });
+
+  it('puts a silent endpoint on the chart by its route, named as the route', () => {
+    // The endpoint the whole product exists to watch has no round trip to draw. Leaving it
+    // off would hide it; drawing its path figure as a round trip would be the lie this
+    // product was built not to tell.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              key: 'silent',
+              address: '1.1.1.9:27015',
+              health: 'carryingTraffic',
+              chartRttMs: [null, null, null],
+              chartPathMs: [80, null, 84],
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(lines()).toEqual([{ label: 'Route to 1.1.1.9:27015', isPath: true }]);
+  });
+
+  it('draws both lines for an endpoint that has a round trip and a route', () => {
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'both', address: '1.1.1.5:27015', chartPathMs: [10, 11, 12] }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(lines()).toEqual([
+      { label: '1.1.1.5:27015', isPath: false },
+      { label: 'Route to 1.1.1.5:27015', isPath: true },
+    ]);
+  });
+
+  it('shows an endpoint with nothing to draw in the list all the same', () => {
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              key: 'quiet',
+              address: '1.1.1.7:443',
+              health: 'unknown',
+              chartRttMs: [null, null, null],
+              chartPathMs: [null, null, null],
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(lines()).toEqual([]);
+    expect(screen.getByText('1.1.1.7:443')).toBeInTheDocument();
+  });
+
+  it('raises one endpoint and dims the rest without hiding either', async () => {
+    // The keyboard path to what hovering a line does. Dimmed, never hidden: the endpoint the
+    // user is not looking at is still a row they can read.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:27015' }),
+            endpoint({ key: 'b', address: '1.1.1.2:443' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    const [chosen] = screen.getAllByRole('button', { name: /1\.1\.1\.1:27015/ });
+    if (!chosen) throw new Error('the row offers no way to raise its endpoint');
+    await userEvent.click(chosen);
+
+    expect(chosen).toHaveAttribute('aria-pressed', 'true');
+    const rows = screen
+      .getAllByRole('listitem')
+      .filter((row) => row.className.includes('nm-endpoint'));
+    expect(rows[0]?.className).toContain('nm-endpoint--raised');
+    expect(rows[1]?.className).toContain('nm-endpoint--dimmed');
+    expect(screen.getByText('1.1.1.2:443')).toBeInTheDocument();
+  });
+
+  it('lets a pinned endpoint be released again', async () => {
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ key: 'a', address: '1.1.1.1:27015' })] })}
+        trafficWindowSecs={30}
+        onForget={vi.fn()}
+      />,
+    );
+
+    const [chosen] = screen.getAllByRole('button', { name: /1\.1\.1\.1:27015/ });
+    if (!chosen) throw new Error('the row offers no way to raise its endpoint');
+    await userEvent.click(chosen);
+    await userEvent.click(chosen);
+
+    expect(chosen).toHaveAttribute('aria-pressed', 'false');
   });
 });

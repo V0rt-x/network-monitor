@@ -297,6 +297,20 @@ impl PathEdge {
         self.hops.iter().any(|hop| hop.address == address)
     }
 
+    /// The samples taken from one hop.
+    ///
+    /// [`EdgeReading`] answers what a hop's figures *are*; this is what they were, one
+    /// sample at a time, which is what a chart needs. Exposed rather than folded into the
+    /// reading because a reading is built once a second for every endpoint and a series is
+    /// wanted only for the one hop actually being shown.
+    #[must_use]
+    pub fn history(&self, address: IpAddr) -> Option<&SampleHistory> {
+        self.hops
+            .iter()
+            .find(|hop| hop.address == address)
+            .map(|hop| &hop.history)
+    }
+
     /// How many hops are being probed.
     #[must_use]
     pub fn len(&self) -> usize {

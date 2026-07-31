@@ -83,6 +83,7 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
             pid: PID,
             name: "game.exe".to_owned(),
         }],
+        monitor.chart_ages_secs(),
         &monitor.endpoints(APP, now),
     )
 }
@@ -342,7 +343,10 @@ fn an_unmeasured_endpoint_reports_no_figures_at_all() {
     assert_eq!(endpoint.jitter_ms, None);
     assert_eq!(endpoint.loss_pct, None);
     assert_eq!(endpoint.health, HealthView::Unknown);
-    assert!(endpoint.series_age_secs.is_empty());
+    assert!(
+        endpoint.chart_rtt_ms.iter().all(Option::is_none),
+        "an unmeasured endpoint occupies the chart's axis and draws nothing on it"
+    );
 }
 
 #[test]
@@ -351,4 +355,82 @@ fn an_application_with_nothing_discovered_renders_empty_rather_than_missing() {
     let view = view(&monitor, now);
     assert!(view.endpoints.is_empty());
     assert_eq!(view.counts, HealthCountsView::default());
+}
+
+// ------------------------------------------------------- one chart, one axis
+
+#[test]
+fn every_endpoint_is_drawn_against_the_same_axis() {
+    // The whole reason the chart exists: a list of sparklines answers "how is this
+    // endpoint", and the question the user has is "which of these is the odd one out".
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    monitor.observe(APP, udp(2), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(9_000)),
+    );
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+
+    let slots = view.chart_age_secs.len();
+    assert!(slots > 1);
+    assert_eq!(
+        view.chart_age_secs.last().copied(),
+        Some(0.0),
+        "the axis ends at now, so a slow endpoint trails off to the left"
+    );
+    for endpoint in &view.endpoints {
+        assert_eq!(endpoint.chart_rtt_ms.len(), slots);
+        assert_eq!(endpoint.chart_path_ms.len(), slots);
+    }
+}
+
+#[test]
+fn a_lost_probe_is_a_gap_in_the_line_rather_than_a_zero() {
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    monitor.record(
+        ids[0],
+        ProbeSample::new(now, ProbeOutcome::Success(Rtt::from_micros(9_000))),
+    );
+    monitor.record(
+        ids[0],
+        ProbeSample::new(now + Duration::from_secs(1), ProbeOutcome::Timeout),
+    );
+
+    let view = view(&monitor, now + Duration::from_secs(1));
+    let drawn = &view.endpoints[0].chart_rtt_ms;
+
+    assert_eq!(
+        drawn.last().copied(),
+        Some(None),
+        "the timeout draws nothing"
+    );
+    assert_eq!(drawn[drawn.len() - 2], Some(9.0));
+}
+
+#[test]
+fn an_endpoint_that_answers_for_itself_has_no_path_line() {
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(9_000)),
+    );
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+
+    assert!(
+        view.endpoints[0].chart_path_ms.iter().all(Option::is_none),
+        "an endpoint that answers needs nothing standing in for it"
+    );
+    assert!(view.endpoints[0].chart_rtt_ms.iter().any(Option::is_some));
 }

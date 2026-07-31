@@ -53,7 +53,8 @@ use nm_core::endpoint::{
 use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
 use nm_core::path::PathTrace;
-use nm_core::sample::{ProbeSample, Rtt};
+use nm_core::sample::ProbeSample;
+use nm_core::series::Grid;
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
@@ -68,13 +69,13 @@ use crate::Error;
 /// however long the session runs.
 pub const HISTORY_CAPACITY: usize = 120;
 
-/// How many samples of an endpoint's history the sparkline carries.
+/// How many slots the per-application chart has.
 ///
-/// Fewer than a baseline's, and for two reasons. An endpoint is probed once a second
-/// rather than once every few seconds, so thirty points is half a minute — the same span
-/// the traffic ranking uses, and long enough to see a loss burst. And there can be eighty
-/// of these at the enforced ceiling against the baselines' handful, so the series is the
-/// one part of this payload whose size has to be argued for.
+/// Fewer than a baseline sparkline's, and for two reasons. An endpoint is probed once a
+/// second rather than once every few seconds, so thirty points is half a minute — the same
+/// span the traffic ranking uses, and long enough to see a loss burst. And there can be
+/// eighty of these at the enforced ceiling against the baselines' handful, so the series is
+/// the one part of this payload whose size has to be argued for.
 pub const SERIES_POINTS: usize = 30;
 
 /// Something the probe engine must be told.
@@ -225,6 +226,13 @@ pub struct AppMonitor {
     spent_hops: Vec<TargetId>,
     /// Reused by every sweep so the steady state allocates nothing for expiry.
     gone: Vec<(AppId, EndpointKey)>,
+    /// The one time axis every endpoint of an application is drawn against.
+    ///
+    /// Sixteen endpoints probed a second apart do not share sample times, so a chart with
+    /// a line each needs them placed on a common ladder. That placement is a decision about
+    /// what the numbers mean — which slot a sample belongs to, and that an empty slot stays
+    /// empty — so it lives in `nm-core` and is applied here rather than in the UI.
+    grid: Grid,
 }
 
 impl AppMonitor {
@@ -251,6 +259,9 @@ impl AppMonitor {
             hops: HashMap::new(),
             spent_hops: Vec::new(),
             gone: Vec::new(),
+            // One slot per probe of an endpoint inside the cap, so a healthy endpoint fills
+            // every one of them and a demoted one honestly shows the gaps it has.
+            grid: Grid::new(lifecycle.active_interval, SERIES_POINTS)?,
         })
     }
 
@@ -884,20 +895,36 @@ impl AppMonitor {
             .endpoints(app)
             .filter_map(|tracked| {
                 let entry = self.entries.get(&(app, tracked.key()))?;
-                let path = self
-                    .edges
-                    .get(&(app, tracked.key()))
-                    .map(|edge| edge.reading(now, self.window, &self.thresholds));
+                let edge = self.edges.get(&(app, tracked.key()));
+                let path = edge.map(|edge| edge.reading(now, self.window, &self.thresholds));
+                // The route's own series, drawn beside the round trips and never as one:
+                // it belongs to a router short of the endpoint, and the chart has to say so.
+                let path_series = path
+                    .as_ref()
+                    .and_then(EdgeReading::reported_hop)
+                    .and_then(|hop| edge?.history(hop.address))
+                    .map(|history| self.grid.place(history, now));
                 Some(EndpointReport::build(
                     tracked,
                     entry,
                     path,
+                    path_series,
+                    &self.grid,
                     now,
                     self.window,
                     &self.thresholds,
                 ))
             })
             .collect()
+    }
+
+    /// Seconds before now for each slot of the chart every endpoint is drawn on.
+    ///
+    /// One axis for the whole application: the endpoints share it, which is what makes
+    /// "which of these is the odd one out" a question the chart can answer.
+    #[must_use]
+    pub fn chart_ages_secs(&self) -> Vec<f64> {
+        self.grid.ages_secs()
     }
 
     /// How many endpoints an application has, probed or demoted.
@@ -966,21 +993,30 @@ pub struct EndpointReport {
     pub stats: WindowStats,
     /// The verdict those statistics imply.
     pub health: nm_core::health::Health,
-    /// Seconds before `now` for each point of the series — negative, ascending.
+    /// Round-trip time in each slot of the application's chart, or [`None`] for a slot with
+    /// no answer in it.
     ///
-    /// A real time axis rather than sample indices: an idle endpoint is probed ten times
-    /// less often, so evenly spaced points would draw a chart that lies about when things
-    /// happened.
-    pub series_age_secs: Vec<f64>,
-    /// Round-trip time at each point, or [`None`] where the probe did not come back.
-    pub series_rtt_ms: Vec<Option<f64>>,
+    /// Aligned to [`AppMonitor::chart_ages_secs`], so every endpoint of one application is
+    /// drawn against the same instants. A gap stays a gap: an endpoint probed a tenth as
+    /// often really has nothing to say about the slots in between.
+    pub chart_rtt_ms: Vec<Option<f64>>,
+    /// Round-trip time to the *reported hop of the route*, in the same slots.
+    ///
+    /// The silent match server's only figure, and the reason it does not vanish from the
+    /// chart entirely. It shares an axis with the round trips above and must never be drawn
+    /// as though it were one — it belongs to a router short of the endpoint, at an unknown
+    /// distance from it.
+    pub chart_path_ms: Vec<Option<f64>>,
 }
 
 impl EndpointReport {
+    #[allow(clippy::too_many_arguments)]
     fn build(
         tracked: &TrackedEndpoint,
         entry: &Entry,
         path: Option<EdgeReading>,
+        path_series: Option<Vec<Option<f64>>>,
+        grid: &Grid,
         now: Instant,
         window: Duration,
         thresholds: &HealthThresholds,
@@ -1002,17 +1038,10 @@ impl EndpointReport {
             entry.measurable && !entry.walking_path,
         );
 
-        let mut series_age_secs = Vec::with_capacity(SERIES_POINTS);
-        let mut series_rtt_ms = Vec::with_capacity(SERIES_POINTS);
-        for sample in entry.history.recent(SERIES_POINTS) {
-            series_age_secs.push(-now.saturating_duration_since(sample.at).as_secs_f64());
-            series_rtt_ms.push(sample.outcome.rtt().map(Rtt::as_millis_f64));
-        }
-
         Self {
             key: tracked.key(),
-            series_age_secs,
-            series_rtt_ms,
+            chart_rtt_ms: grid.place(&entry.history, now),
+            chart_path_ms: path_series.unwrap_or_else(|| vec![None; grid.points()]),
             liveness: tracked.liveness(),
             probing: tracked.probing(),
             recent_bytes: tracked.recent_bytes(),

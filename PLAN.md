@@ -589,7 +589,7 @@ important of the three and stays in Phase 8+, where endpoint enrichment already 
       A per-application cap of 64 processes bounds what the descendant rule can do — a user
       who picks a shell would otherwise turn one click into a membership set the size of the
       machine, tested against on every flow event.
-- [ ] **2. Show every endpoint of a selected application at once, on one chart.** The page today
+- [x] **2. Show every endpoint of a selected application at once, on one chart.** The page today
       is a list of endpoints each with its own sparkline, which answers "how is this endpoint"
       and not the question the user actually has — "which of these is the odd one out". One
       multi-series time chart per application (uPlot, one line per endpoint) with the list beside
@@ -608,6 +608,35 @@ important of the three and stays in Phase 8+, where endpoint enrichment already 
       – Sixteen series at ≤ 4 Hz, redrawn only while the window is visible. The chart must not
         become the thing that breaks the render budget.
       – The hover detail must be reachable without a mouse.
+      — the alignment is **Rust's**, in `nm_core::series::Grid`: sixteen endpoints probed a
+      second apart do not share sample times, and uPlot needs one x array, so the placement
+      of a sample into a slot is a decision about what the numbers mean and belongs where
+      every other calculation lives. A slot with no sample stays `None` — never zero, never
+      interpolated — and where two samples fall in one the later is shown rather than an
+      average, because smoothing would remove the spike the chart was opened to find. The
+      window's statistics are still computed over every sample, so the list beside the chart
+      remains the authority on what happened.
+      **The per-endpoint sparkline is gone**, replaced by the shared chart: it answered "how
+      is this endpoint" and the question during a match is "which of these is the odd one
+      out". The payload shrank with it — one axis for the application instead of one per
+      endpoint.
+      **The silent match server appears as its route**, on a dashed line labelled "route to
+      …", sharing the axis and never the meaning; `nm_core::edge::PathEdge` gained a way to
+      read the reported hop's samples for it. An endpoint with a round trip *and* a route
+      draws both. A test asserts the silent endpoint's own line is empty while its route's is
+      not — the two must never merge into one number called "ping".
+      **Colour identifies and never states.** The health palette is deliberately not reused:
+      the worst-first list is the authority, and a second quieter verdict in the chart would
+      contradict it the moment two endpoints shared a state. Assignment is held per endpoint
+      (`endpointColours.ts`) rather than derived from list position, which re-sorts by
+      severity on every emission and would otherwise repaint every line whenever one endpoint
+      got worse.
+      Hovering a line raises its row and dims — never hides — the others; a click pins it,
+      and so does activating the row's own button, which is the keyboard path to the same
+      thing.
+      **Not verified against a real render.** jsdom has no canvas, so uPlot draws nothing in
+      the test suite and the component's tests go through a stand-in that records what it was
+      asked to draw. What the chart *contains* is tested; how it looks has not been seen.
 - [ ] **3. Name the destination: ASN / provider per endpoint.** Least important of the three; it
       belongs to the Phase 8+ enrichment item and is recorded here so the options are written
       down. An address means nothing to a user; "Akamai", "an AWS region", "your own ISP's

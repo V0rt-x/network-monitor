@@ -467,10 +467,22 @@ pub struct EndpointView {
     /// this product exists not to tell. `null` for an endpoint that answers for itself, which
     /// needs no stand-in.
     pub path: Option<PathView>,
-    /// Seconds before now for each point of the series — negative, ascending.
-    pub series_age_secs: Vec<f64>,
-    /// Round-trip time at each point, or `null` where the probe did not come back.
-    pub series_rtt_ms: Vec<Option<f64>>,
+    /// Round-trip time in each slot of the application's chart, or `null` for a slot with
+    /// no answer in it.
+    ///
+    /// Aligned to [`AppView::chart_age_secs`], which every endpoint of the application
+    /// shares — that shared axis is what makes "which of these is the odd one out" a
+    /// question the chart can answer. Gaps stay gaps: nothing is drawn across a `null`.
+    pub chart_rtt_ms: Vec<Option<f64>>,
+    /// Round-trip time to the *reported hop of the route to this endpoint*, in the same
+    /// slots.
+    ///
+    /// What keeps a silent match server on the chart instead of leaving the endpoint the
+    /// whole product exists to watch as a blank row. It shares the axis with the round trips
+    /// and is **not** one: it belongs to a router short of the endpoint, at an unknown
+    /// distance from it, so the chart draws it distinctly and names it for what it is. All
+    /// `null` for an endpoint that answers for itself and needs no stand-in.
+    pub chart_path_ms: Vec<Option<f64>>,
 }
 
 impl EndpointView {
@@ -499,8 +511,8 @@ impl EndpointView {
             jitter_ms: report.stats.rtt.and_then(|rtt| rtt.jitter_ms),
             loss_pct: report.stats.loss_pct,
             path: report.path.as_ref().map(PathView::from),
-            series_age_secs: report.series_age_secs.clone(),
-            series_rtt_ms: report.series_rtt_ms.clone(),
+            chart_rtt_ms: report.chart_rtt_ms.clone(),
+            chart_path_ms: report.chart_path_ms.clone(),
         }
     }
 }
@@ -569,6 +581,12 @@ pub struct AppView {
     /// distribution is what the page shows, because partial failure inside one application
     /// is the normal case under filtering rather than an edge case.
     pub counts: HealthCountsView,
+    /// Seconds before now for each slot of the chart, negative and ascending.
+    ///
+    /// One axis for the whole application, which is the point: a list of sparklines answers
+    /// "how is this endpoint" and the question the user actually has is "which of these is
+    /// the odd one out". Every endpoint's `chartRttMs` and `chartPathMs` are aligned to it.
+    pub chart_age_secs: Vec<f64>,
     /// Its endpoints, worst first.
     pub endpoints: Vec<EndpointView>,
 }
@@ -580,6 +598,7 @@ impl AppView {
         id: u32,
         name: String,
         processes: Vec<AppProcessView>,
+        chart_age_secs: Vec<f64>,
         reports: &[EndpointReport],
     ) -> Self {
         let mut counts = HealthCounts::default();
@@ -601,6 +620,7 @@ impl AppView {
             name,
             processes,
             counts: counts.into(),
+            chart_age_secs,
             endpoints,
         }
     }
