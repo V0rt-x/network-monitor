@@ -141,7 +141,7 @@ Goal: real measurements against real hosts, still no per-app discovery.
       foreign service resolved into the sentinel range, was refused ICMP and TCP by
       `select_kind`, was measured by the TLS hello, and read several times the round trip of
       its directly-routed siblings — labelled, not silently presented as an RTT to the server.
-- [ ] **Endpoint labelling from the OS DNS cache** (candidate) — **deferred to Phase 4**, where
+- [x] **Endpoint labelling from the OS DNS cache** (candidate) — **deferred to Phase 4**, where
       an endpoint list exists to label. Windows' resolver cache maps the sentinel address back to
       the domain that produced it, so a tunnelled endpoint could be shown by name rather than as
       a meaningless synthetic address — read-only, no capture, no router access.
@@ -152,6 +152,23 @@ Goal: real measurements against real hosts, still no per-app discovery.
       in Phase 4 between shipping without names, shelling out to a supported command, or
       accepting the undocumented export behind a clearly optional feature. Applications that
       resolve over their own DoH will not appear in the cache either way.
+      — **Decided in Phase 4: not shipped, and not deferred either.** All three options were
+      weighed against what they buy, which is a label:
+      *The undocumented export* is refused outright. An unsupported structure layout in a
+      tool a censored user depends on is a crash or a garbage name one Windows update from
+      now, and there is no version of "optional feature" that makes reading an undocumented
+      layout safe — only one that makes the breakage rarer and harder to diagnose.
+      *Shelling out* is refused for a different reason. `ipconfig /displaydns` prints
+      localized field names, so parsing it means parsing a translation; `Get-DnsClientCache`
+      means launching PowerShell. Both mean this application spawning a child process while a
+      game with an anti-cheat driver is running, repeatedly, to obtain decoration. That is a
+      worse trade than any label is worth.
+      *So: no names from the cache.* What is lost is smaller than it first looked — the case
+      that motivated it, a FakeIP sentinel, is already labelled as tunnelled, and an
+      application resolving over its own DoH was never going to appear in the cache. The
+      honest way to put a name beside an endpoint is the Phase 8+ enrichment item: a bundled
+      offline provider table, which needs no OS API at all, and reverse DNS, which is
+      user-toggleable precisely because it generates traffic of its own.
 - [x] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock.
       — the cap is wired in `ProbeRunner::new` from `GLOBAL_PROBE_RATE_CAP_PER_SEC` and enforced
       by `nm_core::scheduler`'s token bucket; tested with an injected clock, including that
@@ -169,10 +186,11 @@ Goal: real measurements against real hosts, still no per-app discovery.
   probers against loopback listeners, and the chain, backoff and runner as pure state machines
   with an injected clock.*
 
-**Phase 2 status: the probe engine is done. One item remains open and cannot be closed here.**
+**Phase 2 status: the probe engine is done, and every item is now closed.**
 
-- Endpoint labelling from the DNS cache is a *candidate* whose stated precondition failed — see
-  above. Deferred to Phase 4 as a decision, not as work.
+- Endpoint labelling from the DNS cache was a *candidate* whose stated precondition failed. It
+  was deferred to Phase 4 as a decision rather than as work, and Phase 4 decided it: not
+  shipped, with the reasoning under the item above.
 - FakeIP handling was `[~]` because its remaining half was UI. Phase 3 built that half and the
   item is now closed.
 
@@ -658,6 +676,36 @@ part of Phase 4 and nothing here waits on it.
       the test suite and the component's tests go through a stand-in that records what it was
       asked to draw. What the chart *contains* is tested; how it looks has not been seen.
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
+
+**Phase 4 status: every item is built, and the acceptance criterion is partly met. The gap
+is named rather than papered over.**
+
+Met, and covered by tests: every part of discovery that parses or decides is platform-free
+and unit-tested — the connection-table and flow decoding, the address filter, the grouping
+of processes into applications, the endpoint lifecycle and its caps, the per-endpoint
+health rules, and the ordering the page renders. One application really does hold several
+endpoint states at once; `tests/app_view.rs` asserts a distribution and a worst-first order
+rather than a single verdict, and there is no field an application view could be collapsed
+to one colour through.
+
+Two things are **not** verified, and neither should be read as done:
+
+- **No real session has been run since the amendments landed.** The app was run against a
+  live match before them — that is where `Health::CarryingTraffic` and the stopped-tracing
+  bug came from — but the grouping of processes into applications, the multi-series chart
+  and the adapter names have only been exercised against fakes and unit tests. Discord plus
+  a game, side by side, with a single endpoint blocked by a firewall rule, is the check this
+  criterion actually asks for and it has not been performed.
+- **The chart has not been seen rendering.** jsdom has no canvas, so uPlot draws nothing in
+  the suite and the component's tests go through a stand-in.
+
+One item stays `[~]` on purpose: process icons, deferred to Phase 7's polish pass with the
+reasoning recorded above. "ETW handler tested against recorded event fixtures" is met in
+substance rather than in form — the handler's decidable half (the `SOCKADDR` decoding, the
+process filter, the endpoint filter) is unit-tested platform-free, and the handler itself is
+covered by a live-session test that asserts this process's own loopback traffic is
+discovered. No fixture file is replayed, because what a fixture would exercise is exactly
+the decoding that is already tested directly.
 
 ## Phase 5 — Measuring the endpoint that answers nothing
 
