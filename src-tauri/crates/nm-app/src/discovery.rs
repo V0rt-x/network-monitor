@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey};
 use nm_platform::connection::{Connection, ConnectionTable, Protocol};
-use nm_platform::flow::{FlowEvent, FlowEventSource};
+use nm_platform::flow::{FlowEvent, FlowEventSource, FlowSink};
 use nm_platform::process::Pid;
 use tokio::sync::mpsc;
 
@@ -91,6 +91,14 @@ pub enum FlowStatus {
     /// endpoints and byte counts are missing; TCP endpoints are not. The UI must say so
     /// plainly — an absent endpoint is not an absent flow.
     NotPermitted,
+    /// A session was open and has stopped.
+    ///
+    /// A tracing session is a named system object, not a possession: anything that knows
+    /// the name can stop it, and whoever opens it next takes it over. So a source that
+    /// started perfectly well can fall silent at any moment, and reporting the answer from
+    /// start-up would leave the page claiming to watch a game's UDP traffic while seeing
+    /// none of it. Restarting is attempted; until it succeeds this is the honest word.
+    Stopped,
     /// No flow source exists on this platform, or it failed for another reason.
     Unavailable,
 }
@@ -178,7 +186,26 @@ fn egress(local: IpAddr) -> Option<IpAddr> {
 pub struct Discovery {
     watched: std::sync::mpsc::Sender<Vec<Pid>>,
     flow: Option<Box<dyn FlowEventSource>>,
-    flow_status: FlowStatus,
+    /// Why there is no flow source, when there is none. [`None`] means there is one, and
+    /// whether it is *delivering* is asked of the source itself rather than remembered.
+    flow_refusal: Option<FlowStatus>,
+    /// Processes the source must report, kept so a restarted session resumes watching them
+    /// rather than coming back blind.
+    pids: Vec<Pid>,
+    /// Everything a replacement sink needs, so a stopped session can be started again.
+    rebuild: SinkParts,
+    dropped: Arc<AtomicU64>,
+}
+
+/// What a flow sink is built from.
+///
+/// Held rather than consumed so that [`Discovery::revive_flow`] can hand a fresh one to a
+/// source whose session has stopped. Cheap to clone: a policy of a few CIDR ranges, a
+/// channel sender and a counter.
+#[derive(Clone)]
+struct SinkParts {
+    policy: AddressPolicy,
+    sender: mpsc::Sender<Observation>,
     dropped: Arc<AtomicU64>,
 }
 
@@ -187,7 +214,7 @@ impl std::fmt::Debug for Discovery {
         // The sources are trait objects with nothing useful to print; what a reader needs
         // is whether flow events are running and whether anything is being lost.
         f.debug_struct("Discovery")
-            .field("flow_status", &self.flow_status)
+            .field("flow_status", &self.flow_status())
             .field("dropped_flow_events", &self.dropped_flow_events())
             .finish_non_exhaustive()
     }
@@ -221,13 +248,20 @@ impl Discovery {
             }
         }
 
-        let (flow, flow_status) = start_flow(flow, policy, sender, Arc::clone(&dropped));
+        let rebuild = SinkParts {
+            policy,
+            sender,
+            dropped: Arc::clone(&dropped),
+        };
+        let (flow, flow_refusal) = start_flow(flow, &rebuild);
 
         (
             Self {
                 watched,
                 flow,
-                flow_status,
+                flow_refusal,
+                pids: Vec::new(),
+                rebuild,
                 dropped,
             },
             receiver,
@@ -240,20 +274,60 @@ impl Discovery {
     /// [`Observation`] — in the tracing callback for flow events, which is data
     /// minimisation as much as economy: on a machine whose owner is under surveillance,
     /// this program should hold as little of the network's shape as the job allows.
-    pub fn watch(&self, pids: &[Pid]) {
+    pub fn watch(&mut self, pids: &[Pid]) {
         // A closed channel means the poll thread has already stopped; the flow source is
         // told either way. The thread wakes on this rather than at the end of its period,
         // so a process the user just chose is discovered at once.
         let _ = self.watched.send(pids.to_vec());
+        self.pids.clear();
+        self.pids.extend_from_slice(pids);
         if let Some(flow) = &self.flow {
             flow.watch(pids);
         }
     }
 
     /// Whether per-process flow events are available, and if not, why.
+    ///
+    /// Asked of the source every time rather than remembered from start-up: a session that
+    /// was reclaimed by another consumer has stopped delivering, and a page that kept
+    /// saying "active" would show a game with no UDP endpoints and no explanation.
     #[must_use]
-    pub const fn flow_status(&self) -> FlowStatus {
-        self.flow_status
+    pub fn flow_status(&self) -> FlowStatus {
+        if let Some(refusal) = self.flow_refusal {
+            return refusal;
+        }
+        match &self.flow {
+            Some(flow) if flow.is_running() => FlowStatus::Active,
+            Some(_) => FlowStatus::Stopped,
+            None => FlowStatus::Unavailable,
+        }
+    }
+
+    /// Restarts a tracing session that has stopped.
+    ///
+    /// Called on the discovery beat. Doing nothing instead would leave the user to notice
+    /// that UDP endpoints stopped appearing and restart the application themselves, for a
+    /// cause they cannot see.
+    ///
+    /// Cheap when there is nothing to do — an atomic read — and a no-op where the source
+    /// never started, because that was a refusal rather than a session that fell over.
+    /// A source that keeps failing is retried on the same beat and no faster; the cost of
+    /// an attempt is one refused system call.
+    pub fn revive_flow(&mut self) {
+        if self.flow_refusal.is_some() {
+            return;
+        }
+        let Some(flow) = &mut self.flow else {
+            return;
+        };
+        if flow.is_running() {
+            return;
+        }
+
+        if flow.start(self.rebuild.sink()).is_ok() {
+            // A session that came back knows nothing about what it was watching.
+            flow.watch(&self.pids);
+        }
     }
 
     /// How many flow events could not be queued because the session was behind.
@@ -268,36 +342,48 @@ impl Discovery {
     }
 }
 
+impl SinkParts {
+    /// Builds a sink that turns flow events into observations.
+    ///
+    /// A fresh one per session: a `FlowSink` is consumed by the source it is handed to, so
+    /// reviving a stopped session needs another.
+    fn sink(&self) -> FlowSink {
+        let policy = self.policy.clone();
+        let sender = self.sender.clone();
+        let dropped = Arc::clone(&self.dropped);
+        Box::new(move |event: &FlowEvent| {
+            let Some(observation) = from_flow(event) else {
+                return;
+            };
+            if !is_worth_tracking(&policy, observation.endpoint) {
+                return;
+            }
+            // The tracing thread must never block. A full queue is counted, not waited on.
+            if let Err(mpsc::error::TrySendError::Full(_)) = sender.try_send(observation) {
+                dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        })
+    }
+}
+
 /// Opens the flow session, classifying the refusal the common case produces.
+///
+/// Returns the source and, when there will never be one, the reason. A source that is
+/// returned may still stop later, which is why that is not decided here.
 fn start_flow(
     flow: Result<Box<dyn FlowEventSource>, nm_platform::Error>,
-    policy: AddressPolicy,
-    sender: mpsc::Sender<Observation>,
-    dropped: Arc<AtomicU64>,
-) -> (Option<Box<dyn FlowEventSource>>, FlowStatus) {
+    rebuild: &SinkParts,
+) -> (Option<Box<dyn FlowEventSource>>, Option<FlowStatus>) {
     let Ok(mut flow) = flow else {
-        return (None, FlowStatus::Unavailable);
+        return (None, Some(FlowStatus::Unavailable));
     };
 
-    let sink = Box::new(move |event: &FlowEvent| {
-        let Some(observation) = from_flow(event) else {
-            return;
-        };
-        if !is_worth_tracking(&policy, observation.endpoint) {
-            return;
-        }
-        // The tracing thread must never block. A full queue is counted, not waited on.
-        if let Err(mpsc::error::TrySendError::Full(_)) = sender.try_send(observation) {
-            dropped.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-
-    match flow.start(sink) {
-        Ok(()) => (Some(flow), FlowStatus::Active),
-        Err(nm_platform::Error::TracingNotPermitted) => (None, FlowStatus::NotPermitted),
+    match flow.start(rebuild.sink()) {
+        Ok(()) => (Some(flow), None),
+        Err(nm_platform::Error::TracingNotPermitted) => (None, Some(FlowStatus::NotPermitted)),
         Err(error) => {
             eprintln!("network-monitor: flow events are unavailable: {error}");
-            (None, FlowStatus::Unavailable)
+            (None, Some(FlowStatus::Unavailable))
         }
     }
 }

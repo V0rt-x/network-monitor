@@ -129,6 +129,7 @@
     "flow": {
       "active": "Per-process flow events are running.",
       "notPermitted": "This account may not open a tracing session, so UDP endpoints and traffic counters are missing — TCP endpoints are still found. Adding your account to the local “Performance Log Users” group once, from an elevated prompt, restores them. The app never does this for you.",
+      "stopped": "The tracing session stopped — something else on this machine took it over. UDP endpoints and traffic counters are missing until it is back; the app is retrying every second.",
       "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
     }
   },

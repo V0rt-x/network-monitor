@@ -223,6 +223,15 @@ export type FlowStatusView =
  *  throughput is counted anywhere. An absent endpoint is not an absent flow.
  */
 "notPermitted" | 
+/**
+ *  A session was open and has stopped; the app is trying to bring it back.
+ * 
+ *  A tracing session is a named system object, not a possession — anything that knows
+ *  the name can stop it. Until it is back, UDP endpoints and byte counters are missing
+ *  exactly as though there had never been a session, and saying so is the only way the
+ *  user can tell that from a game with nothing to show.
+ */
+"stopped" | 
 /**  No flow source exists on this platform, or it failed for another reason. */
 "unavailable";
 

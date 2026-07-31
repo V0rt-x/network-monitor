@@ -269,6 +269,13 @@ pub enum FlowStatusView {
     /// one the UI has to explain: TCP endpoints are still found, UDP ones are not, and no
     /// throughput is counted anywhere. An absent endpoint is not an absent flow.
     NotPermitted,
+    /// A session was open and has stopped; the app is trying to bring it back.
+    ///
+    /// A tracing session is a named system object, not a possession — anything that knows
+    /// the name can stop it. Until it is back, UDP endpoints and byte counters are missing
+    /// exactly as though there had never been a session, and saying so is the only way the
+    /// user can tell that from a game with nothing to show.
+    Stopped,
     /// No flow source exists on this platform, or it failed for another reason.
     Unavailable,
 }
@@ -278,6 +285,7 @@ impl From<FlowStatus> for FlowStatusView {
         match status {
             FlowStatus::Active => Self::Active,
             FlowStatus::NotPermitted => Self::NotPermitted,
+            FlowStatus::Stopped => Self::Stopped,
             // A state this build has no word for must not read as "everything is fine".
             _ => Self::Unavailable,
         }

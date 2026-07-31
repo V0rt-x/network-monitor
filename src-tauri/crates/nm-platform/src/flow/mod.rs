@@ -86,6 +86,17 @@ pub trait FlowEventSource: Send {
     /// discarded before it becomes a [`FlowEvent`].
     fn watch(&self, pids: &[Pid]);
 
+    /// Whether events are still being delivered.
+    ///
+    /// A tracing session is not owned by the process that opened it: it is a system object
+    /// with a name, and anything that knows the name can stop it. So a source that started
+    /// successfully can go quiet at any moment, and a consumer that remembered the answer
+    /// from start-up would report a healthy session while discovering nothing.
+    ///
+    /// The distinction the UI depends on: no UDP endpoints because the application has
+    /// none, against no UDP endpoints because nothing is looking.
+    fn is_running(&self) -> bool;
+
     /// Ends the session. Idempotent.
     fn stop(&mut self);
 }

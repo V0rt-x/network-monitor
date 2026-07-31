@@ -226,7 +226,7 @@ async fn session(
         Err(error) => report_startup_failure(&error),
     }
 
-    let (discovery, mut observations) = Discovery::start(
+    let (mut discovery, mut observations) = Discovery::start(
         policy,
         nm_platform::connection::system_table(),
         nm_platform::flow::system_flow_source(),
@@ -237,7 +237,6 @@ async fn session(
     watched.retain(|process| apps.monitor(discovery::app_of(process.pid)).is_ok());
     discovery.watch(&pids_of(watched));
 
-    let flow_status = discovery.flow_status();
     let mut ticker = tokio::time::interval(EMIT_PERIOD);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -249,10 +248,10 @@ async fn session(
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
                 Some(MonitorCommand::WindowRevealed) => {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, watched, flow_status);
+                    emit_apps(app, &apps, watched, discovery.flow_status());
                 }
                 Some(MonitorCommand::MonitorApp(pid)) => {
-                    watch_process(&mut apps, watched, pid, &discovery);
+                    watch_process(&mut apps, watched, pid, &mut discovery);
                 }
                 Some(MonitorCommand::ForgetApp(pid)) => {
                     watched.retain(|process| process.pid != pid);
@@ -266,13 +265,15 @@ async fn session(
             Some(observation) = observations.recv() => observe(&mut apps, observation),
             Some(id) = refused.recv() => apps.note_unmeasurable(id),
             _ = ticker.tick() => {
-                // Discovery is folded in on every tick, visible or not: hidden means "stop
-                // drawing", never "stop measuring".
+                // All of this runs whether the window is visible or not: hidden means "stop
+                // drawing", never "stop measuring" — and a tracing session that fell over
+                // while the app was in the tray must be back before the user looks again.
+                discovery.revive_flow();
                 let changes = apps.sweep(&mut registry, Instant::now());
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
                     emit_health(app, &baselines, started);
-                    emit_apps(app, &apps, watched, flow_status);
+                    emit_apps(app, &apps, watched, discovery.flow_status());
                 }
             }
         }
@@ -293,7 +294,7 @@ fn watch_process(
     apps: &mut AppMonitor,
     watched: &mut Vec<Watched>,
     pid: Pid,
-    discovery: &Discovery,
+    discovery: &mut Discovery,
 ) {
     if watched.iter().any(|process| process.pid == pid) {
         return;

@@ -46,6 +46,8 @@ export const flowStatusKey = (status: FlowStatusView) => {
       return 'apps.flow.active' as const;
     case 'notPermitted':
       return 'apps.flow.notPermitted' as const;
+    case 'stopped':
+      return 'apps.flow.stopped' as const;
     case 'unavailable':
       return 'apps.flow.unavailable' as const;
   }

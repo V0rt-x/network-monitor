@@ -26,6 +26,7 @@
 //! as [`Error::TracingNotPermitted`] so the layer above can explain it, and it is the
 //! expected answer rather than a failure.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -66,17 +67,32 @@ const EVENT_UDP_RECEIVED: u16 = 1170;
 /// Fixed rather than unique per run, so that a session orphaned by a crash is found and
 /// reclaimed on the next start instead of accumulating one per crash — ETW sessions
 /// outlive the process that created them.
-const SESSION_NAME: &str = "NetworkMonitorFlows";
+///
+/// The cost of that choice is that the name is the only thing standing between two
+/// consumers: whoever starts second reclaims the session from whoever started first, and
+/// the first is left running with nothing arriving. That is why
+/// [`FlowEventSource::is_running`] exists, and why anything that opens a session for its
+/// own purposes — the tests below — must use [`EtwFlowSource::with_session_name`] rather
+/// than quietly stopping the session of a copy of the app the developer has running.
+pub const SESSION_NAME: &str = "NetworkMonitorFlows";
 
 /// Delivers per-process flow events by consuming ETW.
 pub struct EtwFlowSource {
     /// Processes whose flows are reported. Shared with the tracing callback, which is the
     /// only reader, and replaced wholesale by [`FlowEventSource::watch`].
     watched: Arc<Mutex<Vec<Pid>>>,
+    /// Session name to create and to reclaim.
+    session: String,
     /// The running session, if any. `UserTrace::stop` consumes the value, hence the option.
     trace: Option<UserTrace>,
     /// The thread pumping the session's buffers.
     worker: Option<JoinHandle<()>>,
+    /// Cleared by the pump thread when the session ends, however it ended.
+    ///
+    /// The only honest way to know: `ProcessTrace` blocks until the session stops, so its
+    /// return *is* the news that tracing is over — whether we stopped it, another consumer
+    /// reclaimed the name, or an administrator killed it.
+    running: Arc<AtomicBool>,
 }
 
 impl Default for EtwFlowSource {
@@ -86,13 +102,24 @@ impl Default for EtwFlowSource {
 }
 
 impl EtwFlowSource {
-    /// Creates a source that is not yet tracing.
+    /// Creates a source that is not yet tracing, using the product's session name.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_session_name(SESSION_NAME)
+    }
+
+    /// Creates a source that will open a session of its own name.
+    ///
+    /// For tests and for anything else that must not reclaim the running application's
+    /// session out from under it.
+    #[must_use]
+    pub fn with_session_name(session: &str) -> Self {
         Self {
             watched: Arc::new(Mutex::new(Vec::new())),
+            session: session.to_owned(),
             trace: None,
             worker: None,
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -102,19 +129,24 @@ impl std::fmt::Debug for EtwFlowSource {
         // The session handle and its pump thread have no useful debug form, and the one
         // thing worth seeing is whether tracing is live.
         f.debug_struct("EtwFlowSource")
-            .field("running", &self.trace.is_some())
+            .field("session", &self.session)
+            .field("running", &self.is_running())
             .finish_non_exhaustive()
     }
 }
 
 impl FlowEventSource for EtwFlowSource {
     fn start(&mut self, sink: FlowSink) -> Result<(), Error> {
-        if self.trace.is_some() {
+        if self.is_running() {
             return Ok(());
         }
+        // A trace object left over from a session that has since stopped. Letting go of it
+        // first is what makes `start` a usable retry rather than a no-op that reports
+        // success while nothing is being delivered.
+        self.stop();
 
         // Reclaim a session our own previous run may have left behind.
-        let _ = stop_trace_by_name(SESSION_NAME);
+        let _ = stop_trace_by_name(&self.session);
 
         let watched = Arc::clone(&self.watched);
         let sink = Arc::new(Mutex::new(sink));
@@ -133,17 +165,26 @@ impl FlowEventSource for EtwFlowSource {
             .build();
 
         let (trace, handle) = UserTrace::new()
-            .named(SESSION_NAME.to_owned())
+            .named(self.session.clone())
             .enable(provider)
             .start()
             .map_err(map_trace_error)?;
 
-        // `process_from_handle` blocks until the trace stops, so it gets its own thread.
+        self.running.store(true, Ordering::Release);
+        let running = Arc::clone(&self.running);
+        // `process_from_handle` blocks until the trace stops, so it gets its own thread —
+        // and its return is the one reliable signal that the session has ended, whoever
+        // ended it.
         self.worker = Some(std::thread::spawn(move || {
             let _ = UserTrace::process_from_handle(handle);
+            running.store(false, Ordering::Release);
         }));
         self.trace = Some(trace);
         Ok(())
+    }
+
+    fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
     }
 
     fn watch(&self, pids: &[Pid]) {
@@ -279,7 +320,17 @@ mod tests {
     fn a_fresh_source_is_not_running() {
         let source = EtwFlowSource::new();
         assert!(source.trace.is_none());
+        assert!(!source.is_running());
         assert!(format!("{source:?}").contains("running: false"));
+    }
+
+    #[test]
+    fn the_product_session_name_is_not_what_the_tests_take_over() {
+        // The guard on the footgun above: a test that opened the product's session would
+        // stop a running app's tracing, and the app would keep reporting it as healthy.
+        let source = EtwFlowSource::with_session_name("NetworkMonitorFlowsTest");
+        assert_ne!(source.session, SESSION_NAME);
+        assert_eq!(EtwFlowSource::new().session, SESSION_NAME);
     }
 
     #[test]
@@ -347,7 +398,11 @@ mod tests {
     #[test]
     fn discovers_a_udp_peer_of_this_process_or_says_it_may_not_trace() {
         let (tx, rx) = mpsc::channel();
-        let mut source = EtwFlowSource::new();
+        // A session name of its own. Sharing the product's would mean that running the test
+        // suite silently stops the tracing of an app the developer has open — which is
+        // exactly what happened, and cost an evening working out why a live game's UDP
+        // endpoints had stopped appearing.
+        let mut source = EtwFlowSource::with_session_name("NetworkMonitorFlowsTest");
         source.watch(&[Pid::new(std::process::id())]);
 
         let sink: FlowSink = Box::new(move |event: &FlowEvent| {

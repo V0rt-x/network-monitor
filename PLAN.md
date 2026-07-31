@@ -489,6 +489,22 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       it exists only where flow events do. Without the one-time tracing setup a game server
       still reads as unreachable, which is one more thing the flow-status banner has to
       explain.
+- [x] **A tracing session that stops must be noticed and restarted.** Also found by running
+      the app, and the harder lesson of the two. An ETW session is a *named system object*,
+      not something a process owns: whoever opens the name next takes it over, and the
+      previous consumer is left running with nothing arriving. The app read its flow status
+      once at start-up, so it went on reporting "active" while discovering no UDP endpoint
+      of a live game at all — which on screen is indistinguishable from a game that has
+      none. `FlowStatus` is now asked of the source every time (`is_running`, cleared by the
+      pump thread when `ProcessTrace` returns, whoever ended the session), a stopped session
+      is restarted on the discovery beat and resumes watching the same processes, and
+      `FlowStatus::Stopped` says so meanwhile.
+      **What took the session over was our own test suite**, which opened the product's
+      session name. Every `cargo test` on this machine silently stopped the tracing of the
+      app the developer had running. The live test now uses a session name of its own; the
+      fixed product name stays, because reclaiming a session orphaned by a crash is worth
+      more than the collision it costs, but reclaiming must never be indistinguishable from
+      *being* reclaimed.
 - [ ] Known-app presets: Discord, Dota 2, CS2, Apex Legends, Valorant, Fortnite (process names + expected port ranges as data, not code)
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 

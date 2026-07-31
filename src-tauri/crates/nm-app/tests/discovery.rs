@@ -211,21 +211,64 @@ impl FlowEventSource for RefusingFlowSource {
         Err(nm_platform::Error::TracingNotPermitted)
     }
     fn watch(&self, _pids: &[Pid]) {}
+    fn is_running(&self) -> bool {
+        false
+    }
     fn stop(&mut self) {}
 }
 
 /// A flow source that starts and hands its sink back so a test can push events.
+///
+/// Its session can be stopped from outside, the way a real one is when another consumer
+/// takes the name over.
+#[derive(Clone, Default)]
 struct FakeFlowSource {
     sink: std::sync::Arc<std::sync::Mutex<Option<FlowSink>>>,
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    starts: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    watched: std::sync::Arc<std::sync::Mutex<Vec<Pid>>>,
+}
+
+impl FakeFlowSource {
+    /// Ends the session without telling the source, as an outside stop does.
+    fn kill(&self) {
+        self.running
+            .store(false, std::sync::atomic::Ordering::Release);
+        *self.sink.lock().unwrap() = None;
+    }
+
+    fn starts(&self) -> u32 {
+        self.starts.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn emit(&self, event: &FlowEvent) {
+        let mut held = self.sink.lock().unwrap();
+        if let Some(sink) = held.as_mut() {
+            sink(event);
+        }
+    }
 }
 
 impl FlowEventSource for FakeFlowSource {
     fn start(&mut self, sink: FlowSink) -> Result<(), nm_platform::Error> {
         *self.sink.lock().unwrap() = Some(sink);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.starts
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         Ok(())
     }
-    fn watch(&self, _pids: &[Pid]) {}
-    fn stop(&mut self) {}
+    fn watch(&self, pids: &[Pid]) {
+        let mut watched = self.watched.lock().unwrap();
+        watched.clear();
+        watched.extend_from_slice(pids);
+    }
+    fn is_running(&self) -> bool {
+        self.running.load(std::sync::atomic::Ordering::Acquire)
+    }
+    fn stop(&mut self) {
+        self.kill();
+    }
 }
 
 /// Waits for the next observation, failing rather than hanging if none arrives.
@@ -237,7 +280,7 @@ async fn next(observations: &mut tokio::sync::mpsc::Receiver<Observation>) -> Op
 
 #[tokio::test]
 async fn the_table_reports_only_the_processes_being_watched() {
-    let (discovery, mut observations) = Discovery::start(
+    let (mut discovery, mut observations) = Discovery::start(
         AddressPolicy::default(),
         Ok(Box::new(FakeTable {
             rows: vec![
@@ -282,7 +325,7 @@ async fn nothing_is_read_until_a_process_is_chosen() {
 #[tokio::test]
 async fn endpoints_nothing_could_measure_never_leave_the_poll_thread() {
     let loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 6463);
-    let (discovery, mut observations) = Discovery::start(
+    let (mut discovery, mut observations) = Discovery::start(
         AddressPolicy::default(),
         Ok(Box::new(FakeTable {
             rows: vec![
@@ -305,7 +348,7 @@ async fn endpoints_nothing_could_measure_never_leave_the_poll_thread() {
 
 #[tokio::test]
 async fn the_poll_thread_stops_with_the_session() {
-    let (discovery, mut observations) = Discovery::start(
+    let (mut discovery, mut observations) = Discovery::start(
         AddressPolicy::default(),
         Ok(Box::new(FakeTable {
             rows: vec![tcp_row(GAME, TcpState::Established, Some(server(443)))],
@@ -351,27 +394,21 @@ async fn a_missing_flow_source_is_reported_as_unavailable() {
 
 #[tokio::test]
 async fn a_flow_event_reaches_the_session() {
-    let sink = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let source = FakeFlowSource::default();
     let (discovery, mut observations) = Discovery::start(
         AddressPolicy::default(),
         Err(nm_platform::Error::UnsupportedPlatform),
-        Ok(Box::new(FakeFlowSource {
-            sink: std::sync::Arc::clone(&sink),
-        })),
+        Ok(Box::new(source.clone())),
     );
     assert_eq!(discovery.flow_status(), FlowStatus::Active);
 
-    {
-        let mut held = sink.lock().unwrap();
-        let sink = held.as_mut().expect("the source was started");
-        sink(&udp_flow(GAME, server(27_015), 512));
-        // A loopback peer is filtered on the tracing thread, before it becomes state.
-        sink(&udp_flow(
-            GAME,
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 6463),
-            64,
-        ));
-    }
+    source.emit(&udp_flow(GAME, server(27_015), 512));
+    // A loopback peer is filtered on the tracing thread, before it becomes state.
+    source.emit(&udp_flow(
+        GAME,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 6463),
+        64,
+    ));
 
     let observation = next(&mut observations).await.expect("the channel is open");
     assert_eq!(observation.endpoint, EndpointKey::udp(server(27_015)));
@@ -381,10 +418,87 @@ async fn a_flow_event_reaches_the_session() {
     // The session and the test's own copy of the sink are the only holders of the sending
     // end; letting both go closes the stream.
     drop(discovery);
-    *sink.lock().unwrap() = None;
+    source.kill();
     assert_eq!(
         next(&mut observations).await,
         None,
         "the loopback event must never have been queued"
     );
+}
+
+#[tokio::test]
+async fn a_session_stopped_from_outside_is_reported_rather_than_assumed_healthy() {
+    // Found by running the app: an ETW session is a named system object, and whoever opens
+    // that name next takes it over. The app kept saying "active" while discovering no UDP
+    // endpoints at all, which is indistinguishable on screen from a game that has none.
+    let source = FakeFlowSource::default();
+    let (discovery, _observations) = Discovery::start(
+        AddressPolicy::default(),
+        Err(nm_platform::Error::UnsupportedPlatform),
+        Ok(Box::new(source.clone())),
+    );
+    assert_eq!(discovery.flow_status(), FlowStatus::Active);
+
+    source.kill();
+
+    assert_eq!(discovery.flow_status(), FlowStatus::Stopped);
+}
+
+#[tokio::test]
+async fn a_stopped_session_is_started_again_and_resumes_watching() {
+    let source = FakeFlowSource::default();
+    let (mut discovery, mut observations) = Discovery::start(
+        AddressPolicy::default(),
+        Err(nm_platform::Error::UnsupportedPlatform),
+        Ok(Box::new(source.clone())),
+    );
+    discovery.watch(&[GAME]);
+    assert_eq!(source.starts(), 1);
+
+    source.kill();
+    discovery.revive_flow();
+
+    assert_eq!(discovery.flow_status(), FlowStatus::Active);
+    assert_eq!(source.starts(), 2);
+    assert_eq!(
+        *source.watched.lock().unwrap(),
+        vec![GAME],
+        "a session that came back knows nothing about what it was watching"
+    );
+
+    // And it delivers again through the replacement sink.
+    source.emit(&udp_flow(GAME, server(27_015), 512));
+    let observation = next(&mut observations).await.expect("the channel is open");
+    assert_eq!(observation.endpoint, EndpointKey::udp(server(27_015)));
+}
+
+#[tokio::test]
+async fn a_running_session_is_never_restarted() {
+    let source = FakeFlowSource::default();
+    let (mut discovery, _observations) = Discovery::start(
+        AddressPolicy::default(),
+        Err(nm_platform::Error::UnsupportedPlatform),
+        Ok(Box::new(source.clone())),
+    );
+
+    for _ in 0..5 {
+        discovery.revive_flow();
+    }
+
+    assert_eq!(source.starts(), 1);
+}
+
+#[tokio::test]
+async fn a_refused_session_is_not_retried_as_though_it_had_fallen_over() {
+    // A refusal is a fact about the account, not a session that stopped. Retrying it every
+    // second would spend a system call a second to be told the same thing.
+    let (mut discovery, _observations) = Discovery::start(
+        AddressPolicy::default(),
+        Err(nm_platform::Error::UnsupportedPlatform),
+        Ok(Box::new(RefusingFlowSource)),
+    );
+
+    discovery.revive_flow();
+
+    assert_eq!(discovery.flow_status(), FlowStatus::NotPermitted);
 }
