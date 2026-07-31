@@ -36,16 +36,10 @@ pub use error::Error;
 /// `CLAUDE.md`.
 pub const GLOBAL_PROBE_RATE_CAP_PER_SEC: u32 = 32;
 
-/// Maximum number of applications the user may monitor at the same time.
-pub const MAX_MONITORED_APPS: u32 = 5;
-
-/// Maximum number of endpoints actively probed per monitored application.
-///
-/// Endpoints beyond this count are not dropped: they demote to infrequent probing,
-/// prioritized by recent traffic.
-///
-/// Note that `MAX_MONITORED_APPS * MAX_ACTIVE_ENDPOINTS_PER_APP` deliberately exceeds
-/// [`GLOBAL_PROBE_RATE_CAP_PER_SEC`] at the default one-probe-per-second interval: the
-/// scheduler is expected to be oversubscribed and must respond by stretching intervals
-/// for low-priority targets, never by silently dropping them.
-pub const MAX_ACTIVE_ENDPOINTS_PER_APP: u32 = 16;
+// The per-application caps that used to sit here now live in
+// `nm_core::endpoint`, beside the code that enforces them: `nm-core` is below this crate
+// in the dependency order and could not have referred to them here. They remain what they
+// were — five applications, sixteen actively probed endpoints each — and their product
+// still deliberately exceeds [`GLOBAL_PROBE_RATE_CAP_PER_SEC`] at a one-second interval,
+// because the scheduler is meant to be oversubscribed and to answer by stretching
+// intervals rather than by abandoning targets.

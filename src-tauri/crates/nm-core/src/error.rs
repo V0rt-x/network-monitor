@@ -28,6 +28,28 @@ pub enum Error {
         raw: String,
     },
 
+    /// More applications were monitored at once than the product allows.
+    #[error("at most {limit} applications can be monitored at once")]
+    TooManyApps {
+        /// The cap that was reached.
+        limit: u32,
+    },
+
+    /// A flow was reported for an application that is not being monitored.
+    #[error("application {app} is not being monitored")]
+    UnknownApp {
+        /// The identifier that was not recognised.
+        app: u32,
+    },
+
+    /// An active-endpoint cap of zero would leave every endpoint demoted forever.
+    #[error("the active-endpoint cap must be at least one")]
+    ZeroEndpointCap,
+
+    /// Endpoints would be forgotten before they had even gone idle.
+    #[error("endpoints must be retained at least as long as they count as active")]
+    RetentionShorterThanActivity,
+
     /// The registry ran out of identifiers.
     ///
     /// Reaching this needs `u32::MAX` insertions in one session; it exists so the

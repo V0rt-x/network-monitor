@@ -361,9 +361,28 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       Event numbers come from the provider's manifest and may move between Windows
       versions; the consumer resolves by provider and number and degrades when a number is
       absent rather than failing.
-- [ ] Endpoint lifecycle: appear/idle/gone; dedup; enforced caps (≤ 5 monitored apps,
+- [x] Endpoint lifecycle: appear/idle/gone; dedup; enforced caps (≤ 5 monitored apps,
       ≤ 16 probed endpoints/app prioritized by recent traffic, 32 probes/s global) —
       scheduler stretches intervals under pressure, never silently drops; unit-tested
+      — `nm_core::endpoint`, pure and clock-free: callers pass `now`, so the tests play out
+      hours of lifecycle in microseconds. The two per-application caps moved here from
+      `nm-probes`, beside the code that now enforces them; the global probe cap stays where
+      the scheduler that enforces *it* lives.
+      **The cap limits probing, not knowledge.** Past sixteen an endpoint demotes to the
+      long interval and stays listed — an endpoint that disappeared from the UI for ranking
+      seventeenth would look exactly like one that stopped working. A test asserts twenty
+      endpoints stay twenty, split 16/4.
+      **Ranking degrades to recency on its own.** Priority is recent bytes, then last seen;
+      where no source counts bytes — a Windows machine without the tracing setup — every
+      endpoint scores alike and the ordering falls through to recency with no special case.
+      `recent_bytes` stays `None` there rather than `Some(0)`, because "unknown throughput"
+      and "measured no throughput" are different answers and the UI must not merge them.
+      **Idle is not gone.** Ten seconds of silence demotes; two minutes forgets. The gap is
+      deliberately wide: a game whose endpoints were forgotten during a loading screen
+      would rediscover and re-measure everything the moment play resumed.
+      A new endpoint is demoted until its first ranking, so discovery can never surprise
+      the budget, and an unmonitored application is refused rather than registered
+      implicitly — otherwise discovery would walk straight past the five-app cap.
 - [ ] Auto-probing of discovered endpoints (ICMP → fallbacks → path probe), tagged per app; probes source-bound to the same local address as the app's flow (VPN/accelerator route parity)
 - [ ] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
 - [ ] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
