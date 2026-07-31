@@ -527,7 +527,7 @@ and **never merges them into one number called "ping"** — see the rule added t
 
 ### A — the path, measured continuously
 
-- [ ] **Sustained path-edge probing**: find the deepest hop toward the match server that
+- [x] **Sustained path-edge probing**: find the deepest hop toward the match server that
       answers consistently, then probe *that hop* at the normal cadence. `nm_probes::path`
       already walks the route and `nm_core::path` already classifies where it dies; what is
       missing is turning a one-off trace into a stream of samples with a history, so the
@@ -538,14 +538,49 @@ and **never merges them into one number called "ping"** — see the rule added t
       believe a degradation only when it shows at all of them; a figure that moves on the
       deepest hop alone is reported as the router's, not the path's. Without this rule the
       metric lies, which is worse than having none.
-- [ ] **Honest labelling**: the figure is "to the last answering hop, N hops short of the
+      — `nm_core::edge`, pure and clock-free: it chooses the hops, keeps a history per hop,
+      and decides what they say together. A figure confined to the deepest hop is
+      `PathQuality::Uncorroborated` — stated, with its ambiguity, never attributed to the
+      path. Hops the address policy will not probe (the home router, carrier NAT) are passed
+      over rather than spending a slot on silence, and one router answering at two distances
+      takes one slot, since it could otherwise "corroborate" its own rate limiting.
+- [x] **Honest labelling**: the figure is "to the last answering hop, N hops short of the
       server", never "RTT to the server". The UI states the hop count and where that hop
       sits (own network / ISP / carrier NAT / past a long-haul link — `nm_core::path`
       already answers this).
-- [ ] Re-walk the route periodically and whenever the chosen hop stops answering, so a route
+      — **with one deliberate correction: "N hops short of the server" cannot be stated,**
+      because the server answered at no time-to-live at all, so nothing bounds its distance
+      beyond the edge. What the panel says instead is the hop's *own* distance, how many hops
+      are being watched, where the route stops, and — in as many words — that how much
+      further the server sits is unknown. Claiming a hop count we never measured would be the
+      same class of lie as the merged "ping" this phase exists to avoid.
+- [x] Re-walk the route periodically and whenever the chosen hop stops answering, so a route
       change is followed rather than reported as loss.
-- [ ] Budget: 2–3 probes/s for the *active* match endpoint only, inside the global 32/s cap.
+      — every five minutes, or twenty seconds after the deepest hop goes quiet, with a
+      one-minute floor under both: a hop that permanently rate-limits echoes would otherwise
+      ask for thirty probes every few seconds forever. A re-walk that finds the same route
+      keeps every sample and asks the probe engine for nothing at all.
+- [x] Budget: 2–3 probes/s for the *active* match endpoint only, inside the global 32/s cap.
       Endpoints ranked below it keep the ordinary single probe.
+      — **one edge per application**, on the busiest endpoint that has run out of probe
+      kinds, which in a live match is the match server. It gives its hops up before another
+      endpoint takes over, so the per-application cost is never briefly doubled.
+      A defect found while building this and fixed in the same phase: **a walk is up to
+      thirty probes and the scheduler counted it as one**, because one is what it dispatched.
+      Once an endpoint's kinds were exhausted it walked at the endpoint's own cadence — a
+      single silent game server could quietly spend the budget the baselines and every other
+      endpoint share. Walks now run on their own five-minute cadence, with `Command::WalkNow`
+      for the early re-walk, refused for any endpoint that can still be probed directly so it
+      can never become a way past the rate cap.
+- [x] **A refused port must retire the probe kind that chose it** (added here; without it
+      section A never engages in a common case). A game's match server answers a TCP
+      handshake on the port it plays UDP over with a reset — normal, since nothing listens
+      there but the game — and `nm_probes::chain` treated that as a definitive answer worth
+      keeping, which it is *about the port we chose* and not about the endpoint. The chain
+      parked there and the route was never reached. A run of refusals now retires a kind that
+      needs a port; an ICMP unreachable still does not, because that one comes from a router
+      and is about the destination, where every other kind would fail identically. It is
+      never evidence of filtering: the endpoint answered, so the path plainly works.
 
 ### B — the flow itself, measured passively
 
@@ -580,9 +615,15 @@ it costs almost nothing: the events are **already being delivered**.
 
 ### The UI rule this phase exists to protect
 
-- [ ] The match-server card shows **two columns, never one**: *path* (A, with how far it
+- [~] The match-server card shows **two columns, never one**: *path* (A, with how far it
       actually reaches) and *flow* (B). Merging them into a single "ping" would make the
       product lie in exactly the way it was built not to.
+      — the path half is built: its own panel under the endpoint, with the hop it belongs to,
+      how many hops are watched, where the route stops, and a note saying what the figure is
+      not. **The endpoint's own round trip stays a dash beside it** — a test asserts exactly
+      that, because the temptation to fill three empty fields with the nearest available
+      number is precisely how this product would start lying. The flow column arrives with
+      section B.
 
 - **Accept**: on a live match, the match server shows a moving path figure with its hop
   count and an arrival-jitter figure from its own traffic; killing the route to the chosen
@@ -590,6 +631,13 @@ it costs almost nothing: the events are **already being delivered**.
   deepest hop alone is *not* reported as path degradation (verify with a rate-limiting hop or
   a simulated trace); no figure anywhere is labelled as a round trip to the server; the whole
   thing stays inside the probe budget with five applications monitored.
+  *Section A is complete and covered by tests: `nm-core` replays route changes, rate-limiting
+  and recovery against a fake clock, and `nm-app`'s integration tests assert what the probe
+  engine would be asked for — hops registered on the application's own egress, one edge per
+  application, hops released when the route moves or the application is dropped. **Not yet
+  verified against a live match**, which is what the accept criterion asks for and needs a
+  real game session; nothing above should be read as a measured claim. Section B is untouched
+  and its spike still comes first.*
 
 ## Phase 6 — Service status, game reference pools & diagnosis verdicts
 
