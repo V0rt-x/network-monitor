@@ -6,6 +6,15 @@
 //! refuses to probe one address twice; and the probe runner, which is driven from here by
 //! a list of [`TargetChange`] rather than being called directly.
 //!
+//! # The registry is borrowed, not owned
+//!
+//! One session has **one** registry, shared with the baselines, and it is passed into the
+//! methods that need it. Two registries would hand out the same [`TargetId`] twice, and
+//! since both features feed a single probe runner — there is one global probe budget, so
+//! there can only be one runner — a baseline's measurement would land on an application's
+//! endpoint. Sharing it also buys what the registry was built for: an address that is both
+//! a baseline and a game server is probed once and answers both.
+//!
 //! Like [`crate::monitor`] it reads no clock and opens no socket — callers pass `now` in —
 //! so a session of applications appearing, going quiet and disappearing is replayed in a
 //! test in microseconds, on any operating system.
@@ -130,7 +139,6 @@ struct TargetUsers {
 #[derive(Debug)]
 pub struct AppMonitor {
     tracker: EndpointTracker,
-    registry: TargetRegistry,
     entries: BTreeMap<(AppId, EndpointKey), Entry>,
     users: HashMap<TargetId, TargetUsers>,
     policy: AddressPolicy,
@@ -154,7 +162,6 @@ impl AppMonitor {
     ) -> Result<Self, Error> {
         Ok(Self {
             tracker: EndpointTracker::new(lifecycle)?,
-            registry: TargetRegistry::new(),
             entries: BTreeMap::new(),
             users: HashMap::new(),
             policy,
@@ -187,10 +194,10 @@ impl AppMonitor {
     }
 
     /// Stops monitoring an application and releases the targets nobody else uses.
-    pub fn forget(&mut self, app: AppId) -> Vec<TargetChange> {
+    pub fn forget(&mut self, registry: &mut TargetRegistry, app: AppId) -> Vec<TargetChange> {
         let mut changes = Vec::new();
         for key in self.tracker.forget(app) {
-            self.release(app, key, &mut changes);
+            self.release(registry, app, key, &mut changes);
         }
         changes
     }
@@ -247,13 +254,13 @@ impl AppMonitor {
     /// Ages everything, then reports what the probe engine must be told.
     ///
     /// Call once per discovery cycle, after the observations from that cycle.
-    pub fn sweep(&mut self, now: Instant) -> Vec<TargetChange> {
+    pub fn sweep(&mut self, registry: &mut TargetRegistry, now: Instant) -> Vec<TargetChange> {
         let mut changes = Vec::new();
 
         let mut gone = std::mem::take(&mut self.gone);
         self.tracker.sweep(now, &mut gone);
         for (app, key) in gone.drain(..) {
-            self.release(app, key, &mut changes);
+            self.release(registry, app, key, &mut changes);
         }
         self.gone = gone;
 
@@ -268,7 +275,7 @@ impl AppMonitor {
         }
 
         for (app, key, interval) in wanted {
-            self.register(app, key, interval, &mut changes);
+            self.register(registry, app, key, interval, &mut changes);
         }
         self.retune(&mut changes);
         changes
@@ -305,6 +312,7 @@ impl AppMonitor {
     /// Records what an application wants, and registers the endpoint if it is new.
     fn register(
         &mut self,
+        registry: &mut TargetRegistry,
         app: AppId,
         key: EndpointKey,
         interval: Duration,
@@ -316,10 +324,15 @@ impl AppMonitor {
         entry.desired_interval = interval;
 
         let address = TargetAddress::with_port(key.address.ip(), key.address.port());
+        // Asked before inserting: the registry hands back the existing handle for an
+        // address something else already probes, and re-registering that with the runner
+        // would reset a fallback chain and a failure history that belong to another
+        // feature.
+        let adopted = entry.id.is_none() && registry.find(address).is_some();
         let id = if let Some(id) = entry.id {
             id
         } else {
-            let Ok(id) = self.registry.insert(address, TargetTag::AppEndpoint) else {
+            let Ok(id) = registry.insert(address, TargetTag::AppEndpoint) else {
                 // Only an exhausted 32-bit identifier space reaches this, which needs four
                 // billion endpoints in one session. The endpoint stays tracked and unprobed
                 // rather than taking the process down.
@@ -337,12 +350,23 @@ impl AppMonitor {
         if first {
             users.source = source;
             users.interval = Some(interval);
-            changes.push(TargetChange::Register {
-                id,
-                address,
-                source,
-                interval,
-            });
+            if adopted {
+                // Someone else's probe already covers this address, so only its cadence is
+                // ours to change. Its egress binding is not: it was chosen for another
+                // feature, so a probe bound elsewhere than this application's flow is a
+                // mismatch to disclose rather than to quietly present as the app's route.
+                changes.push(TargetChange::SetInterval { id, interval });
+                if source.is_some() {
+                    self.mark_egress_conflict(app, key);
+                }
+            } else {
+                changes.push(TargetChange::Register {
+                    id,
+                    address,
+                    source,
+                    interval,
+                });
+            }
             return;
         }
 
@@ -351,14 +375,25 @@ impl AppMonitor {
         // other's.
         let disagrees = source.is_some() && users.source != source;
         if disagrees {
-            if let Some(entry) = self.entries.get_mut(&(app, key)) {
-                entry.egress_conflict = true;
-            }
+            self.mark_egress_conflict(app, key);
+        }
+    }
+
+    /// Records that this application's probe cannot be trusted to follow its own route.
+    fn mark_egress_conflict(&mut self, app: AppId, key: EndpointKey) {
+        if let Some(entry) = self.entries.get_mut(&(app, key)) {
+            entry.egress_conflict = true;
         }
     }
 
     /// Drops one application's use of an endpoint, releasing the target if it was the last.
-    fn release(&mut self, app: AppId, key: EndpointKey, changes: &mut Vec<TargetChange>) {
+    fn release(
+        &mut self,
+        registry: &mut TargetRegistry,
+        app: AppId,
+        key: EndpointKey,
+        changes: &mut Vec<TargetChange>,
+    ) {
         let Some(entry) = self.entries.remove(&(app, key)) else {
             return;
         };
@@ -375,8 +410,13 @@ impl AppMonitor {
         }
 
         self.users.remove(&id);
-        self.registry.untag(id, TargetTag::AppEndpoint);
-        changes.push(TargetChange::Unregister { id });
+        // Only this feature's claim on the address is dropped. An address that is also on
+        // a baseline list keeps its target, and its handle — so the probe carries on and
+        // the dashboard never notices an application let go of it.
+        let removed = registry.untag(id, TargetTag::AppEndpoint);
+        if removed {
+            changes.push(TargetChange::Unregister { id });
+        }
     }
 
     /// Records a probe result against every application using that target.

@@ -9,8 +9,9 @@
 //!
 //! [`run`] starts three long-lived tasks and then gets out of the way:
 //!
-//! * `runtime` probes the baselines and pushes a health snapshot once a second — but only
-//!   while the window is visible. Hidden means "stop drawing", never "stop measuring".
+//! * `runtime` probes the baselines and the monitored applications' discovered endpoints,
+//!   and pushes a health snapshot once a second — but only while the window is visible.
+//!   Hidden means "stop drawing", never "stop measuring".
 //! * `settings` writes the configuration back to disk, debounced, so a dragged slider is
 //!   one write rather than one per frame.
 //! * `heartbeat` proves the event channel is alive before the first measurement lands.
@@ -34,6 +35,7 @@ mod view;
 
 pub mod apps;
 pub mod baselines;
+pub mod discovery;
 pub mod monitor;
 pub mod settings;
 
@@ -65,6 +67,8 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::core_status,
             commands::get_settings,
             commands::set_settings,
+            commands::monitor_app,
+            commands::forget_app,
             commands::apply_tray_labels,
             commands::hide_to_tray,
             commands::quit_app,

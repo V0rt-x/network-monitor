@@ -19,6 +19,18 @@ export const commands = {
 	 */
 	setSettings: (settings: Settings) => __TAURI_INVOKE<SettingsView>("set_settings", { settings }),
 	/**
+	 *  Starts discovering and probing one running process's remote endpoints.
+	 * 
+	 *  The process identifier crosses the boundary as a plain number because that is what the
+	 *  operating system's own listing returns and what the picker will hand back. A process
+	 *  that has already exited, or one chosen past the five-application cap, is simply not
+	 *  monitored: nothing is reported back yet, because until the process picker exists there
+	 *  is no UI able to say anything useful about it.
+	 */
+	monitorApp: (pid: number) => __TAURI_INVOKE<void>("monitor_app", { pid }),
+	/**  Stops following one process, releasing the endpoints nothing else is measuring. */
+	forgetApp: (pid: number) => __TAURI_INVOKE<void>("forget_app", { pid }),
+	/**
 	 *  Gives the tray menu its labels, translated by the UI.
 	 * 
 	 *  Returns whether the menu is now in place. It is deliberately not an error type: a tray

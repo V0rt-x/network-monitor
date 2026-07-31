@@ -383,10 +383,10 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       A new endpoint is demoted until its first ranking, so discovery can never surprise
       the budget, and an unmonitored application is refused rather than registered
       implicitly — otherwise discovery would walk straight past the five-app cap.
-- [~] Auto-probing of discovered endpoints (ICMP → fallbacks → path probe), tagged per app; probes source-bound to the same local address as the app's flow (VPN/accelerator route parity)
-      — the **decision layer is done and tested** (`nm_app::apps::AppMonitor`, 21 tests);
-      the tokio wiring is not. What remains: a discovery task polling the connection table
-      and consuming the ETW flow source into it, and routing probe reports back by target.
+- [x] Auto-probing of discovered endpoints (ICMP → fallbacks → path probe), tagged per app; probes source-bound to the same local address as the app's flow (VPN/accelerator route parity)
+      — decisions in `nm_app::apps::AppMonitor`, the operating-system side in
+      `nm_app::discovery`, and the loop that joins them to the probe engine in
+      `nm_app::runtime`.
       `AppMonitor` returns `TargetChange`s instead of calling the runner, because the runner
       lives inside its own async loop and is reachable only by message. The payoff is that
       the tests assert *what would be asked of the probe engine* without one existing —
@@ -402,10 +402,37 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       `nm-probes` gained `set_interval` for this: the cap demotes rather than drops, which
       needs a target's cadence to change while it stays registered. Failure history survives
       the change, so a rank shift is not an amnesty for a long-dead endpoint.
+      **One probe engine, therefore one target registry.** The 32 probes/s cap is global, so
+      a second `ProbeRunner` for applications would have a second token bucket and quietly
+      double the traffic the product promises not to send. The registry had to be shared
+      with it — two would hand the same handle to two different addresses and land a
+      baseline's measurement on a game's endpoint — so `AppMonitor` borrows the session's
+      registry instead of owning one. That also buys what the registry was built for: an
+      address that is *both* a baseline and a game server is probed once and answers both,
+      and an application letting go of it does not stop the dashboard's measurement.
+      **The endpoints discovery declines to track** are the ones no probe kind would accept:
+      loopback, LAN, link-local and reserved space, and port zero. That is not a measurement
+      withheld — such an address would be registered, refused by the runner and listed
+      forever as unmeasurable, spending one of the sixteen slots the application is allowed
+      on a game's conversation with its own launcher.
+      Nothing is polled until a process is chosen: a table sweep enumerates every socket on
+      the machine, and the thread waits on its instruction channel instead. Choosing a
+      process wakes it at once rather than at the end of its period.
+      The IPC surface is `monitor_app`/`forget_app`, taking a pid. **No UI calls them yet** —
+      the process picker below is what will, and until it exists the feature is reachable
+      only from the bindings. That is the honest state of it: the pipeline is built and
+      tested end to end against fake platform sources, and it has not been exercised against
+      a real game.
 - [ ] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
 - [ ] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
       lists with live RTT/jitter/loss + throughput, per-endpoint sparkline; "probe blocked"
       honest state
+      — this is what makes the item above reachable: `AppMonitor::endpoints` already
+      produces the per-endpoint report the page needs, and nothing yet emits it. The page
+      must also state the flow-source situation (`nm_app::discovery::FlowStatus`): on a
+      machine without the one-time tracing setup there are **no UDP endpoints and no byte
+      counters at all**, which must read as "this is missing, and here is why", never as an
+      application that has gone quiet.
 - [ ] **Per-endpoint state, never a single per-app verdict.** Filtering rarely hits everything
       an application talks to: within one app some endpoints stay clean, some lose packets, and
       some are unreachable outright — commonly at the same moment, because they sit in different

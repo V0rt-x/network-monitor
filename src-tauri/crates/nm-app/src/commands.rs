@@ -13,6 +13,7 @@
 // apply here.
 #![allow(clippy::needless_pass_by_value)]
 
+use nm_platform::process::Pid;
 use nm_platform::HostPlatform;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -166,6 +167,26 @@ pub fn set_settings(
     wanted.autostart = shell::apply_autostart(&app, wanted.autostart);
     let applied = state.update_settings(wanted);
     SettingsView::of(applied, state.problem())
+}
+
+/// Starts discovering and probing one running process's remote endpoints.
+///
+/// The process identifier crosses the boundary as a plain number because that is what the
+/// operating system's own listing returns and what the picker will hand back. A process
+/// that has already exited, or one chosen past the five-application cap, is simply not
+/// monitored: nothing is reported back yet, because until the process picker exists there
+/// is no UI able to say anything useful about it.
+#[tauri::command]
+#[specta::specta]
+pub fn monitor_app(state: State<'_, AppState>, pid: u32) {
+    state.monitor_app(Pid::new(pid));
+}
+
+/// Stops following one process, releasing the endpoints nothing else is measuring.
+#[tauri::command]
+#[specta::specta]
+pub fn forget_app(state: State<'_, AppState>, pid: u32) {
+    state.forget_app(Pid::new(pid));
 }
 
 /// Gives the tray menu its labels, translated by the UI.

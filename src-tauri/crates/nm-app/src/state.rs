@@ -8,6 +8,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use nm_platform::process::Pid;
 use tokio::sync::watch;
 
 use crate::runtime::{MonitorCommand, MonitorHandle};
@@ -85,6 +86,19 @@ impl AppState {
         if visible {
             self.monitor.send(MonitorCommand::WindowRevealed);
         }
+    }
+
+    /// Starts following one process's endpoints.
+    ///
+    /// The seam the process picker plugs into: nothing in the IPC surface calls this yet,
+    /// because a user cannot choose a process until that page exists.
+    pub fn monitor_app(&self, pid: Pid) {
+        self.monitor.send(MonitorCommand::MonitorApp(pid));
+    }
+
+    /// Stops following one process's endpoints.
+    pub fn forget_app(&self, pid: Pid) {
+        self.monitor.send(MonitorCommand::ForgetApp(pid));
     }
 
     /// Records that the tray now has a menu.

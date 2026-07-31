@@ -17,7 +17,7 @@ use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
-use nm_core::target::TargetId;
+use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
 
 const APP: AppId = AppId::new(1);
@@ -33,10 +33,12 @@ fn monitor() -> AppMonitor {
     .unwrap()
 }
 
-fn watching() -> (AppMonitor, Instant) {
+/// A monitor already watching one application, with the registry the session shares
+/// between every feature that probes.
+fn watching() -> (AppMonitor, TargetRegistry, Instant) {
     let mut monitor = monitor();
     monitor.monitor(APP).unwrap();
-    (monitor, Instant::now())
+    (monitor, TargetRegistry::new(), Instant::now())
 }
 
 fn socket(last: u8, port: u16) -> SocketAddr {
@@ -63,12 +65,12 @@ fn registrations(changes: &[TargetChange]) -> Vec<TargetId> {
 
 #[test]
 fn a_discovered_endpoint_becomes_a_probe_target() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor
         .observe(APP, udp(1), Some(local(9)), Some(64), now)
         .unwrap();
 
-    let changes = monitor.sweep(now);
+    let changes = monitor.sweep(&mut registry, now);
 
     assert_eq!(changes.len(), 1);
     let TargetChange::Register {
@@ -92,11 +94,11 @@ fn a_discovered_endpoint_becomes_a_probe_target() {
 
 #[test]
 fn a_known_endpoint_is_not_registered_twice() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor
         .observe(APP, udp(1), Some(local(9)), None, now)
         .unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     // Discovery re-observes the same endpoint on every poll; the probe engine must not
     // hear about it again.
@@ -106,7 +108,7 @@ fn a_known_endpoint_is_not_registered_twice() {
             .observe(APP, udp(1), Some(local(9)), None, later)
             .unwrap();
         assert!(
-            monitor.sweep(later).is_empty(),
+            monitor.sweep(&mut registry, later).is_empty(),
             "a steady endpoint must produce no commands at all"
         );
     }
@@ -114,12 +116,12 @@ fn a_known_endpoint_is_not_registered_twice() {
 
 #[test]
 fn an_endpoint_that_goes_away_is_unregistered() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
     assert_eq!(registered.len(), 1);
 
-    let changes = monitor.sweep(now + Duration::from_secs(121));
+    let changes = monitor.sweep(&mut registry, now + Duration::from_secs(121));
 
     assert_eq!(
         changes,
@@ -130,13 +132,13 @@ fn an_endpoint_that_goes_away_is_unregistered() {
 
 #[test]
 fn demotion_stretches_the_interval_instead_of_dropping_the_endpoint() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     // Long enough to go idle, not long enough to be forgotten.
     let later = now + Duration::from_secs(30);
-    let changes = monitor.sweep(later);
+    let changes = monitor.sweep(&mut registry, later);
 
     assert_eq!(changes.len(), 1);
     assert!(matches!(
@@ -153,6 +155,7 @@ fn demotion_stretches_the_interval_instead_of_dropping_the_endpoint() {
 #[test]
 fn one_address_two_applications_is_probed_once() {
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
@@ -164,7 +167,7 @@ fn one_address_two_applications_is_probed_once() {
         .observe(OTHER, udp(1), Some(local(9)), None, now)
         .unwrap();
 
-    let changes = monitor.sweep(now);
+    let changes = monitor.sweep(&mut registry, now);
     assert_eq!(
         registrations(&changes).len(),
         1,
@@ -175,14 +178,15 @@ fn one_address_two_applications_is_probed_once() {
 #[test]
 fn one_application_letting_go_does_not_stop_the_others_measurement() {
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
-    let changes = monitor.forget(APP);
+    let changes = monitor.forget(&mut registry, APP);
 
     assert!(
         changes.is_empty(),
@@ -194,15 +198,16 @@ fn one_application_letting_go_does_not_stop_the_others_measurement() {
 #[test]
 fn the_last_application_letting_go_releases_the_target() {
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
 
-    monitor.forget(APP);
-    let changes = monitor.forget(OTHER);
+    monitor.forget(&mut registry, APP);
+    let changes = monitor.forget(&mut registry, OTHER);
 
     assert_eq!(
         changes,
@@ -213,6 +218,7 @@ fn the_last_application_letting_go_releases_the_target() {
 #[test]
 fn a_shared_target_is_probed_at_the_shortest_interval_anyone_wants() {
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let start = Instant::now();
@@ -220,11 +226,11 @@ fn a_shared_target_is_probed_at_the_shortest_interval_anyone_wants() {
     // One application keeps using the endpoint; the other has gone quiet on it.
     monitor.observe(APP, udp(1), None, None, start).unwrap();
     monitor.observe(OTHER, udp(1), None, None, start).unwrap();
-    monitor.sweep(start);
+    monitor.sweep(&mut registry, start);
 
     let later = start + Duration::from_secs(30);
     monitor.observe(APP, udp(1), None, None, later).unwrap();
-    let changes = monitor.sweep(later);
+    let changes = monitor.sweep(&mut registry, later);
 
     assert!(
         changes.is_empty(),
@@ -237,17 +243,18 @@ fn a_shared_target_slows_down_once_every_user_has_lost_interest() {
     // Regression: the target's interval used to be folded against the last one requested,
     // so it could only ever shrink and a shared endpoint could never be demoted at all.
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let start = Instant::now();
 
     monitor.observe(APP, udp(1), None, None, start).unwrap();
     monitor.observe(OTHER, udp(1), None, None, start).unwrap();
-    monitor.sweep(start);
+    monitor.sweep(&mut registry, start);
 
     // Neither application uses it again; both go idle.
     let later = start + Duration::from_secs(30);
-    let changes = monitor.sweep(later);
+    let changes = monitor.sweep(&mut registry, later);
 
     assert_eq!(changes.len(), 1, "{changes:?}");
     assert!(matches!(
@@ -261,6 +268,7 @@ fn different_egress_routes_to_one_endpoint_are_disclosed() {
     // A per-process accelerator on one application and not the other. One probe cannot
     // represent both routes, so the disagreement is recorded rather than averaged.
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
@@ -271,7 +279,7 @@ fn different_egress_routes_to_one_endpoint_are_disclosed() {
     monitor
         .observe(OTHER, udp(1), Some(local(10)), None, now)
         .unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     let conflicted = monitor.endpoints(OTHER, now);
     assert!(conflicted[0].egress_conflict);
@@ -282,11 +290,11 @@ fn different_egress_routes_to_one_endpoint_are_disclosed() {
 #[test]
 fn a_re_routed_flow_takes_the_new_egress_address() {
     // The user turns a VPN on mid-session.
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor
         .observe(APP, udp(1), Some(local(9)), None, now)
         .unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     let later = now + Duration::from_secs(1);
     monitor
@@ -317,12 +325,13 @@ fn the_application_cap_is_enforced() {
 #[test]
 fn a_measurement_reaches_every_application_using_the_target() {
     let mut monitor = monitor();
+    let mut registry = TargetRegistry::new();
     monitor.monitor(APP).unwrap();
     monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
 
     monitor.record(
         registered[0],
@@ -341,9 +350,9 @@ fn a_measurement_reaches_every_application_using_the_target() {
 
 #[test]
 fn probe_state_is_carried_onto_the_endpoint() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
 
     monitor.note_probe_state(registered[0], Some(ProbeKind::TlsHello), true, true);
 
@@ -355,9 +364,9 @@ fn probe_state_is_carried_onto_the_endpoint() {
 
 #[test]
 fn an_unmeasurable_endpoint_says_so_rather_than_vanishing() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
 
     monitor.note_unmeasurable(registered[0]);
 
@@ -375,10 +384,10 @@ fn an_unmeasurable_endpoint_says_so_rather_than_vanishing() {
 fn endpoints_of_one_application_hold_independent_states() {
     // The rule Phase 4 exists to honour: an application is a distribution, never one
     // colour. A blocked voice server must not make a working game server look broken.
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(APP, udp(2), None, None, now).unwrap();
-    let registered = registrations(&monitor.sweep(now));
+    let registered = registrations(&monitor.sweep(&mut registry, now));
     assert_eq!(registered.len(), 2);
 
     // Enough probes each to clear the minimum a verdict needs: one lost packet is not an
@@ -401,10 +410,10 @@ fn endpoints_of_one_application_hold_independent_states() {
 
 #[test]
 fn throughput_stays_unknown_when_nothing_counts_it() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(APP, udp(2), None, Some(512), now).unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     let reports = monitor.endpoints(APP, now);
     assert_eq!(reports[0].recent_bytes, None);
@@ -413,27 +422,78 @@ fn throughput_stays_unknown_when_nothing_counts_it() {
 
 #[test]
 fn a_tunnelled_endpoint_is_labelled() {
-    let (mut monitor, now) = watching();
+    let (mut monitor, mut registry, now) = watching();
     // Inside the FakeIP sentinel range a local tunnel remaps.
     let sentinel = EndpointKey::udp(SocketAddr::new(
         IpAddr::V4(Ipv4Addr::new(198, 18, 0, 7)),
         443,
     ));
     monitor.observe(APP, sentinel, None, None, now).unwrap();
-    monitor.sweep(now);
+    monitor.sweep(&mut registry, now);
 
     assert!(monitor.endpoints(APP, now)[0].tunnelled);
 }
 
 #[test]
+fn an_address_another_feature_already_probes_is_adopted_not_registered_twice() {
+    // The registry is shared with the baselines, because one probe engine means one global
+    // budget and one identifier space. Re-registering an address the dashboard already
+    // measures would reset its fallback chain and its failure history.
+    let (mut monitor, mut registry, now) = watching();
+    let shared = TargetAddress::with_port(udp(1).address.ip(), udp(1).address.port());
+    let existing = registry
+        .insert(shared, TargetTag::DomesticBaseline)
+        .unwrap();
+
+    monitor
+        .observe(APP, udp(1), Some(local(9)), None, now)
+        .unwrap();
+    let changes = monitor.sweep(&mut registry, now);
+
+    assert!(registrations(&changes).is_empty());
+    assert_eq!(
+        changes,
+        vec![TargetChange::SetInterval {
+            id: existing,
+            interval: Duration::from_secs(1)
+        }]
+    );
+    assert!(
+        monitor.endpoints(APP, now)[0].egress_conflict,
+        "the existing probe was bound for another feature, so it cannot be claimed to \
+         follow this application's route"
+    );
+}
+
+#[test]
+fn letting_go_of_an_adopted_address_leaves_the_other_feature_probing() {
+    let (mut monitor, mut registry, now) = watching();
+    let shared = TargetAddress::with_port(udp(1).address.ip(), udp(1).address.port());
+    registry
+        .insert(shared, TargetTag::DomesticBaseline)
+        .unwrap();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    monitor.sweep(&mut registry, now);
+
+    let changes = monitor.forget(&mut registry, APP);
+
+    assert!(
+        changes.is_empty(),
+        "unregistering would stop a baseline the dashboard is still showing: {changes:?}"
+    );
+    assert!(registry.find(shared).is_some());
+}
+
+#[test]
 fn forgetting_an_application_with_nothing_discovered_is_quiet() {
-    let (mut monitor, _) = watching();
-    assert!(monitor.forget(APP).is_empty());
+    let (mut monitor, mut registry, _) = watching();
+    assert!(monitor.forget(&mut registry, APP).is_empty());
     assert!(!monitor.is_monitored(APP));
 }
 
 #[test]
 fn a_sweep_with_nothing_monitored_asks_for_nothing() {
     let mut monitor = monitor();
-    assert!(monitor.sweep(Instant::now()).is_empty());
+    let mut registry = TargetRegistry::new();
+    assert!(monitor.sweep(&mut registry, Instant::now()).is_empty());
 }
