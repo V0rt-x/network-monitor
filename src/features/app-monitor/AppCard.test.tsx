@@ -121,7 +121,7 @@ describe('AppCard', () => {
     expect(screen.getByText('Through a tunnel')).toBeInTheDocument();
     expect(screen.getByText('TLS')).toBeInTheDocument();
     expect(screen.getByText('Filtering confirmed')).toBeInTheDocument();
-    expect(screen.getByText("Route differs from another app's")).toBeInTheDocument();
+    expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
     expect(screen.getByText('Probes leave from 192.0.2.10')).toBeInTheDocument();
   });
 

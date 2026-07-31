@@ -117,7 +117,7 @@
       "demoted": "Probed less often"
     },
     "badge": {
-      "egressConflict": "Route differs from another app's"
+      "egressConflict": "Probe may not follow this app's route"
     },
     "metric": {
       "traffic": "Traffic ({{seconds}} s)"

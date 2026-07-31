@@ -25,6 +25,11 @@ interface EndpointRowProps {
  * trip to the server at all; an endpoint whose probe egresses somewhere other than the
  * application's own flow is not measuring the route the user is asking about. Each is
  * stated beside the number rather than folded into it.
+ *
+ * The route caveat covers two cases that look the same to the user and are: another
+ * monitored application reaching the endpoint by a different interface, and an address a
+ * baseline was already probing, whose binding was chosen before this application asked.
+ * Either way the single probe cannot be promised to follow this application's route.
  */
 export const EndpointRow = ({ endpoint, trafficWindowSecs }: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
