@@ -14,6 +14,7 @@
 mod error;
 
 pub mod connection;
+pub mod flow;
 pub mod icmp;
 pub mod process;
 

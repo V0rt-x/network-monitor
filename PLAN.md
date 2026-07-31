@@ -313,7 +313,22 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       **Icons are not done**, deliberately: they belong with the process picker below, which
       is where the decision about extracting and encoding them for the `WebView` has to be
       made anyway.
-- [ ] ETW session (**`Microsoft-Windows-TCPIP`** via ferrisetw): per-process UDP/TCP flow events → remote endpoint discovery + per-flow byte counters; graceful degradation to table-polling-only if ETW unavailable
+- [x] ETW session (**`Microsoft-Windows-TCPIP`** via ferrisetw): per-process UDP/TCP flow events → remote endpoint discovery + per-flow byte counters; graceful degradation to table-polling-only if ETW unavailable
+      — `nm_platform::flow`: the `FlowEventSource` trait, the platform-free `SOCKADDR`
+      decoding, and the ETW backend. A test opens a real session, sends on loopback and
+      asserts that this process's own UDP peer is discovered with the right process, byte
+      count and direction — the one thing the connection tables cannot do.
+      **That test passes two ways on purpose.** Where the account may not trace it asserts
+      exactly `TracingNotPermitted` and says so on stderr; where a session opens it asserts
+      the discovery. A machine that quietly lost the ability to trace would otherwise be
+      indistinguishable from one where the feature still works.
+      Degradation is a distinct error variant rather than a generic failure, because the
+      UI has to explain what is missing and what it costs, not report a fault the user can
+      do nothing about.
+      **Process selection happens in the callback, before any address is decoded** — flows
+      belonging to applications the user did not pick never enter the process's memory.
+      That is data minimisation first and cost second: this audience's machine should hold
+      as little of its network's shape as the job allows.
       — **the spike ran first, as the standing risk demanded, and it corrected this item
       twice over; full report in `docs/etw-privileges-spike.md`.**
       `Microsoft-Windows-Kernel-Network`, the provider this plan named, is **unusable**: it

@@ -29,6 +29,16 @@ pub enum Error {
         code: u32,
     },
 
+    /// This account may not open an event-tracing session.
+    ///
+    /// Not a fault, and not rare: a standard Windows account cannot create one at all, so
+    /// this is the expected answer until the machine has had a one-time administrative
+    /// setup. It is a distinct variant precisely so the UI can explain what is missing and
+    /// what it costs — per-application UDP discovery — instead of reporting a failure the
+    /// user can do nothing about.
+    #[error("this account is not allowed to open an event tracing session")]
+    TracingNotPermitted,
+
     /// An operating-system call failed.
     ///
     /// `api` names the call rather than the operation, because these codes are only

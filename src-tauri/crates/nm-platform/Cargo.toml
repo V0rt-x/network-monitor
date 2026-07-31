@@ -36,5 +36,15 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
+# ETW consumption, for the one thing the connection tables cannot report: the remote
+# endpoint of a UDP flow, which is what every game actually plays over. Writing this
+# against raw `EnableTraceEx2`/`ProcessTrace` would mean hand-rolling the schema cache and
+# the `TDH` property decoding, which is where the real complexity of ETW lives — see
+# `docs/etw-privileges-spike.md`, where this crate was proven against the live provider
+# before being adopted. It pulls its own `windows` 0.52/0.57 bindings alongside our
+# `windows-sys`; that is duplicated declarations at build time, not duplicated code in the
+# binary, and it is the price of not maintaining a TDH decoder ourselves.
+ferrisetw = "1.2"
+
 [lints]
 workspace = true
