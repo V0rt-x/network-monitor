@@ -526,9 +526,13 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
 
 ### Amendments from use (recorded 2026-07-31) — in descending order of importance
 
-Stated by the user after Phase 5A landed, and ordered as they stated them. The first two
-change what Phase 4 shipped and come before Phase 6; the third is explicitly the least
-important of the three and stays in Phase 8+, where endpoint enrichment already lives.
+Stated by the user after Phase 5A landed, and ordered as they stated them. Both change what
+Phase 4 shipped and come before Phase 6.
+
+A third was stated with them — naming an endpoint's destination by ASN or provider — and the
+user placed it explicitly last. It now lives where the work will happen, under **Phase 8+,
+endpoint enrichment**, with the options and the rejected ones written out there. It is not
+part of Phase 4 and nothing here waits on it.
 
 - [x] **1. An application is a set of processes, not a pid.** The picker, the caps, the endpoint
       lists and the IPC surface are all keyed on one process id today, and that is not the thing
@@ -637,32 +641,6 @@ important of the three and stays in Phase 8+, where endpoint enrichment already 
       **Not verified against a real render.** jsdom has no canvas, so uPlot draws nothing in
       the test suite and the component's tests go through a stand-in that records what it was
       asked to draw. What the chart *contains* is tested; how it looks has not been seen.
-- [ ] **3. Name the destination: ASN / provider per endpoint.** Least important of the three; it
-      belongs to the Phase 8+ enrichment item and is recorded here so the options are written
-      down. An address means nothing to a user; "Akamai", "an AWS region", "your own ISP's
-      network" means something, and it is what turns the path panel and Phase 6's verdicts from
-      a list of numbers into a sentence. Options, cheapest first:
-      – **(a) Bundled published cloud/CDN prefix lists.** AWS, GCP, Azure, Cloudflare and Fastly
-        publish their ranges as stable machine-readable files. This is data of exactly the kind
-        `assets/targets/` already holds, needs no ASN database, and covers a large share of game
-        servers — but it names only those providers, never a transit network or an ISP.
-      – **(b) A bundled offline IP→ASN table**, the real answer. Candidates to evaluate:
-        iptoasn.com's RouteViews-derived table (small, permissively licensed), DB-IP's lite ASN
-        database, MaxMind's GeoLite2-ASN (widest coverage, but an account and an EULA).
-        **Licensing must be verified before anything is bundled, not assumed** — the current
-        "(licensing TBD)" is doing real work. Whatever ships updates with releases and never
-        auto-fetches, exactly like the target lists. Cost against the < 50 MB core budget is
-        real but small: a sorted prefix array, binary-searched, loaded lazily and only if the
-        feature is enabled.
-      – **(c) Runtime lookup — RDAP, whois, or Team Cymru's DNS interface — is rejected rather
-        than deferred.** It tells a third party which servers this user is playing on, from a
-        machine under surveillance, and that is the phone-home the product promises never to
-        make. The same objection as reverse DNS, which is why *that* one is user-toggleable.
-      – **(d) GeoIP location is a weaker claim than ASN and must be presented as one.** Anycast
-        and cloud regions routinely put a database's "city" thousands of kilometres from the
-        machine that answered. Useful as "which region did the game put me in"; never as a
-        distance to check a round trip against — the measured RTT is the better evidence of
-        distance, not the other way round.
 - **Accept**: monitor Discord + a game simultaneously in a real session → voice server and game endpoints appear with independent live metrics while staying inside the probe budget; **one app's endpoints can hold different states at once and the UI shows all of them** (verify by blocking a single endpoint via the hosts file or a firewall rule: that endpoint turns unreachable while its siblings stay clean, and the app is not reported as broken); all discovery logic that parses/decides is platform-free and unit-tested; ETW handler tested against recorded event fixtures.
 
 ## Phase 5 — Measuring the endpoint that answers nothing
@@ -828,10 +806,32 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 
 - Linux support (`sock_diag` netlink + `/proc`, unprivileged-ICMP handling)
 - macOS support (`libproc`; note: Tauri e2e tooling unavailable on macOS — rely on unit/headless layers)
-- Endpoint enrichment: offline ASN/GeoIP database (licensing TBD), reverse DNS (user-toggleable
-  — it generates visible DNS traffic). **The options are worked out in Phase 4's amendment 3**,
-  including which lookups are rejected outright on privacy grounds; this line is the home of the
-  work, that one is the reasoning.
+- **Endpoint enrichment — name the destination: ASN / provider per endpoint.** Stated by the
+  user on 2026-07-31 alongside the two Phase 4 amendments, and placed by them explicitly last
+  of the three. An address means nothing to a user; "Akamai", "an AWS region", "your own ISP's
+  network" means something, and it is what turns the path panel and Phase 6's verdicts from a
+  list of numbers into a sentence. Options, cheapest first:
+  - **(a) Bundled published cloud/CDN prefix lists.** AWS, GCP, Azure, Cloudflare and Fastly
+    publish their ranges as stable machine-readable files. This is data of exactly the kind
+    `assets/targets/` already holds, needs no ASN database, and covers a large share of game
+    servers — but it names only those providers, never a transit network or an ISP.
+  - **(b) A bundled offline IP→ASN table**, the real answer. Candidates to evaluate:
+    iptoasn.com's RouteViews-derived table (small, permissively licensed), DB-IP's lite ASN
+    database, MaxMind's GeoLite2-ASN (widest coverage, but an account and an EULA).
+    **Licensing must be verified before anything is bundled, not assumed.** Whatever ships
+    updates with releases and never auto-fetches, exactly like the target lists. Cost against
+    the < 50 MB core budget is real but small: a sorted prefix array, binary-searched, loaded
+    lazily and only if the feature is enabled.
+  - **(c) Runtime lookup — RDAP, whois, or Team Cymru's DNS interface — is rejected rather
+    than deferred.** It tells a third party which servers this user is playing on, from a
+    machine under surveillance, and that is the phone-home the product promises never to
+    make. The same objection as reverse DNS, which is why *that* one is user-toggleable and
+    off by default — it generates visible DNS traffic.
+  - **(d) GeoIP location is a weaker claim than ASN and must be presented as one.** Anycast
+    and cloud regions routinely put a database's "city" thousands of kilometres from the
+    machine that answered. Useful as "which region did the game put me in"; never as a
+    distance to check a round trip against — the measured RTT is the better evidence of
+    distance, not the other way round.
 - Detection of known accelerator/VPN virtual adapters (ExitLag, WTFast, WireGuard, …) for
   clearer egress labeling and per-process-interceptor warnings
 - Alerts (jitter/loss thresholds → tray notification), overlay-friendly compact mode
