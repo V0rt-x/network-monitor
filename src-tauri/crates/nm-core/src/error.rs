@@ -21,6 +21,13 @@ pub enum Error {
     #[error("a probe interval must be greater than zero")]
     ZeroInterval,
 
+    /// A CIDR block could not be parsed, or its prefix was wider than its address family.
+    #[error("`{raw}` is not a valid CIDR block")]
+    InvalidCidr {
+        /// The rejected input, kept for diagnostics.
+        raw: String,
+    },
+
     /// The registry ran out of identifiers.
     ///
     /// Reaching this needs `u32::MAX` insertions in one session; it exists so the

@@ -33,6 +33,8 @@
 
 mod error;
 
+pub mod address;
+pub mod cidr;
 pub mod history;
 pub mod ring;
 pub mod sample;

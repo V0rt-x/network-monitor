@@ -17,6 +17,8 @@
 
 mod error;
 
+pub mod probe;
+
 pub use error::Error;
 
 /// Hard ceiling on probes issued per second across everything the app monitors:

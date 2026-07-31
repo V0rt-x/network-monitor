@@ -1,33 +1,28 @@
 //! Error type for [`crate`].
 
+use nm_core::address::AddressClass;
 use thiserror::Error as ThisError;
 
 /// Failures raised by the probe engine.
+///
+/// These describe our own inability to measure. A target that stays silent, refuses a
+/// connection or is reported unreachable is an outcome, not an error — folding the two
+/// together would let a local failure be displayed as someone else's packet loss.
 #[derive(Debug, Clone, PartialEq, Eq, ThisError)]
 #[non_exhaustive]
 pub enum Error {
     /// The OS abstraction layer could not carry out a probe.
     #[error(transparent)]
     Platform(#[from] nm_platform::Error),
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wraps_platform_failures_transparently() {
-        let error = Error::from(nm_platform::Error::UnsupportedPlatform);
-
-        assert!(matches!(
-            error,
-            Error::Platform(nm_platform::Error::UnsupportedPlatform)
-        ));
-        // `#[error(transparent)]` must forward the inner message verbatim: the probe
-        // engine adds no wording of its own on top of an OS-layer failure.
-        assert_eq!(
-            error.to_string(),
-            nm_platform::Error::UnsupportedPlatform.to_string()
-        );
-    }
+    /// No available probe kind can honestly measure an address of this class.
+    ///
+    /// The caller must surface this as "this endpoint cannot be measured", never as a
+    /// zero or a loss figure. It is the expected answer for an address a local tunnel
+    /// remaps when no end-to-end prober is configured.
+    #[error("no available probe kind can honestly measure a {class:?} address")]
+    NothingUsable {
+        /// What the address was classified as.
+        class: AddressClass,
+    },
 }

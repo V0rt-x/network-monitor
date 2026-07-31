@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "nm-probes"
 version.workspace = true
 edition.workspace = true
@@ -9,8 +9,14 @@ publish.workspace = true
 description = "Probe engine for Network Monitor: probers, scheduling, timeout and rate policy."
 
 [dependencies]
+nm-core.workspace = true
 nm-platform.workspace = true
 thiserror.workspace = true
+
+# The fallback chain holds probers of different kinds behind one interface, which needs a
+# `dyn`-safe async trait. Native `async fn` in traits is not object-safe, and this crate
+# is the standard, minimal way to bridge that gap.
+async-trait = "0.1"
 
 [lints]
 workspace = true
