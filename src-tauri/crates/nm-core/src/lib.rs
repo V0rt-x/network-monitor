@@ -38,6 +38,7 @@ mod error;
 pub mod address;
 pub mod backoff;
 pub mod cidr;
+pub mod edge;
 pub mod endpoint;
 pub mod health;
 pub mod history;
