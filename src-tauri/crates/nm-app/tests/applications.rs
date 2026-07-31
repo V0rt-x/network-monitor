@@ -111,6 +111,30 @@ fn a_launcher_adopts_the_title_it_starts() {
 }
 
 #[test]
+fn a_process_that_was_already_running_is_not_adopted_as_a_child() {
+    // Found by running the build against a live game: an unrelated device service turned up
+    // inside Apex Legends. Windows does not clear a recorded parent identifier when the
+    // parent exits and reissues identifiers freely, so a service started hours ago can name
+    // a dead parent whose number the game later received. Believing it puts another
+    // program's traffic in the game's endpoint list, which is a wrong measurement.
+    let mut apps = plain();
+    let snapshot = vec![
+        process(15388, "unrelated-service.exe", Some(12996)),
+        process(12996, "title.exe", Some(4)),
+    ];
+
+    let id = apps.adopt(Pid::new(12996), &snapshot).unwrap();
+
+    assert_eq!(members(&apps, id), vec![12996]);
+    apps.refresh(&snapshot);
+    assert_eq!(
+        members(&apps, id),
+        vec![12996],
+        "and it must not drift in on a later beat either"
+    );
+}
+
+#[test]
 fn an_ancestor_is_not_a_member() {
     // Descendants only. Adopting upwards would put the shell that started the game — and
     // therefore everything else it started — into the application.
@@ -212,13 +236,18 @@ fn a_member_survives_the_death_of_the_parent_it_was_adopted_through() {
     // member's descendant and does not share the chosen executable's name, and it is still
     // the application the user is watching.
     let mut apps = plain();
-    let snapshot = vec![
+    let id = apps
+        .adopt(Pid::new(100), &[process(100, "shim.exe", Some(4))])
+        .unwrap();
+
+    // The shim starts the game...
+    apps.refresh(&[
         process(100, "shim.exe", Some(4)),
         process(300, "title.exe", Some(100)),
-    ];
-    let id = apps.adopt(Pid::new(100), &snapshot).unwrap();
+    ]);
     assert_eq!(members(&apps, id), vec![100, 300]);
 
+    // ...and exits.
     apps.refresh(&[process(300, "title.exe", Some(100))]);
 
     assert_eq!(members(&apps, id), vec![300]);
@@ -267,11 +296,14 @@ fn an_application_with_nothing_running_is_kept_and_catches_the_relaunch() {
 #[test]
 fn a_process_belongs_to_one_application_only() {
     let mut apps = plain();
+    let launcher = apps
+        .adopt(Pid::new(100), &[process(100, "launcher.exe", Some(4))])
+        .unwrap();
     let snapshot = vec![
         process(100, "launcher.exe", Some(4)),
         process(300, "title.exe", Some(100)),
     ];
-    let launcher = apps.adopt(Pid::new(100), &snapshot).unwrap();
+    apps.refresh(&snapshot);
 
     // The title is already the launcher's, so choosing it separately is refused rather
     // than measured twice under two identities.
@@ -285,15 +317,22 @@ fn the_earlier_choice_keeps_a_contested_process() {
     // Two applications whose rules both reach one process: the tie breaks on the order the
     // user chose them, which is the only order they can see.
     let mut apps = plain();
-    let snapshot = vec![
+    let running = vec![
+        process(100, "one.exe", Some(4)),
+        process(200, "two.exe", Some(4)),
+    ];
+    let first = apps.adopt(Pid::new(100), &running).unwrap();
+    let second = apps.adopt(Pid::new(200), &running).unwrap();
+
+    // The first application starts a child.
+    apps.refresh(&[
         process(100, "one.exe", Some(4)),
         process(200, "two.exe", Some(4)),
         process(300, "child.exe", Some(100)),
-    ];
-    let first = apps.adopt(Pid::new(100), &snapshot).unwrap();
-    let second = apps.adopt(Pid::new(200), &snapshot).unwrap();
+    ]);
+    assert_eq!(members(&apps, first), vec![100, 300]);
 
-    // The contested child moves under the second application's tree.
+    // The contested child then appears to move under the second application's tree.
     apps.refresh(&[
         process(100, "one.exe", Some(4)),
         process(200, "two.exe", Some(4)),
@@ -338,11 +377,12 @@ fn membership_stops_at_the_per_application_cap() {
     // a set the size of the machine, tested against on every flow event.
     let mut apps = plain();
     let mut snapshot = vec![process(100, "root.exe", Some(4))];
+    let id = apps.adopt(Pid::new(100), &snapshot).unwrap();
+
     for index in 0..200 {
         snapshot.push(process(1_000 + index, "child.exe", Some(100)));
     }
-
-    let id = apps.adopt(Pid::new(100), &snapshot).unwrap();
+    apps.refresh(&snapshot);
 
     assert_eq!(members(&apps, id).len(), MAX_PROCESSES_PER_APP);
     assert!(
@@ -356,13 +396,15 @@ fn a_loop_in_the_parent_links_terminates() {
     // Reissued identifiers can make a snapshot's parent links circular. A walk that trusted
     // them would never finish.
     let mut apps = plain();
-    let snapshot = vec![
+    let id = apps
+        .adopt(Pid::new(100), &[process(100, "a.exe", Some(102))])
+        .unwrap();
+
+    apps.refresh(&[
         process(100, "a.exe", Some(102)),
         process(101, "b.exe", Some(100)),
         process(102, "c.exe", Some(101)),
-    ];
-
-    let id = apps.adopt(Pid::new(100), &snapshot).unwrap();
+    ]);
 
     assert_eq!(members(&apps, id), vec![100, 101, 102]);
 }

@@ -555,6 +555,7 @@ fn emit_apps(
     let payload = AppEndpoints {
         window_secs: nm_core::time::elapsed_secs(apps.window()),
         traffic_window_secs: nm_core::time::elapsed_secs(apps.traffic_window()),
+        chart_step_secs: nm_core::time::elapsed_secs(crate::apps::CHART_STEP),
         flow_status: flow_status.into(),
         apps: views,
     };

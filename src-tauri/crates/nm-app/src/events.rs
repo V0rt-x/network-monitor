@@ -54,6 +54,12 @@ pub struct AppEndpoints {
     pub window_secs: u32,
     /// Span the byte counts accumulate over, in seconds.
     pub traffic_window_secs: u32,
+    /// How much time one slot of the per-application chart covers, in seconds.
+    ///
+    /// Stated because it changes what a point *means*: each one is the slowest round trip
+    /// inside its slot, and a break is a slot in which nothing answered. Both need the width
+    /// of a slot to be readable.
+    pub chart_step_secs: u32,
     /// Whether per-process flow events are available, and if not, why.
     pub flow_status: FlowStatusView,
     /// The monitored applications, in the order they were chosen.

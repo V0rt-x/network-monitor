@@ -24,6 +24,7 @@ vi.mock('../dashboard/Sparkline', () => ({ Sparkline: () => <div data-testid="sp
 const ENDPOINTS: AppEndpoints = {
   windowSecs: 60,
   trafficWindowSecs: 30,
+  chartStepSecs: 3,
   flowStatus: 'active',
   apps: [
     {

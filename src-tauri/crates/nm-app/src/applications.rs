@@ -18,8 +18,28 @@
 //!    with a [preset](crate::presets) those are the preset's executables; for anything else
 //!    it is the picked process's own executable name. This is what catches an Electron
 //!    application's helpers, which really are the same program.
-//! 3. **Every descendant of a member.** The only relation that joins a launcher to the title
-//!    it starts, and the only one that survives an anti-cheat re-launch.
+//! 3. **Every descendant of a member that has *just appeared*.** The only relation that joins
+//!    a launcher to the title it starts, and the only one that survives an anti-cheat
+//!    re-launch.
+//!
+//! # Why a descendant must be new
+//!
+//! Found by running the build against a live game: an Apple device service turned up inside
+//! Apex Legends. Windows does not clear a process's recorded parent identifier when the
+//! parent exits, and it reissues identifiers freely — so a service started hours ago can
+//! name a dead parent whose number the game later received, and the tree rule believes it.
+//! The game's endpoint list then holds another program's traffic, which is a wrong
+//! measurement rather than an untidy one.
+//!
+//! A process is therefore adopted through the tree only if it was **absent from the previous
+//! snapshot**. A title its launcher really did start appears after the launcher is already a
+//! member, so it is caught on the next discovery beat; a service that was running all along
+//! never is. What this costs is the case where the child was already running when the user
+//! picked its parent — there the user can pick the child itself, and a preset covers the
+//! titles worth covering. Comparing process creation times would be exact, but it means
+//! opening a handle to every process claiming to be a child, including the ones the answer
+//! will reject, and this app's first promise is that it touches no process it was not asked
+//! about.
 //!
 //! The executable *path* would be a stronger version of rule 2 — it separates two unrelated
 //! programs that happen to share a file name — but reading it means opening a handle to
@@ -126,7 +146,11 @@ impl Application {
     /// `claimed` carries the processes earlier applications already hold: one process can
     /// only belong to one application, and the tie is broken by the order the user chose
     /// them, which is the only order they can see.
-    fn regroup(&mut self, index: &Index<'_>, claimed: &mut HashSet<Pid>) {
+    ///
+    /// `seen` is every process that existed at the previous snapshot. The tree rule adopts
+    /// only what is missing from it — see the module documentation for the live failure that
+    /// bought this rule.
+    fn regroup(&mut self, index: &Index<'_>, claimed: &mut HashSet<Pid>, seen: &HashSet<Pid>) {
         let mut chosen: BTreeSet<Pid> = BTreeSet::new();
         let mut room = MAX_PROCESSES_PER_APP;
 
@@ -154,12 +178,17 @@ impl Application {
             }
         }
 
-        // Everything descended from what we have, breadth first. A visited set is not
-        // needed beyond `chosen` itself, which is what stops a recycled identifier that
+        // Everything *newly* descended from what we have, breadth first. A visited set is
+        // not needed beyond `chosen` itself, which is what stops a recycled identifier that
         // happens to close a parent loop from spinning here.
         let mut frontier: Vec<Pid> = chosen.iter().copied().collect();
         while let Some(pid) = frontier.pop() {
             for child in index.children_of(pid) {
+                // A process that was already running cannot have been started by this
+                // application while we were watching, whatever its recorded parent says.
+                if seen.contains(&child) {
+                    continue;
+                }
                 if take(child, &mut chosen) {
                     frontier.push(child);
                 }
@@ -347,6 +376,11 @@ pub struct Applications {
     /// Exists because it is asked once per discovery observation — a flow event per send
     /// call on a busy game — while it changes once a second at most.
     index: HashMap<Pid, AppId>,
+    /// Every process that existed at the previous snapshot.
+    ///
+    /// What tells a child an application really started from one that was running all
+    /// along and merely names a reissued parent identifier. See the module documentation.
+    seen: HashSet<Pid>,
     next: u32,
 }
 
@@ -358,6 +392,7 @@ impl Applications {
             presets,
             apps: Vec::new(),
             index: HashMap::new(),
+            seen: HashSet::new(),
             // Identifiers start at one so that zero never names an application; a raw
             // identifier crosses the IPC boundary, and a default-constructed zero arriving
             // back from the UI must not be a valid target.
@@ -410,8 +445,13 @@ impl Applications {
         let index = Index::build(snapshot);
         let mut claimed: HashSet<Pid> = HashSet::new();
         for app in &mut self.apps {
-            app.regroup(&index, &mut claimed);
+            app.regroup(&index, &mut claimed, &self.seen);
         }
+        // Taken after the regrouping, so the *next* snapshot can tell which processes are
+        // new. Every process, not only the members: a child of a member was not a member
+        // itself a moment ago, and it is its own novelty that qualifies it.
+        self.seen.clear();
+        self.seen.extend(snapshot.iter().map(|process| process.pid));
         self.reindex();
     }
 

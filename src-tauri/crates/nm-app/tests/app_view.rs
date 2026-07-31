@@ -412,10 +412,15 @@ fn every_endpoint_is_drawn_against_the_same_axis() {
 }
 
 #[test]
-fn a_lost_probe_is_a_gap_in_the_line_rather_than_a_zero() {
+fn a_stretch_where_nothing_answered_is_a_break_in_the_line() {
+    // The only thing a break may mean. A slot covers several probes, so one lost packet
+    // beside a successful one is loss — reported as a percentage in the row — and drawing
+    // it as a break would say the endpoint went away.
     let (mut monitor, mut registry, now) = monitor();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
+
+    // One slot in which something answered, then a run of slots in which nothing did.
     monitor.record(
         ids[0],
         ProbeSample::new(now, ProbeOutcome::Success(Rtt::from_micros(9_000))),
@@ -424,16 +429,50 @@ fn a_lost_probe_is_a_gap_in_the_line_rather_than_a_zero() {
         ids[0],
         ProbeSample::new(now + Duration::from_secs(1), ProbeOutcome::Timeout),
     );
+    for step in 2..12 {
+        monitor.record(
+            ids[0],
+            ProbeSample::new(now + Duration::from_secs(step), ProbeOutcome::Timeout),
+        );
+    }
 
-    let view = view(&monitor, now + Duration::from_secs(1));
+    let view = view(&monitor, now + Duration::from_secs(11));
     let drawn = &view.endpoints[0].chart_rtt_ms;
 
     assert_eq!(
         drawn.last().copied(),
         Some(None),
-        "the timeout draws nothing"
+        "nothing answered anywhere near now"
     );
-    assert_eq!(drawn[drawn.len() - 2], Some(9.0));
+    assert!(
+        drawn.contains(&Some(9.0)),
+        "and the slot that did answer keeps its figure, timeout beside it or not"
+    );
+}
+
+#[test]
+fn a_chart_slot_shows_the_slowest_round_trip_in_it() {
+    // The chart exists to find the spike; a slot that showed the typical figure would hide
+    // exactly what the user came for. The row beside it still reports the mean.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    for (step, micros) in [(0, 9_000), (1, 90_000), (2, 9_000)] {
+        monitor.record(
+            ids[0],
+            ProbeSample::new(
+                now + Duration::from_secs(step),
+                ProbeOutcome::Success(Rtt::from_micros(micros)),
+            ),
+        );
+    }
+
+    let view = view(&monitor, now + Duration::from_secs(2));
+
+    assert!(
+        view.endpoints[0].chart_rtt_ms.contains(&Some(90.0)),
+        "the spike survives being put on a coarser grid"
+    );
 }
 
 #[test]

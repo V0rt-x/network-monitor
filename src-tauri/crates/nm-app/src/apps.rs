@@ -71,12 +71,28 @@ pub const HISTORY_CAPACITY: usize = 120;
 
 /// How many slots the per-application chart has.
 ///
-/// Fewer than a baseline sparkline's, and for two reasons. An endpoint is probed once a
-/// second rather than once every few seconds, so thirty points is half a minute — the same
-/// span the traffic ranking uses, and long enough to see a loss burst. And there can be
-/// eighty of these at the enforced ceiling against the baselines' handful, so the series is
-/// the one part of this payload whose size has to be argued for.
-pub const SERIES_POINTS: usize = 30;
+/// Forty of [`CHART_STEP`] is two minutes — long enough to hold a whole loss burst and its
+/// recovery, and short enough that eighty of these series at the enforced ceiling stay a
+/// small payload. The series is the one part of this event whose size has to be argued for.
+pub const SERIES_POINTS: usize = 40;
+
+/// How much time one slot of the per-application chart covers.
+///
+/// **Deliberately longer than the interval an endpoint is probed at**, and that is the whole
+/// point. A slot finer than the sampling is empty whenever no probe happened to land in it,
+/// and an empty slot is drawn as a break — so a healthy endpoint losing nothing at all would
+/// appear to be dropping packets, purely because the scheduler stretched an interval under
+/// the global rate cap. Found by running the build: the line of a clean endpoint was full of
+/// holes.
+///
+/// Three seconds holds two or three probes of an endpoint inside the per-application cap
+/// even when the budget is stretching intervals, so a gap means packets that did not come
+/// back. It also makes the axis advance a third as fast, which is what stops the lines
+/// sliding out from under the pointer while the user is trying to hover one.
+///
+/// The cost is resolution, and it is paid where it hurts least: a slot shows its *slowest*
+/// sample, so a spike inside it survives — see [`nm_core::series`].
+pub const CHART_STEP: Duration = Duration::from_secs(3);
 
 /// Something the probe engine must be told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,9 +275,7 @@ impl AppMonitor {
             hops: HashMap::new(),
             spent_hops: Vec::new(),
             gone: Vec::new(),
-            // One slot per probe of an endpoint inside the cap, so a healthy endpoint fills
-            // every one of them and a demoted one honestly shows the gaps it has.
-            grid: Grid::new(lifecycle.active_interval, SERIES_POINTS)?,
+            grid: Grid::new(CHART_STEP, SERIES_POINTS)?,
         })
     }
 

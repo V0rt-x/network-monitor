@@ -13,10 +13,15 @@
 //! does have nothing to say about the nine seconds in between, and a chart that joined
 //! those points would draw a measurement nobody took.
 //!
-//! **Nothing is averaged into a slot.** Where two samples fall in one, the later one is
-//! shown. Averaging would smooth away exactly the spike the user opened the chart to find,
-//! and the statistics beside the chart — which *are* computed over every sample — remain
-//! the authority on what happened.
+//! **A slot shows its slowest sample, and nothing is averaged.** Where several samples fall
+//! in one slot the worst of them is drawn. Averaging, or keeping whichever happened to be
+//! last, would smooth away exactly the spike the user opened the chart to find — and a chart
+//! that hides the worst moment of every interval is the wrong instrument for a product about
+//! degradation. The statistics beside the chart *are* computed over every sample and remain
+//! the authority on what the round trip typically is.
+//!
+//! The consequence has to be stated wherever this is drawn: a line of per-slot maxima sits
+//! above the mean in the row beside it, on purpose.
 //!
 //! **The grid ends at `now`.** The rightmost slot is the present, so several endpoints
 //! aligned against the same grid are aligned against the same instant, and a slower one
@@ -88,22 +93,24 @@ impl Grid {
             .collect()
     }
 
-    /// Places a history's round-trip times on the grid.
+    /// Places a history's round-trip times on the grid, worst sample per slot.
     ///
-    /// Samples older than the grid are dropped, and a probe that did not come back leaves
-    /// its slot empty — which is the same [`None`] as a slot nothing was measured in, and
-    /// deliberately so: both mean "no round trip was observed here", and the chart is not
-    /// where the difference between a timeout and a silence is explained.
+    /// Samples older than the grid are dropped, and a slot in which nothing answered stays
+    /// empty. **That is what makes an empty slot mean something**: as long as the step is
+    /// longer than the interval the target is probed at, every slot contains probes, so a
+    /// break in the line is packets that did not come back rather than a moment nobody
+    /// looked. A grid finer than the sampling would draw ordinary scheduling as loss.
     #[must_use]
     pub fn place(&self, history: &SampleHistory, now: Instant) -> Vec<Option<f64>> {
-        let mut values = vec![None; self.points];
-        // Oldest first, so a later sample in the same slot overwrites an earlier one.
+        let mut values: Vec<Option<f64>> = vec![None; self.points];
         for sample in history.recent(history.capacity()) {
             let Some(slot) = self.slot_of(sample.at, now) else {
                 continue;
             };
             if let Some(rtt) = sample.outcome.rtt() {
-                values[slot] = Some(Rtt::as_millis_f64(rtt));
+                let millis = Rtt::as_millis_f64(rtt);
+                let slowest = values[slot].map_or(millis, |held: f64| held.max(millis));
+                values[slot] = Some(slowest);
             }
         }
         values
@@ -225,23 +232,37 @@ mod tests {
     }
 
     #[test]
-    fn the_later_of_two_samples_in_one_slot_is_shown() {
-        // Never an average: smoothing would remove the spike the chart was opened to find,
-        // and the statistics beside it are computed over every sample regardless.
+    fn a_slot_shows_its_slowest_sample_whichever_order_they_arrived_in() {
+        // Never an average, and never merely the last: smoothing or dropping would remove
+        // the spike the chart was opened to find. The statistics beside it are computed
+        // over every sample regardless, so the typical figure is not lost either.
+        let start = Instant::now();
+        for order in [[1_000, 9_000], [9_000, 1_000]] {
+            let mut history = SampleHistory::new(8).unwrap();
+            for (step, micros) in order.iter().enumerate() {
+                history.record(ProbeSample::new(
+                    start + Duration::from_millis(100 * step as u64),
+                    ProbeOutcome::Success(Rtt::from_micros(*micros)),
+                ));
+            }
+            assert_eq!(grid().place(&history, start)[4], Some(9.0));
+        }
+    }
+
+    #[test]
+    fn a_failure_beside_a_success_leaves_the_success_standing() {
+        // A slot is empty only when nothing in it answered. One lost packet among several
+        // is loss, which the row beside the chart reports as a percentage — it is not an
+        // outage, and drawing it as a break would say it was.
         let start = Instant::now();
         let mut history = SampleHistory::new(8).unwrap();
-        history.record(ProbeSample::new(
-            start,
-            ProbeOutcome::Success(Rtt::from_micros(1_000)),
-        ));
+        history.record(ProbeSample::new(start, ProbeOutcome::Timeout));
         history.record(ProbeSample::new(
             start + Duration::from_millis(100),
-            ProbeOutcome::Success(Rtt::from_micros(9_000)),
+            ProbeOutcome::Success(Rtt::from_micros(5_000)),
         ));
 
-        let placed = grid().place(&history, start);
-
-        assert_eq!(placed[4], Some(9.0));
+        assert_eq!(grid().place(&history, start)[4], Some(5.0));
     }
 
     #[test]

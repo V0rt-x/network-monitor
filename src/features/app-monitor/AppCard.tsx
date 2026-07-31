@@ -13,6 +13,8 @@ interface AppCardProps {
   readonly app: AppView;
   /** Span the byte counts cover. */
   readonly trafficWindowSecs: number;
+  /** How much time one slot of the chart covers, so the note can say what a point is. */
+  readonly chartStepSecs: number;
   readonly onForget: (app: number) => void;
 }
 
@@ -47,7 +49,7 @@ const DISTRIBUTION = [
  * does focusing or activating a row, which is how the same thing is reached without a mouse.
  * Nothing about health is expressed by the chart alone.
  */
-export const AppCard = ({ app, trafficWindowSecs, onForget }: AppCardProps) => {
+export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: AppCardProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
 
@@ -146,7 +148,9 @@ export const AppCard = ({ app, trafficWindowSecs, onForget }: AppCardProps) => {
             onSelect={setPinned}
             label={t('apps.chart.label', { name: app.name })}
           />
-          <p className="nm-appcard__chartnote">{t('apps.chart.note')}</p>
+          <p className="nm-appcard__chartnote">
+            {t('apps.chart.note', { seconds: chartStepSecs })}
+          </p>
         </>
       )}
 

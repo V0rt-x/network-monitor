@@ -94,6 +94,14 @@ export type AppEndpoints = {
 	windowSecs: number,
 	/**  Span the byte counts accumulate over, in seconds. */
 	trafficWindowSecs: number,
+	/**
+	 *  How much time one slot of the per-application chart covers, in seconds.
+	 * 
+	 *  Stated because it changes what a point *means*: each one is the slowest round trip
+	 *  inside its slot, and a break is a slot in which nothing answered. Both need the width
+	 *  of a slot to be readable.
+	 */
+	chartStepSecs: number,
 	/**  Whether per-process flow events are available, and if not, why. */
 	flowStatus: FlowStatusView,
 	/**  The monitored applications, in the order they were chosen. */

@@ -620,6 +620,17 @@ part of Phase 4 and nothing here waits on it.
       still running keeps its place even after the parent it was adopted through exits;
       Windows reissues process identifiers, so a pid that came back running something else
       is dropped rather than kept.
+      **A descendant must be newly seen** — found by running the build against a live game,
+      where an unrelated device service turned up inside Apex Legends. Windows does not clear
+      a recorded parent identifier when the parent exits and reissues identifiers freely, so
+      a service started hours ago can name a dead parent whose number the game later
+      received. Believing it puts another program's traffic in the game's endpoint list,
+      which is a wrong measurement rather than an untidy one. The tree rule therefore adopts
+      only a process absent from the previous snapshot: a title its launcher really did start
+      appears after the launcher is already a member, a service running all along never does.
+      Comparing process creation times would be exact and was rejected — it means opening a
+      handle to every process claiming to be a child, including the ones the answer will
+      reject, against the promise to touch no process we were not asked about.
       **An application with no running process is kept, not dropped** — that is the whole
       point of arming the monitor before a match, and the page says plainly that nothing is
       running under it. It costs one of the five slots, which is the user's to spend.
@@ -684,6 +695,17 @@ part of Phase 4 and nothing here waits on it.
       Hovering a line raises its row and dims — never hides — the others; a click pins it,
       and so does activating the row's own button, which is the keyboard path to the same
       thing.
+      **The time axis is coarser than the probe interval, and that is the point.** Found by
+      running the build: a clean endpoint's line was full of holes. A slot finer than the
+      sampling is empty whenever no probe happened to land in it, and an empty slot is drawn
+      as a break — so an endpoint losing nothing at all appeared to be dropping packets,
+      purely because the scheduler had stretched an interval under the global rate cap. Slots
+      are three seconds, which holds two or three probes even under budget pressure, so a
+      break now means packets that did not come back. It also makes the axis advance a third
+      as fast, which is what stops the lines sliding out from under a pointer trying to hover
+      one. The cost is resolution, paid where it hurts least: **a slot shows its slowest
+      sample**, so a spike inside it survives, and the note under the chart says so — a line
+      of per-slot maxima sits above the mean in the row beside it, on purpose.
       **Not verified against a real render.** jsdom has no canvas, so uPlot draws nothing in
       the test suite and the component's tests go through a stand-in that records what it was
       asked to draw. What the chart *contains* is tested; how it looks has not been seen.

@@ -70,7 +70,7 @@ const app = (overrides: Partial<AppView> = {}): AppView => ({
 
 describe('AppCard', () => {
   it('names the application it is following', () => {
-    render(<AppCard app={app()} trafficWindowSecs={30} onForget={vi.fn()} />);
+    render(<AppCard app={app()} trafficWindowSecs={30} chartStepSecs={3} onForget={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'game.exe' })).toBeInTheDocument();
     expect(screen.getByText('game.exe · PID 4242')).toBeInTheDocument();
@@ -89,6 +89,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -99,7 +100,14 @@ describe('AppCard', () => {
 
   it('says an armed application has nothing running rather than showing an empty list', () => {
     // The user picked it before starting the game. Silence here would read as a bug.
-    render(<AppCard app={app({ processes: [] })} trafficWindowSecs={30} onForget={vi.fn()} />);
+    render(
+      <AppCard
+        app={app({ processes: [] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(screen.getByText(/Nothing is running under this application yet/)).toBeInTheDocument();
   });
@@ -125,6 +133,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -144,6 +153,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -181,6 +191,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -206,6 +217,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -228,6 +240,7 @@ describe('AppCard', () => {
           endpoints: [endpoint({ egress: '10.7.0.2', egressInterface: 'Accelerator' })],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -242,6 +255,7 @@ describe('AppCard', () => {
       <AppCard
         app={app({ endpoints: [endpoint({ egress: '10.7.0.2', egressInterface: null })] })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -266,6 +280,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -278,7 +293,7 @@ describe('AppCard', () => {
   });
 
   it('says nothing about a second route when the probe follows the application', () => {
-    render(<AppCard app={app()} trafficWindowSecs={30} onForget={vi.fn()} />);
+    render(<AppCard app={app()} trafficWindowSecs={30} chartStepSecs={3} onForget={vi.fn()} />);
 
     expect(screen.queryByText(/The probe cannot follow it/)).not.toBeInTheDocument();
   });
@@ -308,6 +323,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -325,6 +341,7 @@ describe('AppCard', () => {
       <AppCard
         app={app({ endpoints: [endpoint({ recentBytes: null, rttMs: null, lossPct: null })] })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -349,6 +366,7 @@ describe('AppCard', () => {
           endpoints: [],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -360,7 +378,9 @@ describe('AppCard', () => {
     // By application identity, never by process: the one the user picked may be long gone
     // while its children are still being measured.
     const onForget = vi.fn();
-    render(<AppCard app={app({ id: 7 })} trafficWindowSecs={30} onForget={onForget} />);
+    render(
+      <AppCard app={app({ id: 7 })} trafficWindowSecs={30} chartStepSecs={3} onForget={onForget} />,
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
 
@@ -387,6 +407,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -415,6 +436,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -431,6 +453,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -456,6 +479,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -476,6 +500,7 @@ describe('AppCard', () => {
           ],
         })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );
@@ -498,6 +523,7 @@ describe('AppCard', () => {
       <AppCard
         app={app({ endpoints: [endpoint({ key: 'a', address: '1.1.1.1:27015' })] })}
         trafficWindowSecs={30}
+        chartStepSecs={3}
         onForget={vi.fn()}
       />,
     );

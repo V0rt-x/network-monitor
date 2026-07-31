@@ -86,6 +86,7 @@ export const AppMonitorPage = () => {
                 key={app.id}
                 app={app}
                 trafficWindowSecs={endpoints.trafficWindowSecs}
+                chartStepSecs={endpoints.chartStepSecs}
                 onForget={(id) => {
                   void forgetApp(id);
                 }}
