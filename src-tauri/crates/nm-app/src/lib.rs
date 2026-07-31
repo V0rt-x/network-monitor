@@ -32,6 +32,7 @@ mod shell;
 mod state;
 mod view;
 
+pub mod apps;
 pub mod baselines;
 pub mod monitor;
 pub mod settings;

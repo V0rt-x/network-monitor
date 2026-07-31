@@ -569,6 +569,18 @@ pub enum Command {
     },
     /// Stop measuring a target.
     Remove(TargetId),
+    /// Change how often a target is probed.
+    ///
+    /// Deliberately without a reply channel: the only failure is a zero interval, which is
+    /// a programming mistake rather than something a caller can react to, and discovery
+    /// re-states its decision on every sweep anyway. An interval for a target that is gone
+    /// is simply ignored.
+    SetInterval {
+        /// Which target.
+        id: TargetId,
+        /// Its new base interval.
+        interval: Duration,
+    },
     /// Give a target's ruled-out probe kinds another chance.
     Reconsider(TargetId),
 }
@@ -649,6 +661,11 @@ fn apply(runner: &mut ProbeRunner, command: Command) {
         }
         Command::Remove(id) => {
             runner.remove(id);
+        }
+        Command::SetInterval { id, interval } => {
+            // A rejected interval leaves the target probing exactly as it was, which is the
+            // safe direction: worst case the endpoint keeps its previous cadence.
+            let _ = runner.set_interval(id, interval, Instant::now());
         }
         Command::Reconsider(id) => {
             runner.reconsider(id, Instant::now());
