@@ -383,7 +383,25 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       A new endpoint is demoted until its first ranking, so discovery can never surprise
       the budget, and an unmonitored application is refused rather than registered
       implicitly — otherwise discovery would walk straight past the five-app cap.
-- [ ] Auto-probing of discovered endpoints (ICMP → fallbacks → path probe), tagged per app; probes source-bound to the same local address as the app's flow (VPN/accelerator route parity)
+- [~] Auto-probing of discovered endpoints (ICMP → fallbacks → path probe), tagged per app; probes source-bound to the same local address as the app's flow (VPN/accelerator route parity)
+      — the **decision layer is done and tested** (`nm_app::apps::AppMonitor`, 21 tests);
+      the tokio wiring is not. What remains: a discovery task polling the connection table
+      and consuming the ETW flow source into it, and routing probe reports back by target.
+      `AppMonitor` returns `TargetChange`s instead of calling the runner, because the runner
+      lives inside its own async loop and is reachable only by message. The payoff is that
+      the tests assert *what would be asked of the probe engine* without one existing —
+      which is the only practical way to pin down that a steady endpoint produces no
+      commands at all, since re-registering it every second would otherwise be invisible.
+      Probes carry the local address the application's flow egresses from, and a flow that
+      moves takes its probes with it — the VPN-toggled-mid-session case.
+      **Two applications reaching one endpoint share one probe**, reference-counted so one
+      letting go does not stop the other's measurement, at the shortest interval any current
+      user wants. Where they reach it by *different* routes one probe cannot represent both,
+      so that is recorded as a conflict — the disclosure CLAUDE.md requires, feeding the
+      egress-mismatch item below.
+      `nm-probes` gained `set_interval` for this: the cap demotes rather than drops, which
+      needs a target's cadence to change while it stays registered. Failure history survives
+      the change, so a rank shift is not an amnesty for a long-dead endpoint.
 - [ ] Egress awareness in UI: show which interface each app flow and its probe use; mismatch warning (per-process interceptor case)
 - [ ] App-monitor page: process picker with multi-select (search, icons), per-app endpoint
       lists with live RTT/jitter/loss + throughput, per-endpoint sparkline; "probe blocked"
