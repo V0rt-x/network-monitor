@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "foreign",
+  "targets": [
+    {
+      "id": "cloudflare-dns",
+      "label": "Cloudflare DNS",
+      "address": "1.1.1.1",
+      "port": 443
+    },
+    {
+      "id": "google-dns",
+      "label": "Google DNS",
+      "address": "8.8.8.8",
+      "port": 443
+    },
+    {
+      "id": "discord",
+      "label": "Discord",
+      "address": "discord.com",
+      "port": 443
+    },
+    {
+      "id": "steam",
+      "label": "Steam",
+      "address": "api.steampowered.com",
+      "port": 443
+    }
+  ]
+}

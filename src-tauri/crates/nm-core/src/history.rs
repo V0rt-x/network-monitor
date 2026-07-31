@@ -58,6 +58,16 @@ impl SampleHistory {
         self.samples.iter().next_back()
     }
 
+    /// The last `count` samples, oldest first.
+    ///
+    /// Every retained sample when fewer than `count` are held. Exists so a caller can draw
+    /// the series the user sees without reaching into the ring buffer, and yields failures
+    /// alongside successes: a sparkline that silently omitted the timeouts would draw a
+    /// smooth line through an outage.
+    pub fn recent(&self, count: usize) -> impl Iterator<Item = &ProbeSample> + '_ {
+        self.samples.iter().skip(self.len().saturating_sub(count))
+    }
+
     /// Statistics over every retained sample.
     #[must_use]
     pub fn stats(&self) -> WindowStats {
@@ -222,6 +232,80 @@ mod tests {
         let stats = history.stats_since(start + Duration::from_secs(50));
         assert_eq!(stats.outcomes.success, 1);
         assert_eq!(stats.outcomes.timeout, 0);
+    }
+
+    #[test]
+    fn the_recent_slice_is_the_newest_samples_oldest_first() {
+        let start = Instant::now();
+        let mut history = SampleHistory::new(8).unwrap();
+        for index in 0..8_u64 {
+            history.record(ProbeSample::new(
+                start + Duration::from_secs(index),
+                ProbeOutcome::Success(ms(u32::try_from(index).unwrap())),
+            ));
+        }
+
+        let last_three: Vec<_> = history.recent(3).map(|sample| sample.outcome).collect();
+        assert_eq!(
+            last_three,
+            vec![
+                ProbeOutcome::Success(ms(5)),
+                ProbeOutcome::Success(ms(6)),
+                ProbeOutcome::Success(ms(7)),
+            ]
+        );
+    }
+
+    #[test]
+    fn asking_for_more_recent_samples_than_exist_yields_what_there_is() {
+        let start = Instant::now();
+        let mut history = SampleHistory::new(8).unwrap();
+        history.record(ProbeSample::new(start, ProbeOutcome::Timeout));
+
+        assert_eq!(history.recent(100).count(), 1);
+        assert_eq!(history.recent(0).count(), 0);
+        assert_eq!(SampleHistory::new(4).unwrap().recent(10).count(), 0);
+    }
+
+    #[test]
+    fn the_recent_slice_keeps_failures_rather_than_smoothing_over_them() {
+        // A sparkline drawn from successes alone would show a flat healthy line through
+        // an outage.
+        let start = Instant::now();
+        let mut history = SampleHistory::new(4).unwrap();
+        history.record(ProbeSample::new(start, ProbeOutcome::Success(ms(10))));
+        history.record(ProbeSample::new(
+            start + Duration::from_secs(1),
+            ProbeOutcome::Timeout,
+        ));
+
+        let outcomes: Vec<_> = history.recent(4).map(|sample| sample.outcome).collect();
+        assert_eq!(
+            outcomes,
+            vec![ProbeOutcome::Success(ms(10)), ProbeOutcome::Timeout]
+        );
+    }
+
+    #[test]
+    fn the_recent_slice_survives_the_ring_wrapping() {
+        let start = Instant::now();
+        let mut history = SampleHistory::new(3).unwrap();
+        for index in 0..7_u64 {
+            history.record(ProbeSample::new(
+                start + Duration::from_secs(index),
+                ProbeOutcome::Success(ms(u32::try_from(index).unwrap())),
+            ));
+        }
+
+        let all: Vec<_> = history.recent(10).map(|sample| sample.outcome).collect();
+        assert_eq!(
+            all,
+            vec![
+                ProbeOutcome::Success(ms(4)),
+                ProbeOutcome::Success(ms(5)),
+                ProbeOutcome::Success(ms(6)),
+            ]
+        );
     }
 
     #[test]

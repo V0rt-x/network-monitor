@@ -1,7 +1,18 @@
 {
   "app": {
     "name": "Network Monitor",
-    "tagline": "Local, private network diagnostics"
+    "tagline": "Local, private network diagnostics",
+    "minimize": "Minimize to tray",
+    "quit": "Quit"
+  },
+  "nav": {
+    "label": "Sections",
+    "dashboard": "Dashboard",
+    "settings": "Settings"
+  },
+  "tray": {
+    "show": "Show Network Monitor",
+    "quit": "Quit"
   },
   "core": {
     "heading": "Monitoring core",
@@ -26,5 +37,67 @@
     "unavailable": "The core event channel is not available",
     "uptime": "{{seconds}} s",
     "tickLabel": "tick {{seq}}"
+  },
+  "dashboard": {
+    "waiting": "Measuring the network…",
+    "unavailable": "The core stopped sending measurements",
+    "window": "Figures cover the last {{seconds}} s",
+    "noTargets": "No targets in this baseline",
+    "distributionEntry": "{{amount}} {{state}}",
+    "sparklineLabel": "Round-trip time over time for {{target}}",
+    "group": {
+      "domestic": "Domestic",
+      "foreign": "Foreign"
+    },
+    "groupHint": {
+      "domestic": "Services expected to work inside your country",
+      "foreign": "Services typically degraded or blocked at the border"
+    },
+    "health": {
+      "ok": "OK",
+      "degraded": "Degraded",
+      "unreachable": "Unreachable",
+      "blocked": "Probe blocked",
+      "unknown": "Not measured yet"
+    },
+    "probeKind": {
+      "icmpEcho": "ICMP",
+      "tcpConnect": "TCP",
+      "tlsHello": "TLS"
+    },
+    "badge": {
+      "tunnelled": "Through a tunnel",
+      "filteringConfirmed": "Filtering confirmed",
+      "unresolved": "Name did not resolve",
+      "notMeasurable": "Cannot be measured"
+    },
+    "metric": {
+      "rtt": "RTT",
+      "rttMedian": "RTT (median)",
+      "jitter": "Jitter",
+      "jitterMedian": "Jitter (median)",
+      "loss": "Loss"
+    }
+  },
+  "settings": {
+    "loading": "Loading settings…",
+    "unavailable": "Settings could not be reached",
+    "language": "Language",
+    "languageHint": "More languages are added as data; no part of the app has to change.",
+    "languageName": {
+      "en": "English"
+    },
+    "country": "Country",
+    "countryHint": "Chooses the domestic baseline list. Nothing is detected from the network — this app never asks anyone where you are.",
+    "interval": "Baseline probe interval: {{seconds}} s",
+    "intervalHint": "How often each baseline target is probed. Longer intervals leave more of the probe budget for the applications you monitor.",
+    "autostart": "Start with the system",
+    "autostartHint": "Off unless you turn it on. Reflects what the system reports, not what was requested.",
+    "privacyNote": "All measurements stay on this machine. The app sends nothing anywhere except the probes on these lists.",
+    "problem": {
+      "unreadable": "The settings file could not be read; defaults are in use.",
+      "malformed": "The settings file could not be understood; defaults are in use and your file was left untouched.",
+      "notWritable": "Settings cannot be saved on this machine; changes last until you quit."
+    }
   }
 }

@@ -121,6 +121,35 @@ pub trait IcmpProber: Send + Sync {
     fn echo(&self, request: &EchoRequest) -> Result<EchoOutcome, Error>;
 }
 
+impl<P: IcmpProber + ?Sized> IcmpProber for Box<P> {
+    fn echo(&self, request: &EchoRequest) -> Result<EchoOutcome, Error> {
+        (**self).echo(request)
+    }
+}
+
+/// The host's ICMP implementation, if this build has one.
+///
+/// The seam that keeps `#[cfg]` out of every crate above: callers ask for the platform's
+/// prober and handle the honest absence, rather than branching on the operating system
+/// themselves. On a platform with no implementation yet this returns
+/// [`Error::UnsupportedPlatform`], and the probe engine simply runs without ICMP —
+/// degraded to its connecting probe kinds rather than broken.
+///
+/// # Errors
+///
+/// Returns [`Error::UnsupportedPlatform`] where no ICMP backend exists, or whatever the
+/// platform backend reports if it cannot be created.
+pub fn system_prober() -> Result<Box<dyn IcmpProber>, Error> {
+    #[cfg(windows)]
+    {
+        Ok(Box::new(windows::WindowsIcmpProber))
+    }
+    #[cfg(not(windows))]
+    {
+        Err(Error::UnsupportedPlatform)
+    }
+}
+
 /// `IP_STATUS` values from the Windows IP Helper API (`ipexport.h`).
 ///
 /// Declared here rather than only in the Windows module so the classification below can

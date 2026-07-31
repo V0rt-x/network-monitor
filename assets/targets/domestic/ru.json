@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "ru",
+  "targets": [
+    {
+      "id": "yandex-dns-primary",
+      "label": "Yandex DNS",
+      "address": "77.88.8.8",
+      "port": 443
+    },
+    {
+      "id": "skydns",
+      "label": "SkyDNS",
+      "address": "193.58.251.251",
+      "port": 443
+    },
+    {
+      "id": "yandex",
+      "label": "Yandex",
+      "address": "ya.ru",
+      "port": 443
+    },
+    {
+      "id": "vk",
+      "label": "VK",
+      "address": "vk.com",
+      "port": 443
+    }
+  ]
+}

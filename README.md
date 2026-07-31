@@ -57,6 +57,7 @@ is why they are also the instrument for the measurement-model reality check in `
 ## Layout
 
 ```
+assets/targets/            baseline target lists (JSON) — see the README beside them
 src/                       React UI (feature folders) + generated IPC bindings + locales
 src-tauri/crates/
   nm-core/                 pure domain logic — no OS, no tokio, no Tauri
@@ -73,3 +74,15 @@ rewritten by `cargo test` and must never be edited by hand.
 The Tauri configuration lives at `src-tauri/crates/nm-app/tauri.conf.json` rather than in
 `src-tauri/`, because the application is one crate in a workspace rather than the whole
 of it. The CLI discovers it automatically.
+
+## What it probes, and where that is written down
+
+Everything the app contacts comes from `assets/targets/`: one list per country of services
+expected to work inside it, and one list of services typically degraded or blocked at a
+border. They are plain JSON, versioned here, and compiled into the binary — nothing is
+fetched at runtime and no list updates itself. `assets/targets/README.md` documents the
+schema and the rules for adding an entry.
+
+Settings live in `settings.json` in the per-user application configuration directory and
+nowhere else. There is no account, no sync, and no geo-detection: the country is something
+you choose, because working out where someone is means asking a remote service.

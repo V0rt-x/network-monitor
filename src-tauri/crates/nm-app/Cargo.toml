@@ -31,11 +31,20 @@ nm-probes.workspace = true
 thiserror.workspace = true
 
 serde = { version = "1", features = ["derive"] }
+# Target lists and the settings file are JSON; this is the only crate that reads either.
+serde_json = "1"
 specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
+# Official Tauri plugins, both required by Phase 3's shell: a second launch must reach the
+# running instance rather than start a second set of probes, and "start with Windows" must
+# not mean writing to the registry from a crate that forbids `unsafe` and platform `cfg`s.
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
-tokio = { version = "1", features = ["time"] }
+# `net` for the system resolver used on baseline host names, `sync` for the watch/mpsc
+# channels the tasks talk over, `rt` for the blocking pool the debounced writer uses.
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
 
 [lints]
 workspace = true

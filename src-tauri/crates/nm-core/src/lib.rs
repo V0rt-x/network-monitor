@@ -13,7 +13,9 @@
 //! *when*, within a global rate cap. The probe engine carries out the work and hands each
 //! result back as a [`sample::ProbeSample`], which [`history::SampleHistory`] retains in a
 //! fixed-capacity [`ring::RingBuffer`]. [`stats`] turns a window of that history into the
-//! numbers the UI shows.
+//! numbers the UI shows, and [`health`] turns those numbers into the verdict beside them —
+//! per target, and per group of targets, with the distribution always kept alongside the
+//! headline.
 //!
 //! # Two rules the whole crate obeys
 //!
@@ -36,6 +38,7 @@ mod error;
 pub mod address;
 pub mod backoff;
 pub mod cidr;
+pub mod health;
 pub mod history;
 pub mod path;
 pub mod ring;

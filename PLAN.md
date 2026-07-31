@@ -126,7 +126,7 @@ Goal: real measurements against real hosts, still no per-app discovery.
       this machine would map the route to the tunnel rather than to the destination.
 - [x] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
       — see `docs/measurement-reality-check.md`
-- [~] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
+- [x] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
       routers really do this, via podkop/sing-box). An endpoint inside `198.18.0.0/15` or
       `fc00::/18` is a sentinel a local tunnel will remap, so ICMP measures nothing and
       TCP-connect lies. Detect it, mark the endpoint as tunnelled, route it to a TLS
@@ -135,7 +135,12 @@ Goal: real measurements against real hosts, still no per-app discovery.
       mandatory. Note that a real setup is a **mix**: some endpoints are tunnelled and some
       are direct, in the same session.
       — detection (`nm_core::address`, configurable ranges) and routing to the TLS probe
-      (`select_kind`) done. The honest *labelling* in the UI remains, and depends on Phase 3.
+      (`select_kind`) done in Phase 2; the honest **labelling closed in Phase 3**, where a
+      tunnelled baseline target carries a "through a tunnel" badge beside the probe kind that
+      produced its figure. Confirmed on the dev machine's real podkop/sing-box router: a
+      foreign service resolved into the sentinel range, was refused ICMP and TCP by
+      `select_kind`, was measured by the TLS hello, and read several times the round trip of
+      its directly-routed siblings — labelled, not silently presented as an RTT to the server.
 - [ ] **Endpoint labelling from the OS DNS cache** (candidate) — **deferred to Phase 4**, where
       an endpoint list exists to label. Windows' resolver cache maps the sentinel address back to
       the domain that produced it, so a tunnelled endpoint could be shown by name rather than as
@@ -164,17 +169,19 @@ Goal: real measurements against real hosts, still no per-app discovery.
   probers against loopback listeners, and the chain, backoff and runner as pure state machines
   with an injected clock.*
 
-**Phase 2 status: the probe engine is done; two items are deliberately open and neither can be
-closed here.**
+**Phase 2 status: the probe engine is done. One item remains open and cannot be closed here.**
 
 - Endpoint labelling from the DNS cache is a *candidate* whose stated precondition failed — see
   above. Deferred to Phase 4 as a decision, not as work.
-- FakeIP handling is `[~]` because its remaining half is UI: detection, classification and probe
-  routing are done and tested, but "label the measurement honestly as end-to-end-through-a-tunnel"
-  needs somewhere to display it. Phase 3 builds that.
+- FakeIP handling was `[~]` because its remaining half was UI. Phase 3 built that half and the
+  item is now closed.
 
-Everything Phase 2 can finish on its own is finished; the rest is carried forward explicitly
-rather than marked done.
+One change was made to Phase 2's code while building Phase 3, and it belongs here: `drive` now
+emits a `Completed` — the report **plus** `TargetProgress`, the runner's belief about the target
+after folding that result in (which kind is in use, whether filtering has been *proven*, whether
+anything measurable is left). The runner is moved into its own loop and cannot be queried from
+outside, so without this the app layer would have had to reimplement `FallbackChain`'s inference
+to caption a number. The belief travels with the measurement instead.
 
 What the spike settled (full report in `docs/measurement-reality-check.md`):
 
@@ -198,12 +205,86 @@ What the spike settled (full report in `docs/measurement-reality-check.md`):
 
 Goal: tray app a user can run during a game.
 
-- [ ] Tauri shell: system tray, minimize-to-tray, single instance, autostart toggle (off by default)
-- [ ] UI stops rendering when window hidden; Rust core continues; event stream batched ≤ 4 Hz
-- [ ] Baseline target lists in `assets/targets/`: `domestic/<country>.json` (start: ru, ir) + `foreign.json`; country selected in settings (no geo-detection phoning home)
-- [ ] Dashboard page: domestic vs foreign health side by side — RTT/jitter/loss sparklines (uPlot), simple verdict per group (OK / degraded / blocked)
-- [ ] Settings page: language (en now), country, probe intervals; persisted locally (debounced writes)
+- [x] Tauri shell: system tray, minimize-to-tray, single instance, autostart toggle (off by default)
+      — `nm_app::shell`. Two official Tauri plugins were added, and the reason is layering as much
+      as convenience: `tauri-plugin-single-instance` so a second launch reaches the running
+      instance instead of starting a second set of probes, and `tauri-plugin-autostart` so
+      "start with Windows" does not mean writing to the registry from a crate that forbids
+      `unsafe` and platform `cfg`s.
+      **The tray menu's words come from the UI, not from Rust.** Every user-visible string goes
+      through an i18next key and those live in the frontend, so the tray starts with an icon and
+      no menu and the UI hands it translated labels on mount and on any language change. Russian
+      stays what CLAUDE.md promises: new JSON, no code. The consequence is deliberate — until
+      those labels arrive there is no way back from the tray, so closing the window *quits*
+      rather than hides until the menu exists.
+- [x] UI stops rendering when window hidden; Rust core continues; event stream batched ≤ 4 Hz
+      — one `AtomicBool` is the single source of truth, read by both the health task and the
+      heartbeat before either emits. Hidden means **nothing is sent at all**: the core keeps
+      probing and the history keeps filling, but the `WebView` is never woken to lay out a chart
+      nobody can see. Showing the window emits immediately rather than waiting out the period, so
+      it is never blank on return. Emission is 1 Hz — the ≤ 4 Hz cap is a ceiling, not a target,
+      and baselines are probed every few seconds anyway.
+- [x] Baseline target lists in `assets/targets/`: `domestic/<country>.json` (start: ru, ir) + `foreign.json`; country selected in settings (no geo-detection phoning home)
+      — compiled in with `include_str!`, so the app never fetches them and cannot be made to.
+      Schema, rationale and the rules for adding an entry are in `assets/targets/README.md`; a
+      test asserts every bundled list validates, stays inside its probe budget and carries a port
+      for the fallback chain to use.
+      **An entry may be a host name**, resolved once through the system resolver when monitoring
+      starts. Not a convenience: public resolvers are anycast, so `1.1.1.1` measured from inside a
+      censored country usually terminates inside it and says almost nothing about the border —
+      confirmed on the dev machine, where the anycast entries answered in single-digit
+      milliseconds while a named foreign service took an order of magnitude longer. A name that
+      does not resolve is shown as unresolved rather than dropped: a foreign baseline that quietly
+      shrank to its working members would read as good news.
+- [x] Dashboard page: domestic vs foreign health side by side — RTT/jitter/loss sparklines (uPlot), simple verdict per group (OK / degraded / blocked)
+      — verdict logic is `nm_core::health`, pure and exhaustively tested; the UI renders it.
+      **A group always shows its distribution beside the headline**, per the rule Phase 4 states
+      for applications: "3 clean, 1 unreachable" is actionable, one amber dot is not, and a group
+      rolled up to its worst member reads as an outage that is not happening. Each target carries
+      why its number means what it does — the probe kind, whether a tunnel is in the path, whether
+      filtering has been *proven* rather than guessed, whether it can be measured at all.
+      Sparkline gaps stay gaps: uPlot does not span a `null`, so an outage is a break in the line,
+      and the x axis is real elapsed time rather than sample indices because backoff stretches
+      intervals.
+- [x] Settings page: language (en now), country, probe intervals; persisted locally (debounced writes)
+      — the reply from Rust becomes the UI's state, never the value that was sent: intervals are
+      clamped, unknown countries fall back, and the autostart flag comes back as the *platform*
+      reports it, so a toggle that failed springs back instead of claiming something untrue about
+      the machine. A malformed settings file is reported and **left untouched** — silently
+      resetting someone's configuration and destroying the evidence is how a parsing bug of ours
+      becomes their lost afternoon.
 - **Accept**: manual scenario — run alongside a game, task manager shows core <1 % CPU, <150 MB total; dashboard clearly distinguishes "ISP down" vs "foreign degraded" (simulated via mocks in tests).
+  *Partly met, and the gap is named rather than papered over.* The app was run on the dev machine
+  (Windows, real router): both baselines populated within seconds, every domestic target answered
+  ICMP, and the foreign group reported a mixed distribution — most members clean, one degraded —
+  with the tunnelled member measured by TLS and labelled as such. The mocked scenarios are covered
+  by tests: `tests/monitor.rs` asserts domestic-clean-with-foreign-dead comes out as exactly that
+  and that one failing member never turns its healthy siblings red.
+  **Not yet verified: the CPU and RAM budget under a running game.** That needs a real gaming
+  session and a release build, and the numbers belong in the Phase 6 perf pass where they are
+  measured properly and written down. Nothing here should be read as a measured budget claim.
+
+Phase 3 decisions worth remembering:
+
+- **The health window scales with the probe interval** (`nm_app::monitor::health_window`), twelve
+  intervals clamped to 1–10 minutes. A fixed sixty-second window would hold a single sample at the
+  slowest interval the settings allow, leaving every verdict permanently "not measured yet".
+- **`Health` is one vocabulary for a target and for a group.** The five states mean the same thing
+  at both levels, so the UI needs one set of strings rather than two that have to be kept in step.
+  A group is `Ok` only when every judged member is; anything mixed is `Degraded` *with the counts
+  shown*; a group where nothing answers is `Unreachable`, or `Blocked` when every member's probes
+  were filtered — because filtering is an absence of knowledge and being told "no" is knowledge.
+- **Group loss is weighted by probes, not averaged over members.** Averaging percentages lets a
+  target probed twice report the same weight as one probed a hundred times, which turns two lost
+  packets into a double-digit loss figure. The group's round-trip time is a *median*, so one member
+  on a bad path does not drag the headline away from what everyone else sees.
+- **The settings file is tolerant; the IPC type is strict.** `Stored` has all-optional fields so a
+  file from an older build still loads, and `Settings` has none, so the generated TypeScript cannot
+  let the UI send half a configuration.
+- **`serde(deny_unknown_fields)` on target lists, but not on the settings file.** Opposite choices
+  for opposite reasons: a misspelled key in a target list is a target that will never be probed and
+  must be loud, while an unknown key in a settings file is usually a downgrade and must not lock
+  the user out of their own configuration.
 
 ## Phase 4 — Per-application monitoring (Windows)
 

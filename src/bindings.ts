@@ -7,19 +7,56 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	/**  Reports what the Rust core is and which platform backend it will use. */
 	coreStatus: () => __TAURI_INVOKE<CoreStatus>("core_status"),
+	/**  Reports the current settings. */
+	getSettings: () => __TAURI_INVOKE<SettingsView>("get_settings"),
+	/**
+	 *  Applies new settings and reports what actually took effect.
+	 * 
+	 *  The return value is the sanitized result, not an echo of the request: an out-of-range
+	 *  interval or an unknown country comes back corrected, and the autostart flag comes back
+	 *  as the platform reports it. A UI that showed the request rather than the outcome would
+	 *  be claiming something about the machine that may not be true.
+	 */
+	setSettings: (settings: Settings) => __TAURI_INVOKE<SettingsView>("set_settings", { settings }),
+	/**
+	 *  Gives the tray menu its labels, translated by the UI.
+	 * 
+	 *  Returns whether the menu is now in place. It is deliberately not an error type: a tray
+	 *  menu that could not be built is visible as its own absence, and there is nothing the
+	 *  user could do with a message about it — but the UI does need to know, because until it
+	 *  succeeds, closing the window quits instead of minimizing.
+	 */
+	applyTrayLabels: (labels: TrayLabels) => __TAURI_INVOKE<boolean>("apply_tray_labels", { labels }),
+	/**  Hides the window, leaving the core measuring. */
+	hideToTray: () => __TAURI_INVOKE<void>("hide_to_tray"),
+	/**
+	 *  Ends the application.
+	 * 
+	 *  Exists so the UI can offer a quit that is always reachable, whatever state the tray menu
+	 *  is in.
+	 */
+	quitApp: () => __TAURI_INVOKE<void>("quit_app"),
 };
 
 /** Events */
 export const events = {
 	coreHeartbeat: makeEvent<CoreHeartbeat>("core-heartbeat"),
+	networkHealth: makeEvent<NetworkHealth>("network-health"),
 };
 
 /* Types */
+/**  Which baseline a target belongs to. */
+export type BaselineGroup = 
+/**  Expected to be reachable inside the user's country. */
+"domestic" | 
+/**  Typically degraded or blocked at the country's border. */
+"foreign";
+
 /**
  *  Liveness signal proving the Rust core is running and the event channel is wired.
  * 
- *  Phase 0's demo event; the metric streams of later phases replace its role in the UI
- *  but follow the same shape — Rust-driven, typed, batched.
+ *  Phase 0's demo event, kept because it is the one thing that distinguishes "nothing has
+ *  happened yet" from "the core is gone" before the first measurement lands.
  */
 export type CoreHeartbeat = {
 	/**  Monotonically increasing tick counter, wrapping at [`u32::MAX`]. */
@@ -45,6 +82,66 @@ export type CoreStatus = {
 	readiness: CoreReadiness,
 };
 
+/**  One baseline, taken together. */
+export type GroupView = {
+	/**  Which baseline this is. */
+	group: BaselineGroup,
+	/**  The headline verdict. */
+	verdict: HealthView,
+	/**  The distribution behind it. Shown, never collapsed into the verdict. */
+	counts: HealthCountsView,
+	/**  Median round-trip time across the answering members, in milliseconds. */
+	rttMs: number | null,
+	/**  Median jitter across the answering members, in milliseconds. */
+	jitterMs: number | null,
+	/**  Loss across the group, weighted by probes. */
+	lossPct: number | null,
+	/**  The members, in list order. */
+	targets: TargetView[],
+};
+
+/**  How many members of a group are in each state. */
+export type HealthCountsView = {
+	/**  Members answering within every threshold. */
+	ok: number,
+	/**  Members answering but degraded. */
+	degraded: number,
+	/**  Members nothing gets through to. */
+	unreachable: number,
+	/**  Members whose probes are all filtered. */
+	blocked: number,
+	/**  Members not measured enough to judge. */
+	unknown: number,
+};
+
+/**  How something is doing — one target or a whole group. */
+export type HealthView = 
+/**  Answering, within every threshold. */
+"ok" | 
+/**  Answering, but losing packets, slow or unstable. */
+"degraded" | 
+/**  Nothing gets through, or the destination refuses. */
+"unreachable" | 
+/**  Every probe was filtered; nothing about the link was measured. */
+"blocked" | 
+/**  Not measured enough yet to say anything. */
+"unknown";
+
+/**
+ *  The general-health picture: both baselines and every target in them.
+ * 
+ *  Emitted once a second while the window is visible, and not at all while it is hidden —
+ *  see `crate::runtime`.
+ */
+export type NetworkHealth = {
+	/**  Whole seconds the core has been running, on a monotonic clock. */
+	uptimeSecs: number,
+	/**  Length of the window every figure is computed over, in seconds. */
+	windowSecs: number,
+	/**  The baselines, domestic first. */
+	groups: GroupView[],
+};
+
 /**
  *  Platform backend the core will use, as seen across the IPC boundary.
  * 
@@ -60,6 +157,123 @@ export type PlatformKind =
 "macOs" | 
 /**  An operating system `nm-platform` has no implementation for. */
 "unsupported";
+
+/**
+ *  Which probe kind produced a target's numbers.
+ * 
+ *  Shown because it changes what the number means: a TLS figure through a tunnel is not
+ *  the same quantity as an ICMP round trip to a server.
+ */
+export type ProbeKindView = 
+/**  An ICMP echo. */
+"icmpEcho" | 
+/**  A bare TCP connection attempt. */
+"tcpConnect" | 
+/**  A TLS `ClientHello`, timed to the first answering byte. */
+"tlsHello";
+
+/**
+ *  Everything the user can configure.
+ * 
+ *  Deliberately *not* tolerant of missing fields: this type crosses the IPC boundary, and a
+ *  TypeScript type whose every field is optional would let the UI send half a
+ *  configuration and force every reader to guess at the rest. Tolerance for older files
+ *  lives in [`Stored`] instead, where it belongs.
+ */
+export type Settings = {
+	/**  UI language tag. */
+	language: string,
+	/**  Country whose domestic baseline list is monitored. */
+	country: string,
+	/**  Seconds between probes of one baseline target. */
+	baselineIntervalSecs: number,
+	/**  Whether the app starts with the user's session. Off unless asked for. */
+	autostart: boolean,
+};
+
+/**
+ *  What went wrong reading the settings file, if anything.
+ * 
+ *  Surfaced to the UI instead of being swallowed: settings silently reverting to defaults
+ *  is the kind of thing a user notices a week later and never trusts again.
+ */
+export type SettingsProblem = 
+/**  The file exists but could not be read. */
+"unreadable" | 
+/**  The file was read but is not valid settings; defaults are in use. */
+"malformed" | 
+/**  Settings could not be written back. */
+"notWritable";
+
+/**
+ *  The settings in force, together with what the UI needs to offer valid choices.
+ * 
+ *  The bounds travel with the value rather than being duplicated in TypeScript: a slider
+ *  whose limits came from a hand-written constant would drift from the ones Rust enforces.
+ */
+export type SettingsView = {
+	/**  The settings in force. */
+	settings: Settings,
+	/**  What went wrong loading them, if anything. */
+	problem: SettingsProblem | null,
+	/**  Country codes with a bundled domestic baseline list. */
+	countries: string[],
+	/**  Shortest baseline interval the core accepts, in seconds. */
+	minIntervalSecs: number,
+	/**  Longest baseline interval the core accepts, in seconds. */
+	maxIntervalSecs: number,
+};
+
+/**  One baseline target as the dashboard shows it. */
+export type TargetView = {
+	/**  Identifier unique across both baselines. */
+	key: string,
+	/**  The operator's name for the service, shown as written. */
+	label: string,
+	/**  The address the list file named — a literal or a host name. */
+	writtenAddress: string,
+	/**  The address actually being probed, once resolved. */
+	resolvedAddress: string | null,
+	/**
+	 *  Whether a local tunnel remaps this endpoint, so its figure is end-to-end through
+	 *  the tunnel rather than a round trip to the server.
+	 */
+	tunnelled: boolean,
+	/**  Whether any probe kind can still measure it honestly. */
+	measurable: boolean,
+	/**  Which kind is measuring it now. */
+	probeKind: ProbeKindView | null,
+	/**
+	 *  Whether a probe kind has been *proven* filtered — a later kind succeeded after an
+	 *  earlier one was set aside. Never claimed on silence alone.
+	 */
+	filteringConfirmed: boolean,
+	/**  The verdict. */
+	health: HealthView,
+	/**  Mean round-trip time over the window, in milliseconds. */
+	rttMs: number | null,
+	/**  Jitter over the window, in milliseconds. */
+	jitterMs: number | null,
+	/**  Packet loss over the window, as a percentage. */
+	lossPct: number | null,
+	/**
+	 *  Seconds before now for each point of the series — negative, ascending.
+	 * 
+	 *  A real time axis rather than sample indices: probe intervals stretch under backoff,
+	 *  so evenly spaced points would draw a chart that lies about when things happened.
+	 */
+	seriesAgeSecs: (number | null)[],
+	/**  Round-trip time at each point, or `null` where the probe did not come back. */
+	seriesRttMs: (number | null)[],
+};
+
+/**  Translated words for the tray menu, supplied by the UI. */
+export type TrayLabels = {
+	/**  "Show the window". */
+	show: string,
+	/**  "Quit". */
+	quit: string,
+};
 
 /* Tauri Specta runtime */
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;

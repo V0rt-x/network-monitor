@@ -111,6 +111,31 @@ pub struct Report {
     pub measured: Measured,
 }
 
+/// What the runner currently believes about how to measure one target.
+///
+/// Reported alongside every result because the belief is half the answer: the same
+/// round-trip time means something different depending on which probe kind produced it,
+/// and "ICMP is filtered here" is a fact the UI must be able to state — but only once
+/// [`TargetProgress::filtering_confirmed`] says it has been proven.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetProgress {
+    /// The probe kind now in use, or [`None`] once every kind has been ruled out.
+    pub kind: Option<ProbeKind>,
+    /// Whether a probe kind has been *proven* filtered on this path.
+    pub filtering_confirmed: bool,
+    /// Whether anything honest is left to try — a probe kind, or a path walk.
+    pub measurable: bool,
+}
+
+/// A completed piece of work and the runner's state for its target afterwards.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Completed {
+    /// What was measured.
+    pub report: Report,
+    /// What the runner believes about the target now that the result is folded in.
+    pub progress: TargetProgress,
+}
+
 /// Everything the runner tracks for one target.
 #[derive(Debug, Clone)]
 struct TargetState {
@@ -243,6 +268,22 @@ impl ProbeRunner {
     #[must_use]
     pub fn chain(&self, id: TargetId) -> Option<&FallbackChain> {
         self.targets.get(&id).map(|state| &state.chain)
+    }
+
+    /// What the runner believes about how to measure a target.
+    ///
+    /// [`None`] for a target that is not registered.
+    #[must_use]
+    pub fn progress(&self, id: TargetId) -> Option<TargetProgress> {
+        let chain = &self.targets.get(&id)?.chain;
+        Some(TargetProgress {
+            kind: chain.current_kind(),
+            filtering_confirmed: chain.filtering_confirmed(),
+            // A path walk is still a measurement of something, so an endpoint that has
+            // exhausted every probe kind is only *unmeasurable* when even that is ruled
+            // out — which is the tunnelled case.
+            measurable: chain.step() != ChainStep::Nothing,
+        })
     }
 
     /// Gives a target's ruled-out probe kinds another chance.
@@ -491,7 +532,8 @@ pub enum Command {
 /// probing itself.
 const COMPLETION_QUEUE: usize = 128;
 
-/// Runs the schedule until the command channel closes, emitting every report on `reports`.
+/// Runs the schedule until the command channel closes, emitting every result on `reports`
+/// together with what the runner believes about that target afterwards.
 ///
 /// Shutdown is the caller dropping every [`Command`] sender: the loop finishes, and the
 /// runner is handed back so its state can be inspected or reused. Probes still in flight are
@@ -503,7 +545,7 @@ pub async fn drive(
     mut runner: ProbeRunner,
     probers: ProberSet,
     mut commands: tokio::sync::mpsc::Receiver<Command>,
-    reports: tokio::sync::mpsc::Sender<Report>,
+    reports: tokio::sync::mpsc::Sender<Completed>,
 ) -> ProbeRunner {
     let (done, mut completed) = tokio::sync::mpsc::channel::<Report>(COMPLETION_QUEUE);
 
@@ -530,8 +572,13 @@ pub async fn drive(
             },
             Some(report) = completed.recv() => {
                 runner.complete(&report);
-                if reports.send(report).await.is_err() {
-                    break;
+                // Read after folding the result in: the caller needs the belief that
+                // *this* answer produced, not the one it replaced. A target removed
+                // meanwhile has no state left, and its stale answer is dropped.
+                if let Some(progress) = runner.progress(report.id) {
+                    if reports.send(Completed { report, progress }).await.is_err() {
+                        break;
+                    }
                 }
             }
             () = sleep_until(runner.next_deadline()) => {}
@@ -1082,13 +1129,23 @@ mod tests {
             .unwrap();
         registered.await.unwrap().unwrap();
 
-        let report = reports.recv().await.expect("a report must arrive");
-        assert_eq!(report.id, id(0));
+        let completed = reports.recv().await.expect("a report must arrive");
+        assert_eq!(completed.report.id, id(0));
         assert_eq!(
-            report.measured,
+            completed.report.measured,
             Measured::Probe {
                 kind: ProbeKind::IcmpEcho,
                 outcome: ProbeOutcome::Success(Rtt::from_micros(4_000)),
+            }
+        );
+        // The belief travels with the measurement: the UI needs to know which kind
+        // produced this number, and that nothing has been proven filtered.
+        assert_eq!(
+            completed.progress,
+            TargetProgress {
+                kind: Some(ProbeKind::IcmpEcho),
+                filtering_confirmed: false,
+                measurable: true,
             }
         );
 
@@ -1170,6 +1227,81 @@ mod tests {
         // Probing on with nowhere to send the answers would be pure waste.
         loop_handle.await.unwrap();
         drop(commands);
+    }
+
+    #[test]
+    fn progress_tracks_the_chain_through_a_fallback() {
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert_eq!(
+            runner.progress(id(0)),
+            Some(TargetProgress {
+                kind: Some(ProbeKind::IcmpEcho),
+                filtering_confirmed: false,
+                measurable: true,
+            })
+        );
+
+        // Echoes are filtered; the next kind takes over and its first success is what
+        // *proves* the filtering rather than merely suggesting it.
+        runner.due(start);
+        runner.complete(&report(
+            id(0),
+            start,
+            Measured::Probe {
+                kind: ProbeKind::IcmpEcho,
+                outcome: ProbeOutcome::Blocked,
+            },
+        ));
+        let stepped = runner.progress(id(0)).unwrap();
+        assert_eq!(stepped.kind, Some(ProbeKind::TcpConnect));
+        assert!(!stepped.filtering_confirmed, "silence alone proves nothing");
+
+        let later = start + DEFAULT_INTERVAL;
+        runner.due(later);
+        runner.complete(&report(
+            id(0),
+            later,
+            Measured::Probe {
+                kind: ProbeKind::TcpConnect,
+                outcome: ProbeOutcome::Success(Rtt::from_micros(12_000)),
+            },
+        ));
+        assert!(runner.progress(id(0)).unwrap().filtering_confirmed);
+    }
+
+    #[test]
+    fn a_tunnelled_endpoint_out_of_kinds_reports_itself_unmeasurable() {
+        // A routable endpoint always keeps the path walk; a tunnelled one does not, and
+        // that difference is what the UI has to show.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        let tunnelled: IpAddr = "198.18.0.7".parse().unwrap();
+        runner
+            .add(id(1), TargetAddress::with_port(tunnelled, 443), None, start)
+            .unwrap();
+        runner.due(start);
+        runner.complete(&report(
+            id(1),
+            start,
+            Measured::Probe {
+                kind: ProbeKind::TlsHello,
+                outcome: ProbeOutcome::Blocked,
+            },
+        ));
+
+        let progress = runner.progress(id(1)).unwrap();
+        assert_eq!(progress.kind, None);
+        assert!(!progress.measurable);
+        assert_eq!(
+            runner.progress(id(0)),
+            None,
+            "an unregistered target has no state"
+        );
     }
 
     #[test]
