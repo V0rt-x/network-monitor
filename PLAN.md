@@ -313,7 +313,31 @@ Goal: the headline feature. Riskiest OS work — budget extra care and testing.
       **Icons are not done**, deliberately: they belong with the process picker below, which
       is where the decision about extracting and encoding them for the `WebView` has to be
       made anyway.
-- [ ] ETW session (`Microsoft-Windows-Kernel-Network` via ferrisetw): per-process UDP/TCP flow events → remote endpoint discovery + per-flow byte counters; graceful degradation to table-polling-only if ETW unavailable
+- [ ] ETW session (**`Microsoft-Windows-TCPIP`** via ferrisetw): per-process UDP/TCP flow events → remote endpoint discovery + per-flow byte counters; graceful degradation to table-polling-only if ETW unavailable
+      — **the spike ran first, as the standing risk demanded, and it corrected this item
+      twice over; full report in `docs/etw-privileges-spike.md`.**
+      `Microsoft-Windows-Kernel-Network`, the provider this plan named, is **unusable**: it
+      is refused even to an account that may create sessions, because it is a kernel
+      provider. `Microsoft-Windows-TCPIP` is not, and it carries exactly what this item
+      needs — a UDP send/receive event with the process, both socket addresses and a byte
+      count, which is the one thing the connection tables cannot report.
+      **A trace session cannot be created by a standard user at all** — any provider, any
+      output mode. The one-time fix is membership in the local group `S-1-5-32-559`
+      («Пользователи журналов производительности»), after which the app runs unelevated
+      forever. Verified end to end on this machine, unelevated, before and after.
+      So *degraded* is the **default** state, not an edge case: until the user performs a
+      one-time elevated action, the app sees TCP endpoints only. The UI must say that
+      plainly and must never present an absent UDP endpoint as an absent flow. The app
+      performs no elevation itself; it explains and leaves the action to the user.
+      **Keyword and level are a budget decision, not a detail.** `ut:SendPath |
+      ut:ReceivePath` at `Informational` yields the needed events; the same subscription at
+      full level produced sixteen times the volume. Even so the remaining rate is too high
+      to parse continuously, so kernel-side PID filtering (`EVENT_FILTER_TYPE_PID` on
+      `EnableTraceEx2`) is a **precondition of the CPU budget**, not an optimization — with
+      a five-application cap it reduces the stream to the processes the user picked.
+      Event numbers come from the provider's manifest and may move between Windows
+      versions; the consumer resolves by provider and number and degrades when a number is
+      absent rather than failing.
 - [ ] Endpoint lifecycle: appear/idle/gone; dedup; enforced caps (≤ 5 monitored apps,
       ≤ 16 probed endpoints/app prioritized by recent traffic, 32 probes/s global) —
       scheduler stretches intervals under pressure, never silently drops; unit-tested
@@ -371,8 +395,12 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 - Linux support (`sock_diag` netlink + `/proc`, unprivileged-ICMP handling)
 - macOS support (`libproc`; note: Tauri e2e tooling unavailable on macOS — rely on unit/headless layers)
 - Endpoint enrichment: offline ASN/GeoIP database (licensing TBD), reverse DNS (user-toggleable — it generates visible DNS traffic)
-- Passive TCP RTT from the OS's own estimates (Windows TCP eStats) as a complement to
-  probing — requires admin elevation to enable, hence opt-in and late
+- Passive TCP RTT from the OS's own estimates as a complement to probing — **no longer
+  believed to need elevation**: the Phase 4 spike found `Microsoft-Windows-TCPIP` emitting
+  a per-connection summary carrying `RttUs`/`MinRttUs`/`MaxRttUs` to the same unelevated
+  session Phase 4 already opens. Still late and still opt-in, but for cost rather than for
+  privilege. (`GetPerTcpConnectionEStats` — the API this item originally meant — does
+  require elevation; the ETW route sidesteps it.)
 - Detection of known accelerator/VPN virtual adapters (ExitLag, WTFast, WireGuard, …) for
   clearer egress labeling and per-process-interceptor warnings
 - Alerts (jitter/loss thresholds → tray notification), overlay-friendly compact mode
@@ -381,5 +409,10 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 ## Standing risks
 
 - **ETW via ferrisetw** is the least-proven dependency → Phase 4 starts with a spike; if blocked, fall back to raw `windows`-crate ETW consumption behind the same trait.
+  *The privilege half of this risk is now measured (`docs/etw-privileges-spike.md`): a
+  session needs a one-time group membership, the planned provider had to be replaced, and
+  kernel-side PID filtering turns out to be a budget precondition. The library half —
+  whether ferrisetw can express that filter and consume this provider — is still open, and
+  is what the implementation must prove.*
 - **ICMP realism**: many game servers deprioritize/drop ICMP → fallback probes + honest UI states are first-class, not afterthoughts.
 - **Dev machine is macOS, target is Windows** → keep platform-free logic maximal; CI on Windows runners is the source of truth for `nm-platform/windows`.
