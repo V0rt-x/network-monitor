@@ -18,8 +18,11 @@ pub enum ProbeKind {
     IcmpEcho,
     /// A bare TCP connection attempt.
     TcpConnect,
-    /// A full TLS handshake with the target.
-    TlsHandshake,
+    /// A TLS `ClientHello`, timed to the server's first answering byte.
+    ///
+    /// Not a completed handshake: the first flight already contains the round trip, and
+    /// stopping there costs no cryptography at either end. See [`crate::tls`].
+    TlsHello,
 }
 
 impl ProbeKind {
@@ -31,13 +34,13 @@ impl ProbeKind {
     /// at all — see `docs/measurement-reality-check.md`.
     #[must_use]
     pub const fn survives_a_tunnel(self) -> bool {
-        matches!(self, Self::TlsHandshake)
+        matches!(self, Self::TlsHello)
     }
 
     /// Whether this probe needs a port on the target.
     #[must_use]
     pub const fn needs_a_port(self) -> bool {
-        matches!(self, Self::TcpConnect | Self::TlsHandshake)
+        matches!(self, Self::TcpConnect | Self::TlsHello)
     }
 }
 
@@ -46,11 +49,11 @@ impl ProbeKind {
 const DIRECT_PREFERENCE: &[ProbeKind] = &[
     ProbeKind::IcmpEcho,
     ProbeKind::TcpConnect,
-    ProbeKind::TlsHandshake,
+    ProbeKind::TlsHello,
 ];
 
 /// Preference order behind a local tunnel: only an end-to-end exchange is honest.
-const TUNNELLED_PREFERENCE: &[ProbeKind] = &[ProbeKind::TlsHandshake];
+const TUNNELLED_PREFERENCE: &[ProbeKind] = &[ProbeKind::TlsHello];
 
 /// One thing to probe, and how to reach it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,12 +149,12 @@ mod tests {
     const ALL: &[ProbeKind] = &[
         ProbeKind::IcmpEcho,
         ProbeKind::TcpConnect,
-        ProbeKind::TlsHandshake,
+        ProbeKind::TlsHello,
     ];
 
     #[test]
     fn only_an_end_to_end_exchange_survives_a_tunnel() {
-        assert!(ProbeKind::TlsHandshake.survives_a_tunnel());
+        assert!(ProbeKind::TlsHello.survives_a_tunnel());
         assert!(!ProbeKind::IcmpEcho.survives_a_tunnel());
         assert!(
             !ProbeKind::TcpConnect.survives_a_tunnel(),
@@ -172,14 +175,14 @@ mod tests {
         assert_eq!(
             select_kind(
                 AddressClass::Routable,
-                &[ProbeKind::TcpConnect, ProbeKind::TlsHandshake]
+                &[ProbeKind::TcpConnect, ProbeKind::TlsHello]
             )
             .unwrap(),
             ProbeKind::TcpConnect
         );
         assert_eq!(
-            select_kind(AddressClass::Routable, &[ProbeKind::TlsHandshake]).unwrap(),
-            ProbeKind::TlsHandshake
+            select_kind(AddressClass::Routable, &[ProbeKind::TlsHello]).unwrap(),
+            ProbeKind::TlsHello
         );
     }
 
@@ -204,7 +207,7 @@ mod tests {
     fn a_tunnelled_address_uses_tls_when_it_is_available() {
         assert_eq!(
             select_kind(AddressClass::TunnelSentinel, ALL).unwrap(),
-            ProbeKind::TlsHandshake,
+            ProbeKind::TlsHello,
             "TLS must win over the cheaper kinds here, not merely be allowed"
         );
     }

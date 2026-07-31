@@ -17,9 +17,12 @@
 
 mod error;
 
+mod socket;
+
 pub mod icmp;
 pub mod probe;
 pub mod tcp;
+pub mod tls;
 
 pub use error::Error;
 

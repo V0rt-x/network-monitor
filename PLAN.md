@@ -72,12 +72,19 @@ Phase 1 decisions worth remembering:
 
 Goal: real measurements against real hosts, still no per-app discovery.
 
-- [~] `Prober` trait + implementations: ICMP (`IcmpSendEcho2Ex` on Windows via `nm-platform`), TCP-connect, TLS-handshake, HTTP(S) HEAD
-      — trait, `select_kind` gate, ICMP and TCP-connect probers done; TLS/HTTP remain.
-      **TLS/HTTP are no longer optional fallbacks**: they are the only probe kind that measures
+- [x] `Prober` trait + implementations: ICMP (`IcmpSendEcho2Ex` on Windows via `nm-platform`), TCP-connect, TLS
+      — trait, `select_kind` gate, and all three probers done.
+      **TLS is not an optional fallback**: it is the only probe kind that measures
       a FakeIP-tunnelled endpoint at all (see the spike). TCP-connect must never be used as an
       RTT source for such endpoints — it completes locally and reports a fake-*good* ~0.7 ms.
       Enforced by `select_kind`, which refuses ICMP and TCP outright for a tunnel sentinel.
+      **The TLS probe sends a `ClientHello` and times the first answering byte rather than
+      completing a handshake.** The first flight already contains the round trip, so stopping
+      there costs no TLS implementation, no root store and no OpenSSL on Linux, and no key
+      exchange at either end. Verified live against three public resolvers (feature
+      `network-tests`): all answered, and a non-TLS port yielded no measurement rather than a
+      false one. **HTTP(S) HEAD is dropped** — it needs everything the hello probe avoids and
+      measures the same quantity plus server-side work.
 - [~] TTL-limited path probing: RTT to last responding hop when the target itself is silent; classify where the path dies (ISP / border / destination)
       — the TTL mechanism works and is verified; the ISP/border/destination classification remains
 - [x] Source-address binding on all probers (probe egresses via a chosen local address/interface)
@@ -91,25 +98,28 @@ Goal: real measurements against real hosts, still no per-app discovery.
 - [ ] ICMP-blocked detection → automatic fallback chain per target (ICMP → TCP/TLS where ports exist → path probe)
 - [x] **Reality-check spike**: measure actual ICMP/path-probe responsiveness of real server pools (Valve SDR, Discord voice, Apex/AWS, Riot); record results in a doc — validates the whole measurement model early
       — see `docs/measurement-reality-check.md`
-- [ ] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
+- [~] **FakeIP / synthetic-address handling** (added by the spike — the target audience's
       routers really do this, via podkop/sing-box). An endpoint inside `198.18.0.0/15` or
       `fc00::/18` is a sentinel a local tunnel will remap, so ICMP measures nothing and
-      TCP-connect lies. Detect it, mark the endpoint as tunnelled, route it to a TLS/HTTP
+      TCP-connect lies. Detect it, mark the endpoint as tunnelled, route it to a TLS
       probe, and label the measurement honestly as end-to-end-through-a-tunnel rather than
       as an RTT to the server. The range must be configurable — sing-box's default is not
       mandatory. Note that a real setup is a **mix**: some endpoints are tunnelled and some
       are direct, in the same session.
+      — detection (`nm_core::address`, configurable ranges) and routing to the TLS probe
+      (`select_kind`) done. The honest *labelling* in the UI remains, and depends on Phase 3.
 - [ ] **Endpoint labelling from the OS DNS cache** (candidate): Windows' resolver cache maps
       the sentinel address back to the domain that produced it, so a tunnelled endpoint can
       be shown by name rather than as a meaningless synthetic address — read-only, no capture,
       no router access. Needs a stable API (`DnsGetCacheDataTable`) verified first; applications that
       resolve over their own DoH will not appear in it.
 - [ ] Rate/budget enforcement (≤ 1 probe/s/target default, global cap) with tests via mocked prober + fake clock.
-      **A TLS handshake is far more expensive than an ICMP echo** — in traffic, in CPU, and in
-      load on someone else's server — so tunnelled endpoints need a much longer interval, with
-      passive flow statistics covering the gaps. Worth designing: one long-lived connection
-      with periodic light requests instead of a full handshake per probe, and what TLS session
-      resumption does to the measured value.
+      **A TLS probe is still more expensive than an ICMP echo** — a connection setup and a few
+      hundred bytes against a 32-byte echo — so tunnelled endpoints need a longer interval,
+      with passive flow statistics covering the gaps. Much less expensive than first assumed,
+      though: stopping at the hello removes the key exchange on both sides, which was the part
+      that made a full handshake unrepeatable. The long-lived-connection idea and TLS session
+      resumption are no longer relevant — neither applies to a handshake we never finish.
 - **Accept**: integration test (feature-gated, run manually/CI-opt-in) probing localhost + a public anycast IP; unit suite runs offline via mocks.
   *Partly met: `nm-platform`'s `network-tests` feature probes loopback, a public anycast IP and
   walks the path outward. The offline suite covers the ICMP prober through a `mockall` platform
