@@ -354,6 +354,14 @@ export type EndpointView = {
 	 */
 	flow: FlowView | null,
 	/**
+	 *  The round trip the operating system last measured on this connection.
+	 * 
+	 *  `null` for UDP, for a tunnelled endpoint — where the stack would be timing the round
+	 *  trip to the user's own router, a fake-*good* figure — and wherever nothing has been
+	 *  published yet.
+	 */
+	passiveRtt: PassiveRttView | null,
+	/**
 	 *  Round-trip time in each slot of the application's chart, or `null` for a slot with
 	 *  no answer in it.
 	 * 
@@ -534,6 +542,31 @@ export type NetworkHealth = {
 	windowSecs: number,
 	/**  The baselines, domestic first. */
 	groups: GroupView[],
+};
+
+/**
+ *  A round trip the operating system measured on the application's own connection.
+ * 
+ *  The one figure on this page that is a genuine round trip to the endpoint without a probe
+ *  having been sent: the transport stack times its own segments against their
+ *  acknowledgements and publishes the estimate. Where it exists it is better evidence than
+ *  anything we could send, because it is the traffic the user is actually sending, over the
+ *  path it is actually taking.
+ * 
+ *  It is also rare and slow. It exists for TCP only — a game's UDP match server has none —
+ *  and arrives every few tens of seconds at best, which is why [`PassiveRttView::age_secs`]
+ *  travels with it. A figure that may be a minute old must not be shown as though it were
+ *  current.
+ */
+export type PassiveRttView = {
+	/**  The stack's current smoothed estimate, in milliseconds. */
+	rttMs: number | null,
+	/**  The fastest it has seen on this connection, in milliseconds. */
+	minRttMs: number | null,
+	/**  The slowest it has seen on this connection, in milliseconds. */
+	maxRttMs: number | null,
+	/**  How many seconds ago it was published. */
+	ageSecs: number | null,
 };
 
 /**

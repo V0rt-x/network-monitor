@@ -166,6 +166,26 @@ export const EndpointRow = ({
           <dt>{t('apps.metric.traffic', { seconds: trafficWindowSecs })}</dt>
           <dd>{formatBytes(endpoint.recentBytes, locale)}</dd>
         </div>
+        {/* The one genuine round trip to the endpoint that cost no packet: the operating
+            system's own estimate for the application's connection. It sits beside the
+            probes' figure rather than replacing it, and carries its age, because it arrives
+            every few tens of seconds at best and would otherwise read as live. */}
+        {endpoint.passiveRtt !== null && (
+          <div>
+            <dt>{t('apps.metric.stackRtt')}</dt>
+            <dd>
+              {formatMs(endpoint.passiveRtt.rttMs, locale)}
+              {endpoint.passiveRtt.ageSecs !== null && (
+                <span className="nm-endpoint__age">
+                  {' '}
+                  {t('apps.metric.stackRttAge', {
+                    seconds: Math.round(endpoint.passiveRtt.ageSecs),
+                  })}
+                </span>
+              )}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {/* Two columns, never one. The route is a round trip to a router short of the

@@ -74,12 +74,97 @@ pub struct FlowEvent {
     pub observed_at: Duration,
 }
 
-/// Where flow events are delivered.
+/// A round-trip time the operating system measured for itself.
+///
+/// Not our measurement and not a probe: the transport stack times its own segments against
+/// their acknowledgements and publishes the estimate, so this is the round trip of the
+/// **application's own connection**, over the path it is actually using, at no cost in
+/// traffic. Where it exists it is better evidence than anything we could send.
+///
+/// It exists only for TCP, only for a connection the stack has something to say about, and
+/// only every so often — measured at tens of seconds for a long-lived connection, plus once
+/// when it closes. It is therefore an occasional confirmation rather than a series, and the
+/// layer above must show it with its age rather than as a live figure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TcpRttEvent {
+    /// The local socket, whose port is what identified this connection as one worth
+    /// decoding at all.
+    pub local: SocketAddr,
+    /// The far end.
+    pub remote: SocketAddr,
+    /// The stack's current smoothed estimate.
+    pub rtt: Duration,
+    /// The fastest it has seen on this connection.
+    pub min_rtt: Duration,
+    /// The slowest it has seen on this connection.
+    pub max_rtt: Duration,
+    /// When the operating system says it measured this — see [`FlowEvent::observed_at`].
+    pub observed_at: Duration,
+}
+
+/// One thing a flow source reports.
+///
+/// An enum rather than two sinks because the two arrive on the same tracing callback and
+/// must reach the consumer in the order the kernel wrote them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FlowReport<'a> {
+    /// Bytes crossed an endpoint.
+    Flow(&'a FlowEvent),
+    /// The stack published its own round-trip estimate for a connection.
+    Rtt(&'a TcpRttEvent),
+}
+
+/// Where flow reports are delivered.
 ///
 /// Called on the tracing thread, once per event, so an implementation of it must not
 /// block: hand the event to a queue and return. It receives a borrow rather than an owned
 /// value so that a consumer which only wants the addresses copies nothing.
-pub type FlowSink = Box<dyn FnMut(&FlowEvent) + Send + 'static>;
+pub type FlowSink = Box<dyn FnMut(FlowReport<'_>) + Send + 'static>;
+
+/// Local TCP ports whose round-trip summaries are wanted.
+///
+/// **The only filter available for those summaries, and the reason they can be consumed at
+/// all.** The event carries no process identifier — checked against a live provider — so the
+/// process test this module applies to everything else is impossible here. What it does
+/// carry is the local port, an integer; comparing that *before* decoding an address keeps
+/// the promise the rest of this module makes, that connections of applications the user did
+/// not select never enter this program's memory.
+///
+/// Shared rather than pushed: the set changes every time the connection table is polled,
+/// and the tracing callback needs whatever is current without a message crossing threads on
+/// every event.
+#[derive(Debug, Clone, Default)]
+pub struct TcpPortWatch(std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<u16>>>);
+
+impl TcpPortWatch {
+    /// An empty set, matching nothing.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Replaces the set wholesale.
+    ///
+    /// Replacement rather than accumulation: a connection that closed must stop being
+    /// watched, or the set would grow for the length of the session and eventually match
+    /// ports that had been reissued to other applications.
+    pub fn replace<I: IntoIterator<Item = u16>>(&self, ports: I) {
+        if let Ok(mut watched) = self.0.lock() {
+            watched.clear();
+            watched.extend(ports);
+        }
+    }
+
+    /// Whether a summary for this local port is wanted.
+    ///
+    /// A poisoned lock answers `false`: reporting nothing is a lost measurement, and
+    /// decoding everything would be a broken promise.
+    #[must_use]
+    pub fn contains(&self, port: u16) -> bool {
+        self.0.lock().is_ok_and(|watched| watched.contains(&port))
+    }
+}
 
 /// A source of per-process flow events.
 pub trait FlowEventSource: Send {
@@ -99,6 +184,19 @@ pub trait FlowEventSource: Send {
     /// the user adding an application does not restart tracing. Anything not named here is
     /// discarded before it becomes a [`FlowEvent`].
     fn watch(&self, pids: &[Pid]);
+
+    /// Names the shared set of local TCP ports whose round-trip summaries are wanted.
+    ///
+    /// Separate from [`FlowEventSource::watch`] because it is a different kind of filter for
+    /// a different reason: the summary event names no process, so the port is the only thing
+    /// that can stand between us and the connections of every other application on the
+    /// machine. Held rather than copied, so the connection poll can update it without a
+    /// message per event.
+    ///
+    /// The default does nothing, for a backend that has no such event to filter.
+    fn watch_tcp_ports(&mut self, ports: TcpPortWatch) {
+        let _ = ports;
+    }
 
     /// Whether events are still being delivered.
     ///

@@ -60,6 +60,7 @@ use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
 
+use crate::discovery::PassiveRtt;
 use crate::Error;
 
 /// How many samples are retained per monitored endpoint.
@@ -183,6 +184,22 @@ struct Entry {
     /// are already being delivered for discovery — and it is the only figure that describes
     /// the traffic the user is actually playing over.
     flow: FlowMetrics,
+    /// The last round trip the operating system measured on this connection, if any.
+    ///
+    /// Only for TCP, and only every so often, so it is kept with the moment it arrived
+    /// rather than as a series: the honest way to show it is with its age.
+    passive_rtt: Option<PassiveRttSample>,
+}
+
+/// One round-trip estimate the operating system published, and when we heard it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PassiveRttSample {
+    rtt: Duration,
+    min_rtt: Duration,
+    max_rtt: Duration,
+    /// Our own clock, not the event's: this exists to say how stale the figure is, which is
+    /// a question about now.
+    at: Instant,
 }
 
 /// The applications sharing one probe target.
@@ -383,9 +400,36 @@ impl AppMonitor {
                 filtering_confirmed: false,
                 history,
                 flow: metrics,
+                passive_rtt: None,
             },
         );
         Ok(())
+    }
+
+    /// Records a round trip the operating system measured on an application's own
+    /// connection.
+    ///
+    /// Applied to every monitored application using that endpoint, because the event names
+    /// no process and two applications talking to one address are talking to the same
+    /// server over the same path.
+    ///
+    /// **Refused for a tunnelled endpoint**, and for the same reason `select_kind` refuses a
+    /// TCP-connect probe there: a connection to an address a local tunnel remaps terminates
+    /// on the tunnel, so the stack's round trip is the round trip to the user's own router.
+    /// That is a fake-*good* number — the worst kind, because it would tell someone their
+    /// connection is fine.
+    pub fn note_passive_rtt(&mut self, rtt: &PassiveRtt, now: Instant) {
+        for (key, entry) in &mut self.entries {
+            if key.1 != rtt.endpoint || entry.tunnelled {
+                continue;
+            }
+            entry.passive_rtt = Some(PassiveRttSample {
+                rtt: rtt.rtt,
+                min_rtt: rtt.min_rtt,
+                max_rtt: rtt.max_rtt,
+                at: now,
+            });
+        }
     }
 
     /// Ages everything, then reports what the probe engine must be told.
@@ -1052,6 +1096,15 @@ pub struct EndpointReport {
     /// without the one-time tracing setup — and where the application has stopped using the
     /// endpoint, since a reading from the event clock cannot say how old it is.
     pub flow: Option<FlowReading>,
+    /// The round trip the operating system last measured on the application's own
+    /// connection.
+    ///
+    /// A *real* round trip to the endpoint, unlike everything else that can be said about a
+    /// silent one — but it is TCP-only, arrives every few tens of seconds at best, and is
+    /// therefore reported with its age rather than as a live figure. [`None`] for UDP, for a
+    /// tunnelled endpoint (where it would measure the tunnel), and wherever the operating
+    /// system has published nothing.
+    pub passive_rtt: Option<PassiveRttReading>,
     /// Its statistics over the health window.
     pub stats: WindowStats,
     /// The verdict those statistics imply.
@@ -1070,6 +1123,23 @@ pub struct EndpointReport {
     /// as though it were one — it belongs to a router short of the endpoint, at an unknown
     /// distance from it.
     pub chart_path_ms: Vec<Option<f64>>,
+}
+
+/// A round trip the operating system measured, with how long ago it said so.
+///
+/// The age is not decoration. This arrives when the stack has something to say — measured
+/// at tens of seconds apart on a long-lived connection, plus once when it closes — so a
+/// figure without its age would read as current when it may be a minute old.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PassiveRttReading {
+    /// The stack's current smoothed estimate, in milliseconds.
+    pub rtt_ms: f64,
+    /// The fastest it has seen on this connection, in milliseconds.
+    pub min_rtt_ms: f64,
+    /// The slowest it has seen on this connection, in milliseconds.
+    pub max_rtt_ms: f64,
+    /// How long ago it was published.
+    pub age: Duration,
 }
 
 impl EndpointReport {
@@ -1124,6 +1194,14 @@ impl EndpointReport {
             flow: matches!(tracked.liveness(), Liveness::Active)
                 .then(|| entry.flow.reading())
                 .flatten(),
+            passive_rtt: entry.passive_rtt.map(|sample| PassiveRttReading {
+                rtt_ms: sample.rtt.as_secs_f64() * 1_000.0,
+                min_rtt_ms: sample.min_rtt.as_secs_f64() * 1_000.0,
+                max_rtt_ms: sample.max_rtt.as_secs_f64() * 1_000.0,
+                // Saturating: a clock that appeared to move backwards yields "just now"
+                // rather than an enormous age.
+                age: now.saturating_duration_since(sample.at),
+            }),
             health,
             stats,
         }

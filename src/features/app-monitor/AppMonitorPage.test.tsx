@@ -56,6 +56,7 @@ const ENDPOINTS: AppEndpoints = {
           lossPct: 100,
           path: null,
           flow: null,
+          passiveRtt: null,
           chartRttMs: [],
           chartPathMs: [],
         },

@@ -15,6 +15,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use nm_app::apps::AppMonitor;
+use nm_app::discovery::PassiveRtt;
 use nm_app::{AppProcessView, AppView, HealthCountsView, HealthView, ProbeKindView, TransportView};
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
@@ -629,6 +630,81 @@ fn sending_into_silence_reports_a_stall_rather_than_a_loss_figure() {
         stall > 900.0 && stall < 1_200.0,
         "the stall is measured from the last arrival: {stall}"
     );
+}
+
+/// A TCP endpoint, which is the only kind the operating system publishes a round trip for.
+fn tcp(last: u8) -> EndpointKey {
+    EndpointKey::tcp(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(1, 1, 1, last)),
+        443,
+    ))
+}
+
+fn stack_rtt(endpoint: EndpointKey) -> PassiveRtt {
+    PassiveRtt {
+        endpoint,
+        rtt: Duration::from_micros(24_500),
+        min_rtt: Duration::from_millis(21),
+        max_rtt: Duration::from_millis(90),
+    }
+}
+
+#[test]
+fn the_operating_systems_own_round_trip_reaches_the_page_with_its_age() {
+    // A real round trip to the endpoint, measured by the stack on the application's own
+    // connection at no cost in packets. It arrives every few tens of seconds at best, so the
+    // age travels with it — a figure that may be a minute old must not read as current.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, tcp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+    monitor.note_passive_rtt(&stack_rtt(tcp(1)), now);
+
+    let endpoint = &view(&monitor, now + Duration::from_secs(12)).endpoints[0];
+    let passive = endpoint
+        .passive_rtt
+        .expect("the stack published a round trip for this connection");
+
+    assert!((passive.rtt_ms - 24.5).abs() < 0.001);
+    assert!((passive.min_rtt_ms - 21.0).abs() < 0.001);
+    assert!((passive.max_rtt_ms - 90.0).abs() < 0.001);
+    assert!(
+        (passive.age_secs - 12.0).abs() < 0.5,
+        "the age is what stops a stale figure reading as live: {}",
+        passive.age_secs
+    );
+}
+
+#[test]
+fn a_tunnelled_endpoint_is_refused_the_stacks_round_trip() {
+    // The same reason `select_kind` refuses a TCP-connect probe there: a connection to an
+    // address a local tunnel remaps terminates on the tunnel, so the stack times the round
+    // trip to the user's own router. That is a fake-*good* number, which is worse than a
+    // fake-bad one — it would tell someone under censorship that their connection is fine.
+    let (mut monitor, mut registry, now) = monitor();
+    let sentinel = EndpointKey::tcp(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(198, 18, 0, 7)),
+        443,
+    ));
+    monitor.observe(APP, sentinel, None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+    monitor.note_passive_rtt(&stack_rtt(sentinel), now);
+
+    let endpoint = &view(&monitor, now).endpoints[0];
+    assert!(endpoint.tunnelled);
+    assert_eq!(
+        endpoint.passive_rtt, None,
+        "the stack measured the tunnel, not the server"
+    );
+}
+
+#[test]
+fn a_round_trip_for_an_endpoint_nobody_is_watching_is_ignored() {
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, tcp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+    monitor.note_passive_rtt(&stack_rtt(tcp(2)), now);
+
+    assert_eq!(view(&monitor, now).endpoints[0].passive_rtt, None);
 }
 
 #[test]

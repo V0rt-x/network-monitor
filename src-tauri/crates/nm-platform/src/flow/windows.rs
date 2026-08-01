@@ -29,6 +29,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use ferrisetw::native::EvntraceNativeError;
 use ferrisetw::parser::Parser;
@@ -40,7 +41,10 @@ use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_INVALID_HANDLE, ERROR_INVALID_NAME,
 };
 
-use super::{decode_sockaddr, FlowDirection, FlowEvent, FlowEventSource, FlowSink};
+use super::{
+    decode_sockaddr, FlowDirection, FlowEvent, FlowEventSource, FlowReport, FlowSink, TcpPortWatch,
+    TcpRttEvent,
+};
 use crate::connection::Protocol;
 use crate::process::Pid;
 use crate::Error;
@@ -48,19 +52,37 @@ use crate::Error;
 /// `Microsoft-Windows-TCPIP`.
 const TCPIP_PROVIDER_GUID: &str = "2F07E2EE-15DB-40F1-90EF-9D7BA282188A";
 
-/// `ut:SendPath | ut:ReceivePath` — the keywords the UDP endpoint events live under.
+/// `ut:SendPath | ut:ReceivePath`, plus the keyword the TCP connection summary lives under.
 ///
 /// Narrower keywords were tried and produce no UDP events at all: `ut:Endpoint`,
-/// `ut:Transfer`, `ut:TcpipEndpoint` and `ut:TxIoInfo`.
-const KEYWORD_SEND_AND_RECEIVE_PATHS: u64 = 0x0000_0003_0000_0000;
+/// `ut:Transfer`, `ut:TcpipEndpoint` and `ut:TxIoInfo`. The third bit comes from the
+/// provider's own manifest, where event 1477 is declared under `0x8000200000000000`.
+const KEYWORDS: u64 = 0x0000_2003_0000_0000;
 
-/// `win:Informational`. Anything higher adds per-packet telemetry we would only discard.
-const LEVEL_INFORMATIONAL: u8 = 4;
+/// `TcpSummary`, a level of the provider's own above `win:Informational`.
+///
+/// The UDP events sit at `Informational` (4) and would be satisfied by it; the connection
+/// summary is declared at 16, and ETW delivers an event only when its level is at or below
+/// the session's. So reaching the summary means raising the session, which also lets
+/// through the `Verbose` per-path telemetry that level 4 was chosen to exclude.
+///
+/// **The event-ID filter is what makes that safe, and it is measured rather than assumed**:
+/// with the filter in place a live game session delivered 44 events a second in total,
+/// summaries included (`docs/flow-metrics-spike.md`). The kernel applies the filter before
+/// anything reaches this process. Level 17 — `TcpIpPerPacket`, the expensive one — stays
+/// above the session and is never generated for us at all.
+///
+/// The alternative considered was a second session for the summary alone, keeping this one
+/// at level 4. It was rejected for the cost of a second named system object and a second
+/// pump thread, against a delivered rate that is not measurable in the budget.
+const LEVEL_TCP_SUMMARY: u8 = 16;
 
 /// `UdpEndpointSendMessages`.
 const EVENT_UDP_SENT: u16 = 1169;
 /// `UdpEndpointReceiveMessages`.
 const EVENT_UDP_RECEIVED: u16 = 1170;
+/// `TcpConnectionSummary` — the stack's own round-trip estimate for a connection.
+const EVENT_TCP_SUMMARY: u16 = 1477;
 
 /// Name of our tracing session.
 ///
@@ -81,6 +103,9 @@ pub struct EtwFlowSource {
     /// Processes whose flows are reported. Shared with the tracing callback, which is the
     /// only reader, and replaced wholesale by [`FlowEventSource::watch`].
     watched: Arc<Mutex<Vec<Pid>>>,
+    /// Local ports whose connection summaries are wanted. See [`TcpPortWatch`]: the summary
+    /// event names no process, so this is the only filter it can have.
+    ports: TcpPortWatch,
     /// Session name to create and to reclaim.
     session: String,
     /// The running session, if any. `UserTrace::stop` consumes the value, hence the option.
@@ -116,6 +141,7 @@ impl EtwFlowSource {
     pub fn with_session_name(session: &str) -> Self {
         Self {
             watched: Arc::new(Mutex::new(Vec::new())),
+            ports: TcpPortWatch::new(),
             session: session.to_owned(),
             trace: None,
             worker: None,
@@ -149,17 +175,19 @@ impl FlowEventSource for EtwFlowSource {
         let _ = stop_trace_by_name(&self.session);
 
         let watched = Arc::clone(&self.watched);
+        let ports = self.ports.clone();
         let sink = Arc::new(Mutex::new(sink));
         let callback = move |record: &EventRecord, locator: &SchemaLocator| {
-            dispatch(record, locator, &watched, &sink);
+            dispatch(record, locator, &watched, &ports, &sink);
         };
 
         let provider = Provider::by_guid(TCPIP_PROVIDER_GUID)
-            .any(KEYWORD_SEND_AND_RECEIVE_PATHS)
-            .level(LEVEL_INFORMATIONAL)
+            .any(KEYWORDS)
+            .level(LEVEL_TCP_SUMMARY)
             .add_filter(EventFilter::ByEventIds(vec![
                 EVENT_UDP_SENT,
                 EVENT_UDP_RECEIVED,
+                EVENT_TCP_SUMMARY,
             ]))
             .add_callback(callback)
             .build();
@@ -194,6 +222,10 @@ impl FlowEventSource for EtwFlowSource {
         }
     }
 
+    fn watch_tcp_ports(&mut self, ports: TcpPortWatch) {
+        self.ports = ports;
+    }
+
     fn stop(&mut self) {
         if let Some(trace) = self.trace.take() {
             // A failure here means the session is already gone, which is the state we
@@ -221,11 +253,13 @@ fn dispatch(
     record: &EventRecord,
     locator: &SchemaLocator,
     watched: &Mutex<Vec<Pid>>,
+    ports: &TcpPortWatch,
     sink: &Mutex<FlowSink>,
 ) {
     let direction = match record.event_id() {
         EVENT_UDP_SENT => FlowDirection::Sent,
         EVENT_UDP_RECEIVED => FlowDirection::Received,
+        EVENT_TCP_SUMMARY => return dispatch_summary(record, locator, ports, sink),
         _ => return,
     };
 
@@ -277,7 +311,96 @@ fn dispatch(
     };
 
     if let Ok(mut sink) = sink.lock() {
-        sink(&event);
+        sink(FlowReport::Flow(&event));
+    }
+}
+
+/// Turns one TCP connection summary into a [`TcpRttEvent`], or discards it.
+///
+/// **The local port is read first and nothing else is touched until it matches.** This
+/// event names no process — verified against the live provider — so without that test the
+/// alternative would be decoding both addresses of every connection closing anywhere on the
+/// machine in order to throw almost all of them away. On a machine whose owner is under
+/// surveillance that is not an acceptable way to obtain a latency figure, and the port
+/// costs one integer comparison.
+fn dispatch_summary(
+    record: &EventRecord,
+    locator: &SchemaLocator,
+    ports: &TcpPortWatch,
+    sink: &Mutex<FlowSink>,
+) {
+    let Ok(schema) = locator.event_schema(record) else {
+        return;
+    };
+    let parser = Parser::create(record, &schema);
+
+    let Ok(local_port) = parser.try_parse::<u32>("LocalPort") else {
+        return;
+    };
+    let Some(local_port) = summary_port(local_port) else {
+        return;
+    };
+    if !ports.contains(local_port) {
+        return;
+    }
+
+    let (Ok(local), Ok(remote)) = (
+        parser.try_parse::<Vec<u8>>("LocalAddress"),
+        parser.try_parse::<Vec<u8>>("RemoteAddress"),
+    ) else {
+        return;
+    };
+    let (Some(local), Some(remote)) = (decode_sockaddr(&local), decode_sockaddr(&remote)) else {
+        return;
+    };
+
+    let (Ok(rtt), Ok(min_rtt), Ok(max_rtt)) = (
+        parser.try_parse::<u32>("RttUs"),
+        parser.try_parse::<u32>("MinRttUs"),
+        parser.try_parse::<u32>("MaxRttUs"),
+    ) else {
+        return;
+    };
+
+    let event = TcpRttEvent {
+        // The blob's own port is what the connection used; `LocalPort` is a later addition
+        // to the event and repeats it. Where the blob is unported — a shape this provider
+        // has not been seen to emit, but one the decoder allows — the separate field stands
+        // in, so the connection is still identifiable.
+        local: with_port(local, local_port),
+        remote,
+        rtt: Duration::from_micros(u64::from(rtt)),
+        min_rtt: Duration::from_micros(u64::from(min_rtt)),
+        max_rtt: Duration::from_micros(u64::from(max_rtt)),
+        observed_at: super::event_time(record.raw_timestamp()),
+    };
+
+    if let Ok(mut sink) = sink.lock() {
+        sink(FlowReport::Rtt(&event));
+    }
+}
+
+/// Reads the connection summary's `LocalPort` field, which is in **network byte order**.
+///
+/// The recurring hazard of this whole area, and it fails silently: the field is a `DWORD`
+/// holding a port the wrong way round, so a filter that compared it directly would match
+/// nothing and the feature would simply appear not to work. Found exactly that way — the
+/// live test below produced no measurement for twenty-five seconds while the addresses beside
+/// the field decoded perfectly. The connection tables carry the same trap and are pinned by
+/// their own test; this is that test's twin.
+///
+/// Returns [`None`] for a value that does not fit a port, which cannot happen for a real
+/// event and would mean the field had changed meaning.
+fn summary_port(raw: u32) -> Option<u16> {
+    u16::try_from(raw).ok().map(u16::swap_bytes)
+}
+
+/// Fills in a socket address's port where the decoded blob carried none.
+fn with_port(address: std::net::SocketAddr, port: u16) -> std::net::SocketAddr {
+    if address.port() == 0 {
+        std::net::SocketAddr::new(address.ip(), port)
+    } else {
+        address
     }
 }
 
@@ -414,8 +537,10 @@ mod tests {
         let mut source = EtwFlowSource::with_session_name("NetworkMonitorFlowsTest");
         source.watch(&[Pid::new(std::process::id())]);
 
-        let sink: FlowSink = Box::new(move |event: &FlowEvent| {
-            let _ = tx.send(event.clone());
+        let sink: FlowSink = Box::new(move |report: FlowReport<'_>| {
+            if let FlowReport::Flow(event) = report {
+                let _ = tx.send(event.clone());
+            }
         });
 
         match source.start(sink) {
@@ -475,5 +600,138 @@ mod tests {
             "the event must carry the kernel's own stamp — the arrival metrics measure \
              nothing without it"
         );
+    }
+
+    /// The stack's own round-trip estimate, end to end against the running system.
+    ///
+    /// Passes two ways for the same reason as the test above. Where a session opens, it
+    /// proves the three things section C rests on: that the summary event reaches an
+    /// unelevated session at all, that the local-port filter is enough to identify a
+    /// connection without any process identifier, and that both address blobs decode.
+    ///
+    /// The connection is made and closed here, on loopback. A summary arrives when a
+    /// connection ends as well as periodically during a long one, so a short local
+    /// connection is the quickest way to produce one — and its round trip will be near
+    /// zero, which is the correct answer for loopback and is asserted as such rather than
+    /// dressed up as a network measurement.
+    #[test]
+    fn reads_the_stacks_own_round_trip_or_says_it_may_not_trace() {
+        use std::io::{Read as _, Write as _};
+        use std::net::{TcpListener, TcpStream};
+
+        let (tx, rx) = mpsc::channel();
+        let ports = TcpPortWatch::new();
+        let mut source = EtwFlowSource::with_session_name("NetworkMonitorRttTest");
+        source.watch_tcp_ports(ports.clone());
+
+        let sink: FlowSink = Box::new(move |report: FlowReport<'_>| {
+            if let FlowReport::Rtt(event) = report {
+                let _ = tx.send(*event);
+            }
+        });
+
+        match source.start(sink) {
+            Err(Error::TracingNotPermitted) => {
+                eprintln!("skipped: this account may not open a tracing session");
+                return;
+            }
+            Err(other) => panic!("starting the trace failed unexpectedly: {other}"),
+            Ok(()) => {}
+        }
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind a loopback socket");
+        let server = listener.local_addr().expect("read the bound address");
+
+        // Connections are made in a loop rather than once: a summary is written when the
+        // connection ends, and the buffered stream that carries it is flushed on a timer,
+        // so a single attempt could easily finish before the deadline without its summary
+        // having been delivered yet.
+        let deadline = Instant::now() + Duration::from_secs(25);
+        let mut measured: Option<TcpRttEvent> = None;
+        // Every port used so far stays watched: a summary is written when the connection
+        // ends and delivered on the buffer's own timer, so one for an earlier attempt can
+        // land while a later attempt is being made.
+        let mut used: Vec<u16> = Vec::new();
+        while Instant::now() < deadline && measured.is_none() {
+            if let Ok(mut client) = TcpStream::connect(server) {
+                let local = client.local_addr().expect("read the bound address");
+                used.push(local.port());
+                // Named *before* the connection closes, since the filter is applied when
+                // the event is decoded and the summary can arrive at any point after.
+                ports.replace(used.iter().copied());
+                if let Ok((mut accepted, _)) = listener.accept() {
+                    // A connection that carried data gives the stack something to time.
+                    let _ = client.write_all(&[7u8; 64]);
+                    let _ = accepted.write_all(&[7u8; 64]);
+                    let mut buffer = [0u8; 64];
+                    let _ = accepted.read(&mut buffer);
+                    let _ = client.read(&mut buffer);
+                }
+                drop(client);
+            }
+
+            while let Ok(event) = rx.try_recv() {
+                if used.contains(&event.local.port()) {
+                    measured = Some(event);
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        source.stop();
+
+        let event = measured.expect(
+            "the stack's own round trip must be readable — check for an orphaned \
+             NetworkMonitorFlows tracing session if this fails",
+        );
+        assert_eq!(
+            event.remote, server,
+            "the far end must decode, or a measurement could never be matched to an endpoint"
+        );
+        assert!(event.local.ip().is_loopback());
+        assert!(
+            event.min_rtt <= event.max_rtt,
+            "the stack's own bounds must bracket each other: {event:?}"
+        );
+        assert!(
+            event.rtt < Duration::from_millis(50),
+            "a loopback connection cannot honestly be tens of milliseconds: {:?}",
+            event.rtt
+        );
+        assert!(!event.observed_at.is_zero());
+    }
+
+    #[test]
+    fn the_summarys_local_port_is_read_in_network_order() {
+        // 57120 is 0xDF20, so the field holds 0x20DF — 8415. Reading it as it comes gives a
+        // port that exists but is not this connection's, the filter matches nothing, and the
+        // whole feature quietly does nothing at all. Observed values from a live session.
+        assert_eq!(summary_port(8_415), Some(57_120));
+        assert_eq!(summary_port(9_183), Some(57_123));
+        assert_eq!(summary_port(0), Some(0));
+        assert_eq!(
+            summary_port(u32::from(u16::MAX) + 1),
+            None,
+            "a value too wide for a port means the field has changed meaning"
+        );
+    }
+
+    #[test]
+    fn a_port_nobody_asked_about_is_not_watched() {
+        // The gate that keeps every other application's connections out of this process:
+        // the summary event carries no process identifier, so an empty or unrelated port
+        // set must match nothing rather than everything.
+        let ports = TcpPortWatch::new();
+        assert!(!ports.contains(443));
+
+        ports.replace([51_000, 51_001]);
+        assert!(ports.contains(51_000));
+        assert!(!ports.contains(443));
+
+        // Replacement, not accumulation: a connection that closed stops being watched, or
+        // the set would eventually match ports reissued to other applications.
+        ports.replace([51_002]);
+        assert!(!ports.contains(51_000));
+        assert!(ports.contains(51_002));
     }
 }

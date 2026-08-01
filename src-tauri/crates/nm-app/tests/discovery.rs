@@ -16,12 +16,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use nm_app::discovery::{
-    from_connection, from_flow, is_worth_tracking, Discovery, FlowStatus, Observation,
+    from_connection, from_flow, from_tcp_rtt, is_worth_tracking, Discovery, FlowStatus,
+    Observation, Sighting,
 };
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{EndpointKey, Transport};
 use nm_platform::connection::{Connection, ConnectionTable, Protocol, TcpState};
-use nm_platform::flow::{FlowDirection, FlowEvent, FlowEventSource, FlowSink};
+use nm_platform::flow::{
+    FlowDirection, FlowEvent, FlowEventSource, FlowReport, FlowSink, TcpRttEvent,
+};
 use nm_platform::process::Pid;
 
 const GAME: Pid = Pid::new(4242);
@@ -156,6 +159,27 @@ fn an_observation_names_a_process_and_leaves_the_application_to_be_resolved() {
     assert_eq!(observation.pid, GAME);
 }
 
+#[test]
+fn a_round_trip_summary_is_keyed_by_the_endpoint_the_probes_use() {
+    // The measurement has to land where the probes' do, or it would describe an endpoint the
+    // page never shows. The connection table keys a TCP endpoint by its remote address, so
+    // this does too.
+    let event = TcpRttEvent {
+        local: client(51_000),
+        remote: server(443),
+        rtt: Duration::from_micros(24_500),
+        min_rtt: Duration::from_millis(21),
+        max_rtt: Duration::from_millis(90),
+        observed_at: Duration::from_secs(9),
+    };
+    let rtt = from_tcp_rtt(&event);
+
+    assert_eq!(rtt.endpoint, EndpointKey::tcp(server(443)));
+    assert_eq!(rtt.rtt, Duration::from_micros(24_500));
+    assert_eq!(rtt.min_rtt, Duration::from_millis(21));
+    assert_eq!(rtt.max_rtt, Duration::from_millis(90));
+}
+
 // ---------------------------------------------------------------- filtering
 
 #[test]
@@ -252,7 +276,14 @@ impl FakeFlowSource {
     fn emit(&self, event: &FlowEvent) {
         let mut held = self.sink.lock().unwrap();
         if let Some(sink) = held.as_mut() {
-            sink(event);
+            sink(FlowReport::Flow(event));
+        }
+    }
+
+    fn emit_rtt(&self, event: &TcpRttEvent) {
+        let mut held = self.sink.lock().unwrap();
+        if let Some(sink) = held.as_mut() {
+            sink(FlowReport::Rtt(event));
         }
     }
 }
@@ -280,10 +311,21 @@ impl FlowEventSource for FakeFlowSource {
 }
 
 /// Waits for the next observation, failing rather than hanging if none arrives.
-async fn next(observations: &mut tokio::sync::mpsc::Receiver<Observation>) -> Option<Observation> {
+async fn next_sighting(
+    observations: &mut tokio::sync::mpsc::Receiver<Sighting>,
+) -> Option<Sighting> {
     tokio::time::timeout(Duration::from_secs(5), observations.recv())
         .await
-        .expect("an observation must arrive well inside the poll period")
+        .expect("a sighting must arrive well inside the poll period")
+}
+
+/// The next endpoint sighting, which is what most of these tests are about.
+async fn next(observations: &mut tokio::sync::mpsc::Receiver<Sighting>) -> Option<Observation> {
+    match next_sighting(observations).await {
+        Some(Sighting::Endpoint(observation)) => Some(observation),
+        Some(other) => panic!("expected an endpoint sighting, got {other:?}"),
+        None => None,
+    }
 }
 
 #[tokio::test]
@@ -398,6 +440,54 @@ async fn a_missing_flow_source_is_reported_as_unavailable() {
 
     assert_eq!(discovery.flow_status(), FlowStatus::Unavailable);
     assert_eq!(discovery.dropped_flow_events(), 0);
+}
+
+#[tokio::test]
+async fn a_round_trip_summary_reaches_the_session_and_an_unusable_one_does_not() {
+    let source = FakeFlowSource::default();
+    let (discovery, mut observations) = Discovery::start(
+        AddressPolicy::default(),
+        Err(nm_platform::Error::UnsupportedPlatform),
+        Ok(Box::new(source.clone())),
+    );
+
+    // A loopback peer is dropped by the same address filter the endpoints go through: the
+    // application's conversation with its own launcher is not a network path.
+    source.emit_rtt(&TcpRttEvent {
+        local: client(51_001),
+        remote: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 6463),
+        rtt: Duration::from_micros(80),
+        min_rtt: Duration::from_micros(60),
+        max_rtt: Duration::from_micros(120),
+        observed_at: Duration::from_secs(1),
+    });
+    source.emit_rtt(&TcpRttEvent {
+        local: client(51_000),
+        remote: server(443),
+        rtt: Duration::from_micros(24_500),
+        min_rtt: Duration::from_millis(21),
+        max_rtt: Duration::from_millis(90),
+        observed_at: Duration::from_secs(2),
+    });
+
+    let sighting = next_sighting(&mut observations)
+        .await
+        .expect("the channel is open");
+    match sighting {
+        Sighting::Rtt(rtt) => {
+            assert_eq!(rtt.endpoint, EndpointKey::tcp(server(443)));
+            assert_eq!(rtt.rtt, Duration::from_micros(24_500));
+        }
+        other => panic!("expected a round-trip sighting, got {other:?}"),
+    }
+
+    drop(discovery);
+    source.kill();
+    assert_eq!(
+        next_sighting(&mut observations).await,
+        None,
+        "the loopback summary must never have been queued"
+    );
 }
 
 #[tokio::test]

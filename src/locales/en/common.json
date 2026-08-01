@@ -134,7 +134,9 @@
       "egressConflict": "Probe may not follow this app's route"
     },
     "metric": {
-      "traffic": "Traffic ({{seconds}} s)"
+      "traffic": "Traffic ({{seconds}} s)",
+      "stackRtt": "RTT from the OS (ms)",
+      "stackRttAge": "· {{seconds}} s ago"
     },
     "passive": {
       "heading": "This endpoint's own traffic",

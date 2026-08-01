@@ -54,6 +54,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   lossPct: 0,
   path: null,
   flow: null,
+  passiveRtt: null,
   chartRttMs: [24, null, 25],
   chartPathMs: [null, null, null],
   ...overrides,
@@ -335,6 +336,44 @@ describe('AppCard', () => {
     const rtt = screen.getByText('RTT').parentElement;
     expect(rtt).toHaveTextContent('—');
     expect(screen.getByText('Traffic (30 s)').parentElement).toHaveTextContent('630 kB');
+  });
+
+  it("shows the operating system's own round trip with its age, never as a live figure", () => {
+    // The one genuine round trip that cost no packet — and it arrives every few tens of
+    // seconds at best, so a figure without its age would read as current when it is not.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              transport: 'tcp',
+              passiveRtt: { rttMs: 24.5, minRttMs: 21, maxRttMs: 90, ageSecs: 37 },
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        onForget={vi.fn()}
+      />,
+    );
+
+    const stack = screen.getByText('RTT from the OS (ms)').parentElement;
+    // Rounded by the same rule the probes' own figure uses: whole milliseconds above 10.
+    expect(stack).toHaveTextContent('25');
+    expect(stack).toHaveTextContent('37 s ago');
+  });
+
+  it("omits the operating system's round trip where it published none", () => {
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ passiveRtt: null })] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('RTT from the OS (ms)')).not.toBeInTheDocument();
   });
 
   it('shows a dash rather than a zero where nothing counted the traffic', () => {

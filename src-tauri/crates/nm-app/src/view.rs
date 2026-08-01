@@ -22,7 +22,7 @@ use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::apps::EndpointReport;
+use crate::apps::{EndpointReport, PassiveRttReading};
 use crate::baselines::BaselineGroup;
 use crate::discovery::FlowStatus;
 
@@ -488,6 +488,42 @@ impl From<&nm_core::flow::FlowReading> for FlowView {
     }
 }
 
+/// A round trip the operating system measured on the application's own connection.
+///
+/// The one figure on this page that is a genuine round trip to the endpoint without a probe
+/// having been sent: the transport stack times its own segments against their
+/// acknowledgements and publishes the estimate. Where it exists it is better evidence than
+/// anything we could send, because it is the traffic the user is actually sending, over the
+/// path it is actually taking.
+///
+/// It is also rare and slow. It exists for TCP only — a game's UDP match server has none —
+/// and arrives every few tens of seconds at best, which is why [`PassiveRttView::age_secs`]
+/// travels with it. A figure that may be a minute old must not be shown as though it were
+/// current.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PassiveRttView {
+    /// The stack's current smoothed estimate, in milliseconds.
+    pub rtt_ms: f64,
+    /// The fastest it has seen on this connection, in milliseconds.
+    pub min_rtt_ms: f64,
+    /// The slowest it has seen on this connection, in milliseconds.
+    pub max_rtt_ms: f64,
+    /// How many seconds ago it was published.
+    pub age_secs: f64,
+}
+
+impl From<&PassiveRttReading> for PassiveRttView {
+    fn from(reading: &PassiveRttReading) -> Self {
+        Self {
+            rtt_ms: reading.rtt_ms,
+            min_rtt_ms: reading.min_rtt_ms,
+            max_rtt_ms: reading.max_rtt_ms,
+            age_secs: reading.age.as_secs_f64(),
+        }
+    }
+}
+
 /// One endpoint of one monitored application.
 ///
 /// Per endpoint and never rolled up. Within one application some endpoints stay clean
@@ -577,6 +613,12 @@ pub struct EndpointView {
     /// whole column is missing and the page's banner says why — and where the application
     /// has stopped using the endpoint, since these figures cannot tell how old they are.
     pub flow: Option<FlowView>,
+    /// The round trip the operating system last measured on this connection.
+    ///
+    /// `null` for UDP, for a tunnelled endpoint — where the stack would be timing the round
+    /// trip to the user's own router, a fake-*good* figure — and wherever nothing has been
+    /// published yet.
+    pub passive_rtt: Option<PassiveRttView>,
     /// Round-trip time in each slot of the application's chart, or `null` for a slot with
     /// no answer in it.
     ///
@@ -648,6 +690,7 @@ impl EndpointView {
                 .flatten(),
             path: report.path.as_ref().map(PathView::from),
             flow: report.flow.as_ref().map(FlowView::from),
+            passive_rtt: report.passive_rtt.as_ref().map(PassiveRttView::from),
             chart_rtt_ms: report.chart_rtt_ms.clone(),
             chart_path_ms: report.chart_path_ms.clone(),
         }

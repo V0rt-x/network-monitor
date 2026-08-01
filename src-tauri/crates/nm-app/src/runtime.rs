@@ -50,7 +50,7 @@ use tokio::sync::mpsc;
 use crate::applications::{Application, Applications};
 use crate::apps::{AppMonitor, TargetChange};
 use crate::baselines::{self, BaselineGroup, BaselineTarget};
-use crate::discovery::{Discovery, FlowStatus, Observation};
+use crate::discovery::{Discovery, FlowStatus, Sighting};
 use crate::events::AppEndpoints;
 use crate::monitor::{health_window, BaselineMonitor};
 use crate::presets::PresetList;
@@ -363,17 +363,26 @@ fn read_interfaces() -> InterfaceNames {
 /// stopped watching between a poll being taken and its rows arriving maps to nothing and
 /// the sighting is dropped — that race is normal rather than a fault, and so is a process
 /// that has not yet been adopted into the application it will belong to.
-fn observe(apps: &mut AppMonitor, applications: &Applications, observation: Observation) {
-    let Some(app) = applications.app_of(observation.pid) else {
-        return;
-    };
-    let _ = apps.observe(
-        app,
-        observation.endpoint,
-        observation.source,
-        observation.flow,
-        Instant::now(),
-    );
+fn observe(apps: &mut AppMonitor, applications: &Applications, sighting: Sighting) {
+    match sighting {
+        Sighting::Endpoint(observation) => {
+            let Some(app) = applications.app_of(observation.pid) else {
+                return;
+            };
+            let _ = apps.observe(
+                app,
+                observation.endpoint,
+                observation.source,
+                observation.flow,
+                Instant::now(),
+            );
+        }
+        // No process to map: the event names none, and what let it through was its local
+        // port belonging to a connection of a monitored application. It therefore reaches
+        // every application using that endpoint, which is the right answer — two
+        // applications talking to one address are on the same path to the same server.
+        Sighting::Rtt(rtt) => apps.note_passive_rtt(&rtt, Instant::now()),
+    }
 }
 
 /// Turns the app monitor's decisions into instructions for the probe engine.

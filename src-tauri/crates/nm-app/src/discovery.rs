@@ -41,7 +41,9 @@ use nm_core::address::AddressPolicy;
 use nm_core::endpoint::EndpointKey;
 use nm_core::flow::{FlowInstant, FlowObservation};
 use nm_platform::connection::{Connection, ConnectionTable, Protocol};
-use nm_platform::flow::{FlowDirection, FlowEvent, FlowEventSource, FlowSink};
+use nm_platform::flow::{
+    FlowDirection, FlowEvent, FlowEventSource, FlowReport, FlowSink, TcpPortWatch, TcpRttEvent,
+};
 use nm_platform::process::Pid;
 use tokio::sync::mpsc;
 
@@ -99,6 +101,53 @@ impl Observation {
     }
 }
 
+/// A round trip the operating system measured on the application's own connection.
+///
+/// Not a probe and not ours: the transport stack times its own segments against their
+/// acknowledgements, so this is the round trip of the traffic the user is actually sending,
+/// over the path it is actually taking, at no cost in packets. Where it exists it is better
+/// evidence than anything we could send — but it exists only for TCP, and only every so
+/// often, so it stands beside the probes rather than replacing them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PassiveRtt {
+    /// Which endpoint it belongs to.
+    pub endpoint: EndpointKey,
+    /// The stack's current smoothed estimate.
+    pub rtt: Duration,
+    /// The fastest it has seen on this connection.
+    pub min_rtt: Duration,
+    /// The slowest it has seen on this connection.
+    pub max_rtt: Duration,
+}
+
+/// One thing discovery has to report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sighting {
+    /// A monitored process used an endpoint.
+    Endpoint(Observation),
+    /// The operating system published its own round trip for one of their connections.
+    ///
+    /// Carries no process: the event it comes from names none, and what identified it as
+    /// worth reporting was the local port matching a connection of a monitored application.
+    Rtt(PassiveRtt),
+}
+
+/// Turns a round-trip summary into a sighting.
+///
+/// The endpoint is keyed by the *remote* address over TCP, which is exactly how the
+/// connection table's own sightings are keyed, so the two describe the same endpoint and
+/// the measurement lands where the probes' do.
+#[must_use]
+pub fn from_tcp_rtt(event: &TcpRttEvent) -> PassiveRtt {
+    PassiveRtt {
+        endpoint: EndpointKey::tcp(event.remote),
+        rtt: event.rtt,
+        min_rtt: event.min_rtt,
+        max_rtt: event.max_rtt,
+    }
+}
+
 /// Whether per-process flow events are being delivered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -121,6 +170,14 @@ pub enum FlowStatus {
     Stopped,
     /// No flow source exists on this platform, or it failed for another reason.
     Unavailable,
+}
+
+/// Which endpoint a sighting is about, whichever kind it is.
+const fn sighting_endpoint(sighting: Sighting) -> EndpointKey {
+    match sighting {
+        Sighting::Endpoint(observation) => observation.endpoint,
+        Sighting::Rtt(rtt) => rtt.endpoint,
+    }
 }
 
 /// Whether an endpoint is one the probe engine could say anything about.
@@ -224,7 +281,7 @@ pub struct Discovery {
 #[derive(Clone)]
 struct SinkParts {
     policy: AddressPolicy,
-    sender: mpsc::Sender<Observation>,
+    sender: mpsc::Sender<Sighting>,
     dropped: Arc<AtomicU64>,
 }
 
@@ -255,13 +312,24 @@ impl Discovery {
         policy: AddressPolicy,
         table: Result<Box<dyn ConnectionTable>, nm_platform::Error>,
         flow: Result<Box<dyn FlowEventSource>, nm_platform::Error>,
-    ) -> (Self, mpsc::Receiver<Observation>) {
+    ) -> (Self, mpsc::Receiver<Sighting>) {
         let (sender, receiver) = mpsc::channel(OBSERVATION_QUEUE);
         let (watched, changes) = std::sync::mpsc::channel();
         let dropped = Arc::new(AtomicU64::new(0));
+        // The one filter the round-trip summaries can have: they name no process, and the
+        // connection table is where the local ports of the monitored applications are known.
+        // Shared rather than pushed, so the tracing callback reads whatever the last poll
+        // learned without a message per event.
+        let ports = TcpPortWatch::new();
 
         match table {
-            Ok(table) => spawn_poll_thread(table, policy.clone(), changes, sender.clone()),
+            Ok(table) => spawn_poll_thread(
+                table,
+                policy.clone(),
+                changes,
+                sender.clone(),
+                ports.clone(),
+            ),
             Err(error) => {
                 eprintln!("network-monitor: no connection table on this platform: {error}");
             }
@@ -272,7 +340,7 @@ impl Discovery {
             sender,
             dropped: Arc::clone(&dropped),
         };
-        let (flow, flow_refusal) = start_flow(flow, &rebuild);
+        let (flow, flow_refusal) = start_flow(flow, &rebuild, &ports);
 
         (
             Self {
@@ -370,15 +438,21 @@ impl SinkParts {
         let policy = self.policy.clone();
         let sender = self.sender.clone();
         let dropped = Arc::clone(&self.dropped);
-        Box::new(move |event: &FlowEvent| {
-            let Some(observation) = from_flow(event) else {
+        Box::new(move |report: FlowReport<'_>| {
+            let sighting = match report {
+                FlowReport::Flow(event) => from_flow(event).map(Sighting::Endpoint),
+                FlowReport::Rtt(event) => Some(Sighting::Rtt(from_tcp_rtt(event))),
+                // A report kind this build has no use for is dropped rather than guessed at.
+                _ => None,
+            };
+            let Some(sighting) = sighting else {
                 return;
             };
-            if !is_worth_tracking(&policy, observation.endpoint) {
+            if !is_worth_tracking(&policy, sighting_endpoint(sighting)) {
                 return;
             }
             // The tracing thread must never block. A full queue is counted, not waited on.
-            if let Err(mpsc::error::TrySendError::Full(_)) = sender.try_send(observation) {
+            if let Err(mpsc::error::TrySendError::Full(_)) = sender.try_send(sighting) {
                 dropped.fetch_add(1, Ordering::Relaxed);
             }
         })
@@ -392,10 +466,13 @@ impl SinkParts {
 fn start_flow(
     flow: Result<Box<dyn FlowEventSource>, nm_platform::Error>,
     rebuild: &SinkParts,
+    ports: &TcpPortWatch,
 ) -> (Option<Box<dyn FlowEventSource>>, Option<FlowStatus>) {
     let Ok(mut flow) = flow else {
         return (None, Some(FlowStatus::Unavailable));
     };
+    // Before `start`, because the tracing callback is built there and takes the set with it.
+    flow.watch_tcp_ports(ports.clone());
 
     match flow.start(rebuild.sink()) {
         Ok(()) => (Some(flow), None),
@@ -412,11 +489,12 @@ fn spawn_poll_thread(
     table: Box<dyn ConnectionTable>,
     policy: AddressPolicy,
     watched: std::sync::mpsc::Receiver<Vec<Pid>>,
-    sender: mpsc::Sender<Observation>,
+    sender: mpsc::Sender<Sighting>,
+    ports: TcpPortWatch,
 ) {
     let started = std::thread::Builder::new()
         .name("nm-connection-poll".to_owned())
-        .spawn(move || poll_loop(table, &policy, &watched, &sender));
+        .spawn(move || poll_loop(table, &policy, &watched, &sender, &ports));
 
     if let Err(error) = started {
         // The OS refused a thread, which means the machine is in no state to monitor
@@ -435,10 +513,12 @@ fn poll_loop(
     mut table: Box<dyn ConnectionTable>,
     policy: &AddressPolicy,
     watched: &std::sync::mpsc::Receiver<Vec<Pid>>,
-    sender: &mpsc::Sender<Observation>,
+    sender: &mpsc::Sender<Sighting>,
+    ports: &TcpPortWatch,
 ) {
     let mut rows: Vec<Connection> = Vec::new();
     let mut pids: Vec<Pid> = Vec::new();
+    let mut local_ports: Vec<u16> = Vec::new();
     let mut complained = false;
 
     loop {
@@ -447,9 +527,17 @@ fn poll_loop(
         if !pids.is_empty() {
             match table.snapshot(&mut rows) {
                 Ok(()) => {
+                    local_ports.clear();
                     for row in &rows {
                         if !pids.contains(&row.pid) {
                             continue;
+                        }
+                        // Learned here because this is the only place the local port of a
+                        // monitored application's connection is known: the round-trip
+                        // summary names no process, so without this set it could not be
+                        // told apart from every other connection on the machine.
+                        if row.protocol == Protocol::Tcp {
+                            local_ports.push(row.local.port());
                         }
                         let Some(observation) = from_connection(row) else {
                             continue;
@@ -458,10 +546,17 @@ fn poll_loop(
                             continue;
                         }
                         // The receiver is gone: the session has ended.
-                        if sender.blocking_send(observation).is_err() {
+                        if sender
+                            .blocking_send(Sighting::Endpoint(observation))
+                            .is_err()
+                        {
                             return;
                         }
                     }
+                    // After the rows, so a summary is never matched against a half-built
+                    // set — and unconditionally, so a connection that closed stops being
+                    // watched on the very next poll.
+                    ports.replace(local_ports.iter().copied());
                 }
                 Err(error) if !complained => {
                     // Said once. A table that fails usually keeps failing, and a message a

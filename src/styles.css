@@ -720,3 +720,14 @@ body {
   color: var(--nm-muted);
   font-size: 0.72rem;
 }
+
+/*
+ * The age beside the operating system's own round trip.
+ *
+ * Quieter than the figure but never hidden: that measurement arrives every few tens of
+ * seconds at best, and without its age a minute-old number reads as live.
+ */
+.nm-endpoint__age {
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+}
