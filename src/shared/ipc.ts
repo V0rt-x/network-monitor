@@ -7,6 +7,7 @@ import type {
   CoreHeartbeat,
   CoreStatus,
   NetworkHealth,
+  ServiceStatus,
   Settings,
   SettingsView,
   TrayLabels,
@@ -27,6 +28,8 @@ export type {
   ApplicationListView,
   AppView,
   BaselineGroup,
+  CheckMarkView,
+  CheckView,
   CoreHeartbeat,
   CoreReadiness,
   CoreStatus,
@@ -45,6 +48,10 @@ export type {
   PlatformKind,
   ProbeKindView,
   ProbingView,
+  ServiceEndpointView,
+  ServiceGroup,
+  ServiceStatus,
+  ServiceView,
   Settings,
   SettingsProblem,
   SettingsView,
@@ -65,6 +72,13 @@ export const subscribeToNetworkHealth = (
 ): Promise<UnlistenFn> =>
   events.networkHealth.listen((event) => {
     onHealth(event.payload);
+  });
+
+export const subscribeToServiceStatus = (
+  onStatus: (status: ServiceStatus) => void,
+): Promise<UnlistenFn> =>
+  events.serviceStatus.listen((event) => {
+    onStatus(event.payload);
   });
 
 export const subscribeToAppEndpoints = (

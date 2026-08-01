@@ -231,8 +231,30 @@ impl ProbeRunner {
         source: Option<IpAddr>,
         now: Instant,
     ) -> Result<(), Error> {
+        self.add_preferring(id, address, source, None, now)
+    }
+
+    /// Starts measuring `address`, opening on `preferred` rather than the cheapest kind.
+    ///
+    /// The hint reorders the honest preference and cannot widen it — see
+    /// [`FallbackChain::starting_with`]. It exists for targets whose operator's front door
+    /// is known not to answer echoes, where the ordinary chain would spend several whole
+    /// check intervals on silence before reaching the kind that works.
+    ///
+    /// # Errors
+    ///
+    /// As [`ProbeRunner::add`]: the hint cannot rescue an address no kind may honestly
+    /// measure.
+    pub fn add_preferring(
+        &mut self,
+        id: TargetId,
+        address: TargetAddress,
+        source: Option<IpAddr>,
+        preferred: Option<ProbeKind>,
+        now: Instant,
+    ) -> Result<(), Error> {
         let class = self.policy.classify(address.ip);
-        let chain = FallbackChain::new(class, &self.available)?;
+        let chain = FallbackChain::starting_with(class, &self.available, preferred)?;
         let backoff = Backoff::new(self.interval, self.max_interval)?;
 
         self.targets.insert(

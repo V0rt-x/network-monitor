@@ -49,6 +49,7 @@ pub mod sample;
 pub mod scheduler;
 pub mod series;
 pub mod stats;
+pub mod status;
 pub mod target;
 pub mod time;
 

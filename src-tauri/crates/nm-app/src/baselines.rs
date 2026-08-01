@@ -234,13 +234,24 @@ pub async fn resolve_list(group: BaselineGroup, list: &TargetList) -> Vec<Baseli
     let mut resolved = Vec::with_capacity(list.targets.len());
     for listed in &list.targets {
         let mut target = BaselineTarget::pending(group, &list.id, listed);
-        target.address = match literal_address(listed) {
-            Some(address) => Some(address),
-            None => lookup(&listed.address, listed.port).await,
-        };
+        target.address = resolve_written(&listed.address, listed.port).await;
         resolved.push(target);
     }
     resolved
+}
+
+/// Turns a written address into a probe target, resolving a name if that is what it is.
+///
+/// Shared with the status-page list (`crate::services`), which faces exactly the same
+/// question about exactly the same kind of entry — an IP literal costs no lookup, a name
+/// goes through the system resolver, and a failure is [`None`] rather than an omission.
+/// Two copies of that would eventually disagree about which of those a name that does not
+/// resolve is.
+pub async fn resolve_written(written: &str, port: Option<u16>) -> Option<TargetAddress> {
+    match written.parse::<IpAddr>() {
+        Ok(ip) => Some(address_with_port(ip, port)),
+        Err(_) => lookup(written, port).await,
+    }
 }
 
 /// Looks a host name up, preferring IPv4.

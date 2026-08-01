@@ -9,6 +9,7 @@
     "label": "Sections",
     "dashboard": "Dashboard",
     "apps": "Applications",
+    "status": "Service status",
     "settings": "Settings"
   },
   "tray": {
@@ -188,6 +189,37 @@
       "notPermitted": "This account may not open a tracing session, so UDP endpoints and traffic counters are missing — TCP endpoints are still found. Adding your account to the local “Performance Log Users” group once, from an elevated prompt, restores them. The app never does this for you.",
       "stopped": "The tracing session stopped — something else on this machine took it over. UDP endpoints and traffic counters are missing until it is back; the app is retrying every second.",
       "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
+    }
+  },
+  "status": {
+    "waiting": "Checking services…",
+    "unavailable": "The core stopped sending service checks",
+    "cadence": "Each service is checked every {{seconds}} s",
+    "caveat": "These checks say whether this machine can reach each service. A service you cannot reach may be running normally for everyone else.",
+    "noServices": "No services in this group",
+    "noChecks": "Not checked yet",
+    "neverChecked": "Not checked yet",
+    "lastChecked": "Checked {{seconds}} s ago",
+    "timelineLabel": "Recent checks of {{service}} at {{address}}",
+    "group": {
+      "gamingPlatform": "Gaming platforms",
+      "infrastructure": "Infrastructure"
+    },
+    "groupHint": {
+      "gamingPlatform": "Stores, launchers and account services you sign in to",
+      "infrastructure": "The clouds and content networks the platforms and games are hosted on"
+    },
+    "check": {
+      "answered": "Answered",
+      "slow": "Answered slowly",
+      "lost": "No answer",
+      "refused": "Refused",
+      "filtered": "Probe filtered"
+    },
+    "metric": {
+      "latest": "Latest",
+      "mean": "Mean",
+      "loss": "Loss"
     }
   },
   "settings": {

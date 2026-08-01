@@ -17,6 +17,7 @@ use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
 use nm_core::path::PathEnd;
+use nm_core::status::CheckMark;
 use nm_platform::interface::InterfaceNames;
 use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ use specta::Type;
 use crate::apps::{EndpointReport, PassiveRttReading};
 use crate::baselines::BaselineGroup;
 use crate::discovery::FlowStatus;
+use crate::services::ServiceGroup;
 
 /// How many samples of a target's history the sparkline carries.
 ///
@@ -198,6 +200,142 @@ impl GroupView {
             jitter_ms: health.jitter_ms,
             loss_pct: health.loss_pct,
             targets,
+        }
+    }
+}
+
+/// How one status check read.
+///
+/// A fact about a single check, never a windowed verdict — which is exactly what makes the
+/// mini-timeline worth drawing beside a card: it is the evidence the headline was reached
+/// from, and it keeps the four ways a check can fail to produce a number apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum CheckMarkView {
+    /// It answered within the slow line.
+    Answered,
+    /// It answered, but slowly.
+    Slow,
+    /// Nothing came back in time.
+    Lost,
+    /// The destination answered that it cannot be reached.
+    Refused,
+    /// The probe kind was filtered, so this check measured nothing at all.
+    Filtered,
+}
+
+impl From<CheckMark> for CheckMarkView {
+    fn from(mark: CheckMark) -> Self {
+        match mark {
+            CheckMark::Answered => Self::Answered,
+            CheckMark::Slow => Self::Slow,
+            CheckMark::Refused => Self::Refused,
+            CheckMark::Filtered => Self::Filtered,
+            // A mark this build has no word for must not read as an answer.
+            _ => Self::Lost,
+        }
+    }
+}
+
+/// One check on the mini-timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckView {
+    /// Seconds before now the check completed — negative, ascending to the right-hand edge.
+    ///
+    /// A real time axis rather than a cell index: checks stretch under backoff, so evenly
+    /// spaced cells would draw a strip that lies about when things happened.
+    pub age_secs: f64,
+    /// What it produced.
+    pub mark: CheckMarkView,
+}
+
+/// One endpoint of one status-page service.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceEndpointView {
+    /// Identifier unique across the whole service list.
+    pub key: String,
+    /// The address the list file named — almost always a host name.
+    ///
+    /// Shown rather than the resolved address, because that is what the user recognises and
+    /// because a platform's front door sits on a content network whose address changes by
+    /// the hour.
+    pub written_address: String,
+    /// The address actually being checked, once resolved. `null` means the name did not
+    /// resolve — under censorship that is itself a finding, not a reason to hide the row.
+    pub resolved_address: Option<String>,
+    /// Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
+    /// rather than a round trip to the service.
+    pub tunnelled: bool,
+    /// Whether any probe kind can still check it honestly.
+    pub measurable: bool,
+    /// Which kind is checking it now.
+    pub probe_kind: Option<ProbeKindView>,
+    /// Whether a probe kind has been *proven* filtered here.
+    pub filtering_confirmed: bool,
+    /// The verdict, from the most recent checks.
+    pub health: HealthView,
+    /// The most recent answer's round-trip time, in milliseconds.
+    pub rtt_ms: Option<f64>,
+    /// Mean round-trip time across the window, in milliseconds.
+    pub mean_rtt_ms: Option<f64>,
+    /// Loss across the window, as a percentage.
+    pub loss_pct: Option<f64>,
+    /// The recent checks, oldest first.
+    pub checks: Vec<CheckView>,
+}
+
+/// One status-page service, taken together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceView {
+    /// Its identifier from the list. A React key, and the tag a verdict names.
+    pub id: String,
+    /// The operator's name for it, shown as written.
+    pub label: String,
+    /// Which shelf of the page it sits on.
+    pub group: ServiceGroup,
+    /// The headline verdict.
+    pub verdict: HealthView,
+    /// The distribution behind it. Shown whenever a service has more than one endpoint,
+    /// never collapsed into the verdict — a storefront that answers while the gateway does
+    /// not is the finding, and one amber dot would hide which half is broken.
+    pub counts: HealthCountsView,
+    /// Median round-trip time across the answering endpoints, in milliseconds.
+    pub rtt_ms: Option<f64>,
+    /// Loss across the service, weighted by checks.
+    pub loss_pct: Option<f64>,
+    /// How many seconds ago the freshest check completed.
+    ///
+    /// Stated because a status page whose data has quietly stopped arriving looks exactly
+    /// like one reporting good news. `null` before anything has been checked at all.
+    pub last_checked_secs: Option<f64>,
+    /// Its endpoints, in list order.
+    pub endpoints: Vec<ServiceEndpointView>,
+}
+
+impl ServiceView {
+    /// Builds a service view from its computed health and its endpoints.
+    #[must_use]
+    pub fn new(
+        id: String,
+        label: String,
+        group: ServiceGroup,
+        health: GroupHealth,
+        last_checked_secs: Option<f64>,
+        endpoints: Vec<ServiceEndpointView>,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            group,
+            verdict: health.verdict.into(),
+            counts: health.counts.into(),
+            rtt_ms: health.rtt_ms,
+            loss_pct: health.loss_pct,
+            last_checked_secs,
+            endpoints,
         }
     }
 }

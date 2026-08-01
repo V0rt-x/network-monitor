@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "id": "steam",
+      "label": "Steam",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [
+        { "id": "api", "address": "api.steampowered.com", "port": 443 },
+        { "id": "store", "address": "store.steampowered.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "epic",
+      "label": "Epic Games",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "store", "address": "store.epicgames.com", "port": 443 }]
+    },
+    {
+      "id": "discord",
+      "label": "Discord",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [
+        { "id": "web", "address": "discord.com", "port": 443 },
+        { "id": "gateway", "address": "gateway.discord.gg", "port": 443 }
+      ]
+    },
+    {
+      "id": "riot",
+      "label": "Riot Games",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.riotgames.com", "port": 443 }]
+    },
+    {
+      "id": "ea",
+      "label": "EA",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.ea.com", "port": 443 }]
+    },
+    {
+      "id": "battle-net",
+      "label": "Battle.net",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "battle.net", "port": 443 }]
+    },
+    {
+      "id": "xbox",
+      "label": "Xbox Live",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.xbox.com", "port": 443 }]
+    },
+    {
+      "id": "psn",
+      "label": "PlayStation Network",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.playstation.com", "port": 443 }]
+    },
+    {
+      "id": "aws",
+      "label": "Amazon Web Services",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "s3", "address": "s3.amazonaws.com", "port": 443 }]
+    },
+    {
+      "id": "google-cloud",
+      "label": "Google Cloud",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "storage", "address": "storage.googleapis.com", "port": 443 }]
+    },
+    {
+      "id": "cloudflare",
+      "label": "Cloudflare",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "cloudflare.com", "port": 443 }]
+    }
+  ]
+}

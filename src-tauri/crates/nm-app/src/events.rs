@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::view::{AppView, FlowStatusView, GroupView};
+use crate::view::{AppView, FlowStatusView, GroupView, ServiceView};
 
 /// Liveness signal proving the Rust core is running and the event channel is wired.
 ///
@@ -39,6 +39,27 @@ pub struct NetworkHealth {
     pub window_secs: u32,
     /// The baselines, domestic first.
     pub groups: Vec<GroupView>,
+}
+
+/// Whether each service on the status page is reachable from this machine.
+///
+/// Emitted on the same beat as [`NetworkHealth`] and, like it, not at all while the window
+/// is hidden. The checks themselves run far slower — see
+/// [`crate::status::CHECK_INTERVAL`] — so most emissions resend the same numbers; that is
+/// the right trade against a page that would otherwise be blank for most of a minute after
+/// the user opened it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceStatus {
+    /// How often each endpoint is checked, in seconds.
+    ///
+    /// Stated because it is what makes "last checked" readable: a figure forty seconds old
+    /// is current at this cadence and would be stale at the dashboard's.
+    pub check_interval_secs: u32,
+    /// Span the latency and loss figures are computed over, in seconds.
+    pub window_secs: u32,
+    /// The services, in list order.
+    pub services: Vec<ServiceView>,
 }
 
 /// What every monitored application is talking to, and how each of those paths is doing.

@@ -78,6 +78,7 @@ export const events = {
 	appEndpoints: makeEvent<AppEndpoints>("app-endpoints"),
 	coreHeartbeat: makeEvent<CoreHeartbeat>("core-heartbeat"),
 	networkHealth: makeEvent<NetworkHealth>("network-health"),
+	serviceStatus: makeEvent<ServiceStatus>("service-status"),
 };
 
 /* Types */
@@ -220,6 +221,38 @@ export type BaselineGroup =
 "domestic" | 
 /**  Typically degraded or blocked at the country's border. */
 "foreign";
+
+/**
+ *  How one status check read.
+ * 
+ *  A fact about a single check, never a windowed verdict — which is exactly what makes the
+ *  mini-timeline worth drawing beside a card: it is the evidence the headline was reached
+ *  from, and it keeps the four ways a check can fail to produce a number apart.
+ */
+export type CheckMarkView = 
+/**  It answered within the slow line. */
+"answered" | 
+/**  It answered, but slowly. */
+"slow" | 
+/**  Nothing came back in time. */
+"lost" | 
+/**  The destination answered that it cannot be reached. */
+"refused" | 
+/**  The probe kind was filtered, so this check measured nothing at all. */
+"filtered";
+
+/**  One check on the mini-timeline. */
+export type CheckView = {
+	/**
+	 *  Seconds before now the check completed — negative, ascending to the right-hand edge.
+	 * 
+	 *  A real time axis rather than a cell index: checks stretch under backoff, so evenly
+	 *  spaced cells would draw a strip that lies about when things happened.
+	 */
+	ageSecs: number | null,
+	/**  What it produced. */
+	mark: CheckMarkView,
+};
 
 /**
  *  Liveness signal proving the Rust core is running and the event channel is wired.
@@ -676,6 +709,113 @@ export type ProbingView =
  *  never dropped.
  */
 "demoted";
+
+/**  One endpoint of one status-page service. */
+export type ServiceEndpointView = {
+	/**  Identifier unique across the whole service list. */
+	key: string,
+	/**
+	 *  The address the list file named — almost always a host name.
+	 * 
+	 *  Shown rather than the resolved address, because that is what the user recognises and
+	 *  because a platform's front door sits on a content network whose address changes by
+	 *  the hour.
+	 */
+	writtenAddress: string,
+	/**
+	 *  The address actually being checked, once resolved. `null` means the name did not
+	 *  resolve — under censorship that is itself a finding, not a reason to hide the row.
+	 */
+	resolvedAddress: string | null,
+	/**
+	 *  Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
+	 *  rather than a round trip to the service.
+	 */
+	tunnelled: boolean,
+	/**  Whether any probe kind can still check it honestly. */
+	measurable: boolean,
+	/**  Which kind is checking it now. */
+	probeKind: ProbeKindView | null,
+	/**  Whether a probe kind has been *proven* filtered here. */
+	filteringConfirmed: boolean,
+	/**  The verdict, from the most recent checks. */
+	health: HealthView,
+	/**  The most recent answer's round-trip time, in milliseconds. */
+	rttMs: number | null,
+	/**  Mean round-trip time across the window, in milliseconds. */
+	meanRttMs: number | null,
+	/**  Loss across the window, as a percentage. */
+	lossPct: number | null,
+	/**  The recent checks, oldest first. */
+	checks: CheckView[],
+};
+
+/**  Which shelf of the status page a service sits on. */
+export type ServiceGroup = 
+/**  A platform a player signs in to and buys or launches games through. */
+"gamingPlatform" | 
+/**
+ *  Infrastructure the platforms and the games themselves are hosted on.
+ * 
+ *  Worth separating because the two fail differently and mean different things: one
+ *  storefront being unreachable is that storefront's problem, while three clouds going
+ *  quiet at once is the user's route out.
+ */
+"infrastructure";
+
+/**
+ *  Whether each service on the status page is reachable from this machine.
+ * 
+ *  Emitted on the same beat as [`NetworkHealth`] and, like it, not at all while the window
+ *  is hidden. The checks themselves run far slower — see
+ *  [`crate::status::CHECK_INTERVAL`] — so most emissions resend the same numbers; that is
+ *  the right trade against a page that would otherwise be blank for most of a minute after
+ *  the user opened it.
+ */
+export type ServiceStatus = {
+	/**
+	 *  How often each endpoint is checked, in seconds.
+	 * 
+	 *  Stated because it is what makes "last checked" readable: a figure forty seconds old
+	 *  is current at this cadence and would be stale at the dashboard's.
+	 */
+	checkIntervalSecs: number,
+	/**  Span the latency and loss figures are computed over, in seconds. */
+	windowSecs: number,
+	/**  The services, in list order. */
+	services: ServiceView[],
+};
+
+/**  One status-page service, taken together. */
+export type ServiceView = {
+	/**  Its identifier from the list. A React key, and the tag a verdict names. */
+	id: string,
+	/**  The operator's name for it, shown as written. */
+	label: string,
+	/**  Which shelf of the page it sits on. */
+	group: ServiceGroup,
+	/**  The headline verdict. */
+	verdict: HealthView,
+	/**
+	 *  The distribution behind it. Shown whenever a service has more than one endpoint,
+	 *  never collapsed into the verdict — a storefront that answers while the gateway does
+	 *  not is the finding, and one amber dot would hide which half is broken.
+	 */
+	counts: HealthCountsView,
+	/**  Median round-trip time across the answering endpoints, in milliseconds. */
+	rttMs: number | null,
+	/**  Loss across the service, weighted by checks. */
+	lossPct: number | null,
+	/**
+	 *  How many seconds ago the freshest check completed.
+	 * 
+	 *  Stated because a status page whose data has quietly stopped arriving looks exactly
+	 *  like one reporting good news. `null` before anything has been checked at all.
+	 */
+	lastCheckedSecs: number | null,
+	/**  Its endpoints, in list order. */
+	endpoints: ServiceEndpointView[],
+};
 
 /**
  *  Everything the user can configure.

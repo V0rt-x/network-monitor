@@ -131,9 +131,41 @@ impl FallbackChain {
     /// address of this class — the same refusal [`crate::probe::select_kind`] makes, at the
     /// point where a chain would otherwise be created that could never do anything.
     pub fn new(class: AddressClass, available: &[ProbeKind]) -> Result<Self, Error> {
-        let order = preferred_kinds(class, available);
+        Self::starting_with(class, available, None)
+    }
+
+    /// Starts a chain that tries `preferred` before the rest of the honest order.
+    ///
+    /// The hint **reorders, it never admits**. A kind the address class refuses — anything
+    /// but an end-to-end exchange for a tunnelled endpoint, anything at all for an address
+    /// not worth probing — stays refused however loudly a data file asks for it, so a
+    /// hand-edited list can shorten a wait but can never make the engine report a number a
+    /// tunnel invented. A hint naming a kind this build does not have is likewise ignored
+    /// rather than fatal.
+    ///
+    /// It exists because the cheapest-first order is the wrong opening move for a service
+    /// whose front door is known to drop echoes: without the hint the chain spends
+    /// [`SILENCE_BEFORE_FALLBACK`] whole check intervals — minutes, at a status page's
+    /// cadence — reporting silence about a service that is answering perfectly on 443.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NothingUsable`] under exactly the conditions [`FallbackChain::new`]
+    /// does; the hint cannot rescue an address no kind may honestly measure.
+    pub fn starting_with(
+        class: AddressClass,
+        available: &[ProbeKind],
+        preferred: Option<ProbeKind>,
+    ) -> Result<Self, Error> {
+        let mut order = preferred_kinds(class, available);
         if order.is_empty() {
             return Err(Error::NothingUsable { class });
+        }
+        if let Some(first) = preferred {
+            if let Some(at) = order.iter().position(|kind| *kind == first) {
+                let kind = order.remove(at);
+                order.insert(0, kind);
+            }
         }
         Ok(Self {
             class,
@@ -636,5 +668,74 @@ mod tests {
         // And once there is nothing left, saying it again changes nothing.
         chain.cannot_address_target();
         assert_eq!(chain.step(), ChainStep::WalkThePath);
+    }
+
+    #[test]
+    fn a_hint_opens_on_the_kind_it_names() {
+        let chain =
+            FallbackChain::starting_with(AddressClass::Routable, ALL, Some(ProbeKind::TlsHello))
+                .unwrap();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
+    }
+
+    #[test]
+    fn a_hint_reorders_rather_than_removing_the_rest() {
+        // The point of the hint is to skip a wait, not to give up the fallbacks: a service
+        // whose hinted kind stops working must still reach the others.
+        let mut chain =
+            FallbackChain::starting_with(AddressClass::Routable, ALL, Some(ProbeKind::TcpConnect))
+                .unwrap();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
+    }
+
+    #[test]
+    fn a_hint_cannot_admit_a_kind_a_tunnel_would_fake() {
+        // The whole safety property in one test: a data file asking for the cheapest probe
+        // on a tunnelled endpoint gets the honest one anyway, because the hint reorders a
+        // list the address class has already filtered.
+        let chain = FallbackChain::starting_with(
+            AddressClass::TunnelSentinel,
+            ALL,
+            Some(ProbeKind::TcpConnect),
+        )
+        .unwrap();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
+    }
+
+    #[test]
+    fn a_hint_for_a_kind_this_build_lacks_is_ignored() {
+        let chain = FallbackChain::starting_with(
+            AddressClass::Routable,
+            &[ProbeKind::TcpConnect, ProbeKind::TlsHello],
+            Some(ProbeKind::IcmpEcho),
+        )
+        .unwrap();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TcpConnect));
+    }
+
+    #[test]
+    fn a_hint_cannot_rescue_an_address_nothing_may_measure() {
+        assert_eq!(
+            FallbackChain::starting_with(AddressClass::Loopback, ALL, Some(ProbeKind::TlsHello))
+                .unwrap_err(),
+            Error::NothingUsable {
+                class: AddressClass::Loopback
+            }
+        );
+    }
+
+    #[test]
+    fn reconsidering_returns_to_the_hinted_kind_not_the_cheapest() {
+        let mut chain =
+            FallbackChain::starting_with(AddressClass::Routable, ALL, Some(ProbeKind::TlsHello))
+                .unwrap();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+
+        chain.reconsider();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
     }
 }

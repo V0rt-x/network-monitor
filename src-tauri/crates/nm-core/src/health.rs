@@ -278,14 +278,37 @@ impl GroupHealth {
     where
         I: IntoIterator<Item = &'a WindowStats>,
     {
+        Self::of_judged(
+            members
+                .into_iter()
+                .map(|stats| (thresholds.health_of(stats), stats)),
+        )
+    }
+
+    /// Judges a group whose members have already been judged by some other rule.
+    ///
+    /// The headline verdict, the distribution and the medians are the same arithmetic
+    /// whatever decided each member's state, and that arithmetic is what must not be
+    /// duplicated: a second copy of "anything mixed is degraded, and the counts say how
+    /// much" would drift from this one. [`crate::status`] uses it, because a status page
+    /// asks a different question of the same samples — "is it up right now" rather than
+    /// "what has this window been like" — and must still roll several endpoints of one
+    /// service up the same way a baseline rolls up its members.
+    ///
+    /// The statistics still travel with each member: they are what the medians and the
+    /// probe-weighted loss figure are computed from, and neither depends on the verdict.
+    #[must_use]
+    pub fn of_judged<'a, I>(members: I) -> Self
+    where
+        I: IntoIterator<Item = (Health, &'a WindowStats)>,
+    {
         let mut counts = HealthCounts::default();
         let mut timeouts = 0_usize;
         let mut attempts = 0_usize;
         let mut rtts: Vec<f64> = Vec::new();
         let mut jitters: Vec<f64> = Vec::new();
 
-        for stats in members {
-            let health = thresholds.health_of(stats);
+        for (health, stats) in members {
             counts.record(health);
             timeouts += stats.outcomes.timeout;
             attempts += stats.outcomes.delivery_attempts();

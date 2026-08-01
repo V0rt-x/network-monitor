@@ -5,15 +5,17 @@ import { AppMonitorPage } from './features/app-monitor/AppMonitorPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
+import { StatusPage } from './features/status-page/StatusPage';
 import { hideToTray, quitApp } from './shared/ipc';
 
 /** The pages the app ships. A router would be a dependency for one switch. */
-type Page = 'dashboard' | 'apps' | 'settings';
+type Page = 'dashboard' | 'apps' | 'status' | 'settings';
 
 /** Literal keys, so a rename in `common.json` is a compile error rather than a blank tab. */
 const PAGES = [
   { id: 'dashboard', labelKey: 'nav.dashboard' },
   { id: 'apps', labelKey: 'nav.apps' },
+  { id: 'status', labelKey: 'nav.status' },
   { id: 'settings', labelKey: 'nav.settings' },
 ] as const satisfies readonly { readonly id: Page; readonly labelKey: string }[];
 
@@ -29,6 +31,8 @@ const pageFor = (page: Page) => {
       return <DashboardPage />;
     case 'apps':
       return <AppMonitorPage />;
+    case 'status':
+      return <StatusPage />;
     case 'settings':
       return <SettingsPage />;
   }

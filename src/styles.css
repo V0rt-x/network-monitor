@@ -731,3 +731,209 @@ body {
   color: var(--nm-muted);
   font-size: 0.72rem;
 }
+
+/*
+ * The service status page.
+ *
+ * Cards are a grid rather than a list: the question is "which of these is red", which is a
+ * scanning task, and a column of full-width rows makes it a scrolling one.
+ */
+.nm-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.nm-status__cadence,
+.nm-status__caveat {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.8rem;
+}
+
+.nm-status__shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nm-status__shelfhead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.nm-status__shelftitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.nm-status__shelfhint {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+}
+
+.nm-status__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 0.75rem;
+}
+
+.nm-service {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background: var(--nm-surface);
+  border: 1px solid var(--nm-border);
+  border-radius: 0.6rem;
+}
+
+.nm-service__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nm-service__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.nm-service__meta {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nm-service__rtt {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.15rem;
+}
+
+.nm-service__checked {
+  color: var(--nm-muted);
+  font-size: 0.75rem;
+}
+
+/*
+ * A check older than two whole intervals is not merely aging — something has stopped, and a
+ * status page whose data quietly stopped arriving looks exactly like one reporting calm.
+ */
+.nm-service__stale {
+  color: var(--nm-warn);
+  font-size: 0.75rem;
+}
+
+.nm-service__endpoints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.nm-service__endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.nm-service__endpointhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.nm-service__address {
+  color: var(--nm-muted);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.nm-service__metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.nm-service__metrics dt {
+  color: var(--nm-muted);
+}
+
+.nm-service__metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The mini-timeline: one cell per check, oldest on the left.
+ *
+ * Colour is a second channel and never the only one — every cell carries its translated
+ * word as a title and in visually hidden text, so a screen reader and a user without
+ * colour vision both get the same history.
+ */
+.nm-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 2px;
+  height: 18px;
+}
+
+.nm-timeline__empty {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.75rem;
+}
+
+.nm-check {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--nm-unknown);
+}
+
+.nm-check--answered {
+  background: var(--nm-ok);
+}
+
+.nm-check--slow {
+  background: var(--nm-degraded);
+}
+
+.nm-check--lost {
+  background: var(--nm-unreachable);
+}
+
+/* A refusal is a definitive answer from a working path, so it reads as knowledge rather
+   than as an outage — quieter than a lost check, and not the same colour. */
+.nm-check--refused {
+  background: var(--nm-alive);
+}
+
+.nm-check--filtered {
+  background: var(--nm-blocked);
+}
+
+.nm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

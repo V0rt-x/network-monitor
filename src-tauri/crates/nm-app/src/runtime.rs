@@ -33,6 +33,7 @@ use nm_core::address::{AddressClass, AddressPolicy};
 use nm_core::endpoint::{AppId, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::ProbeSample;
+use nm_core::status::StatusThresholds;
 use nm_core::target::{TargetId, TargetRegistry, TargetTag};
 use nm_platform::interface::InterfaceNames;
 use nm_platform::process::{Pid, ProcessInfo};
@@ -54,7 +55,9 @@ use crate::discovery::{Discovery, FlowStatus, Sighting};
 use crate::events::AppEndpoints;
 use crate::monitor::{health_window, BaselineMonitor};
 use crate::presets::PresetList;
+use crate::services::{self, ResolvedService};
 use crate::settings::Settings;
+use crate::status::ServiceMonitor;
 use crate::view::{AppProcessView, AppView};
 use crate::Error;
 
@@ -206,6 +209,7 @@ async fn session(
     let policy = AddressPolicy::default();
     let lifecycle = LifecyclePolicy::default();
     let mut baselines = BaselineMonitor::new(HealthThresholds::default(), health_window(interval));
+    let mut services = ServiceMonitor::new(StatusThresholds::default());
     let mut apps = match AppMonitor::new(
         policy.clone(),
         lifecycle,
@@ -228,7 +232,15 @@ async fn session(
     let (report_sender, mut reports) = mpsc::channel::<Completed>(REPORT_QUEUE);
     let (refusals, mut refused) = mpsc::channel::<TargetId>(COMMAND_QUEUE);
 
-    match build(settings, &mut baselines, &mut registry, &policy).await {
+    match build(
+        settings,
+        &mut baselines,
+        &mut services,
+        &mut registry,
+        &policy,
+    )
+    .await
+    {
         Ok(engine) => {
             tauri::async_runtime::spawn(nm_probes::runner::drive(
                 engine.runner,
@@ -270,6 +282,7 @@ async fn session(
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
                 Some(MonitorCommand::WindowRevealed) => {
                     emit_health(app, &baselines, started);
+                    emit_services(app, &services);
                     emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
                 }
                 Some(MonitorCommand::MonitorApp(pid)) => {
@@ -295,7 +308,13 @@ async fn session(
                 None => return SessionEnd::Shutdown,
             },
             Some(completed) = reports.recv() => {
-                let changes = fold_in(&mut baselines, &mut apps, &mut registry, &completed);
+                let changes = fold_in(
+                    &mut baselines,
+                    &mut services,
+                    &mut apps,
+                    &mut registry,
+                    &completed,
+                );
                 queue(&mut pending, changes, &refusals);
             }
             Some(observation) = observations.recv() => observe(&mut apps, applications, observation),
@@ -320,6 +339,7 @@ async fn session(
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
                     emit_health(app, &baselines, started);
+                    emit_services(app, &services);
                     emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
                 }
             }
@@ -481,12 +501,19 @@ fn flush(pending: &mut VecDeque<ProbeCommand>, probe_commands: &mpsc::Sender<Pro
 /// turns into the hops that will be probed along it.
 fn fold_in(
     baselines: &mut BaselineMonitor,
+    services: &mut ServiceMonitor,
     apps: &mut AppMonitor,
     registry: &mut TargetRegistry,
     completed: &Completed,
 ) -> Vec<TargetChange> {
     let id = completed.report.id;
     baselines.note_probe_state(
+        id,
+        completed.progress.kind,
+        completed.progress.filtering_confirmed,
+        completed.progress.measurable,
+    );
+    services.note_probe_state(
         id,
         completed.progress.kind,
         completed.progress.filtering_confirmed,
@@ -507,6 +534,7 @@ fn fold_in(
         Measured::Probe { outcome, .. } => {
             let sample = ProbeSample::new(completed.report.at, *outcome);
             baselines.record(id, sample);
+            services.record(id, sample);
             apps.record(id, sample);
             Vec::new()
         }
@@ -523,6 +551,16 @@ fn emit_health(app: &AppHandle<Wry>, monitor: &BaselineMonitor, started: Instant
     // A failed emit means the window is gone; the next tick finds that out too, and there
     // is nothing to recover.
     let _ = monitor.snapshot(Instant::now(), uptime).emit(app);
+}
+
+/// Pushes the status page to the window.
+///
+/// Sent on the ordinary beat even though checks are minutes apart: the page must be filled
+/// the moment it is opened, and a card whose only news is that its last check is now a
+/// minute older is still news — a status page whose data quietly stopped arriving looks
+/// exactly like one reporting that everything is fine.
+fn emit_services(app: &AppHandle<Wry>, monitor: &ServiceMonitor) {
+    let _ = monitor.snapshot(Instant::now()).emit(app);
 }
 
 /// Pushes every monitored application's endpoints to the window.
@@ -577,10 +615,11 @@ struct Engine {
     probers: ProberSet,
 }
 
-/// Builds the probe engine and registers every baseline target with it.
+/// Builds the probe engine and registers every baseline and status-page target with it.
 async fn build(
     settings: &Settings,
     monitor: &mut BaselineMonitor,
+    services: &mut ServiceMonitor,
     registry: &mut TargetRegistry,
     policy: &AddressPolicy,
 ) -> Result<Engine, Error> {
@@ -598,7 +637,65 @@ async fn build(
         register(registry, &mut runner, monitor, policy, target, now)?;
     }
 
+    // The status page shares this engine and its rate cap, which is the whole reason it is
+    // registered here rather than given a runner of its own: a second token bucket would
+    // quietly double the traffic the product promises not to send.
+    let list = services::ServiceList::bundled()?;
+    for service in &services::resolve_list(&list).await {
+        register_service(registry, &mut runner, services, policy, service, now)?;
+    }
+
     Ok(Engine { runner, probers })
+}
+
+/// Registers one status-page service with the registry, the runner and the monitor.
+///
+/// Each endpoint is checked at [`crate::status::CHECK_INTERVAL`] rather than the baselines'
+/// cadence: a platform being up changes on the scale of minutes, and this list is probed
+/// whether or not the user is doing anything.
+fn register_service(
+    registry: &mut TargetRegistry,
+    runner: &mut ProbeRunner,
+    monitor: &mut ServiceMonitor,
+    policy: &AddressPolicy,
+    service: &ResolvedService,
+    now: Instant,
+) -> Result<(), Error> {
+    let mut handles = Vec::with_capacity(service.endpoints.len());
+    let mut tunnelled = Vec::new();
+
+    for endpoint in &service.endpoints {
+        // The name never resolved. The endpoint stays on the page, visible and unchecked,
+        // because under censorship a lookup that fails is itself the finding.
+        let Some(address) = endpoint.address else {
+            handles.push(None);
+            continue;
+        };
+
+        let id = registry.insert(address, TargetTag::StatusService)?;
+        if policy.classify(address.ip) == AddressClass::TunnelSentinel {
+            tunnelled.push(id);
+        }
+        // The list's probe-kind hint only reorders the kinds the address class already
+        // allows — see `FallbackChain::starting_with`. It is here to save a status page
+        // several whole check intervals of silence on a front door that does not answer
+        // echoes, not to let a data file choose a figure a tunnel would invent.
+        if runner
+            .add_preferring(id, address, None, service.probe_kind, now)
+            .is_err()
+        {
+            handles.push(None);
+            continue;
+        }
+        let _ = runner.set_interval(id, crate::status::CHECK_INTERVAL, now);
+        handles.push(Some(id));
+    }
+
+    monitor.add(service, &handles)?;
+    for id in tunnelled {
+        monitor.note_tunnelled(id);
+    }
+    Ok(())
 }
 
 /// Registers one baseline target with the registry, the runner and the monitor.
