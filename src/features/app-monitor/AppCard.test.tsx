@@ -53,6 +53,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   jitterMs: 3,
   lossPct: 0,
   path: null,
+  flow: null,
   chartRttMs: [24, null, 25],
   chartPathMs: [null, null, null],
   ...overrides,

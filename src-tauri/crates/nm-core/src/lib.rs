@@ -40,6 +40,7 @@ pub mod backoff;
 pub mod cidr;
 pub mod edge;
 pub mod endpoint;
+pub mod flow;
 pub mod health;
 pub mod history;
 pub mod path;

@@ -49,7 +49,7 @@ pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth};
 pub use shell::TrayLabels;
 pub use view::{
     AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
-    EndpointView, FlowStatusView, GroupView, HealthCountsView, HealthView, LivenessView,
+    EndpointView, FlowStatusView, FlowView, GroupView, HealthCountsView, HealthView, LivenessView,
     ProbeKindView, ProbingView, TargetView, TransportView, SERIES_POINTS,
 };
 

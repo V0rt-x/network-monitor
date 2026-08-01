@@ -29,6 +29,15 @@ export const formatMs = (value: Numeric, locale: string): string =>
 export const formatPct = (value: Numeric, locale: string): string =>
   value === null ? NO_VALUE : formatterFor(locale, value > 0 && value < 1 ? 1 : 0).format(value);
 
+/**
+ * A rate per second, such as how many updates a second are arriving.
+ *
+ * One decimal place: a game's tick is a round number the user recognises — twenty, sixty —
+ * and the fraction is what shows it slipping.
+ */
+export const formatRate = (value: Numeric, locale: string): string =>
+  value === null ? NO_VALUE : formatterFor(locale, 1).format(value);
+
 /** A whole count, such as how many members of a group are in a state. */
 export const formatCount = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale).format(value);

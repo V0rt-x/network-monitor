@@ -31,16 +31,16 @@ export const PathPanel = ({ path }: PathPanelProps) => {
 
   return (
     <section className="nm-path">
-      <header className="nm-path__header">
-        <h4 className="nm-path__title">{t('apps.path.heading')}</h4>
+      <header className="nm-panel__header">
+        <h4 className="nm-panel__title">{t('apps.path.heading')}</h4>
         <span className={`nm-health ${pathQualityModifier(path.quality)}`}>
           {t(pathQualityKey(path.quality))}
         </span>
       </header>
 
-      <p className="nm-path__note">{t('apps.path.note')}</p>
+      <p className="nm-panel__note">{t('apps.path.note')}</p>
 
-      <p className="nm-path__where">
+      <p className="nm-panel__where">
         {path.hopTtl === null
           ? t('apps.path.hopUnknown')
           : t('apps.path.hop', { ttl: path.hopTtl })}

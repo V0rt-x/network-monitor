@@ -32,6 +32,7 @@ export type {
   CoreStatus,
   EndpointView,
   FlowStatusView,
+  FlowView,
   GroupView,
   HealthCountsView,
   HealthView,

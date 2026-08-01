@@ -18,6 +18,7 @@ use nm_app::apps::AppMonitor;
 use nm_app::{AppProcessView, AppView, HealthCountsView, HealthView, ProbeKindView, TransportView};
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
+use nm_core::flow::{FlowInstant, FlowObservation};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
 use nm_core::target::{TargetId, TargetRegistry};
@@ -31,6 +32,14 @@ const APP_ID: u32 = 1;
 /// Enough samples to clear the minimum a verdict needs: one lost packet is not an outage,
 /// and the thresholds refuse to judge below that.
 const ENOUGH: u32 = 8;
+
+/// One sighting that carried `bytes` of traffic.
+///
+/// The moment is fixed because these tests are about what the page does with a byte count;
+/// the arrival-timing figures, which need distinct stamps, build their own streams.
+fn traffic(bytes: u32) -> FlowObservation {
+    FlowObservation::received(FlowInstant::from_origin(Duration::from_secs(1)), bytes)
+}
 
 fn monitor() -> (AppMonitor, TargetRegistry, Instant) {
     let mut monitor = AppMonitor::new(
@@ -232,7 +241,7 @@ fn every_caveat_travels_with_the_number() {
     ));
     let egress = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
     monitor
-        .observe(APP, sentinel, Some(egress), Some(4_096), now)
+        .observe(APP, sentinel, Some(egress), Some(traffic(4_096)), now)
         .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
     monitor.note_probe_state(ids[0], Some(ProbeKind::TlsHello), true, true);
@@ -269,7 +278,7 @@ fn a_game_server_carrying_traffic_is_never_called_unreachable() {
     // server is down" about a server the user is playing on.
     let (mut monitor, mut registry, now) = monitor();
     monitor
-        .observe(APP, udp(1), None, Some(630_000), now)
+        .observe(APP, udp(1), None, Some(traffic(630_000)), now)
         .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
@@ -282,6 +291,11 @@ fn a_game_server_carrying_traffic_is_never_called_unreachable() {
     assert_eq!(view.counts.unreachable, 0);
     // And it claims nothing it did not measure: liveness is not latency.
     assert_eq!(endpoint.rtt_ms, None);
+    assert_eq!(
+        endpoint.loss_pct, None,
+        "every probe timed out, but those probes were ours and the port is not one the \
+         game plays over — quoting 100 % loss here would report a working server as dead"
+    );
     assert_eq!(endpoint.recent_bytes, Some(630_000.0));
 }
 
@@ -291,7 +305,9 @@ fn a_silent_endpoint_with_no_traffic_is_still_unreachable() {
     // and inventing life for an endpoint nothing has been seen crossing would be the same
     // failure in the opposite direction.
     let (mut monitor, mut registry, now) = monitor();
-    monitor.observe(APP, udp(1), None, Some(0), now).unwrap();
+    monitor
+        .observe(APP, udp(1), None, Some(traffic(0)), now)
+        .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
@@ -304,7 +320,7 @@ fn a_measured_endpoint_keeps_the_verdict_its_probes_earned() {
     // Traffic must not paper over a degraded path — that is the finding the user came for.
     let (mut monitor, mut registry, now) = monitor();
     monitor
-        .observe(APP, udp(1), None, Some(630_000), now)
+        .observe(APP, udp(1), None, Some(traffic(630_000)), now)
         .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
     fill(
@@ -323,9 +339,11 @@ fn a_live_but_unmeasured_endpoint_sorts_below_the_broken_ones() {
     // It needs no action from the user, so it must not sit above an endpoint that does.
     let (mut monitor, mut registry, now) = monitor();
     monitor
-        .observe(APP, udp(1), None, Some(630_000), now)
+        .observe(APP, udp(1), None, Some(traffic(630_000)), now)
         .unwrap();
-    monitor.observe(APP, udp(2), None, Some(0), now).unwrap();
+    monitor
+        .observe(APP, udp(2), None, Some(traffic(0)), now)
+        .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
     fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
@@ -472,6 +490,144 @@ fn a_chart_slot_shows_the_slowest_round_trip_in_it() {
     assert!(
         view.endpoints[0].chart_rtt_ms.contains(&Some(90.0)),
         "the spike survives being put on a coarser grid"
+    );
+}
+
+/// A match server's traffic: twenty updates a second each way, on the operating system's
+/// own event clock, starting `from_ms` after that clock's origin.
+fn play(monitor: &mut AppMonitor, key: EndpointKey, now: Instant, from_ms: u64, updates: u64) {
+    for index in 0..updates {
+        let moment = from_ms + index * 50;
+        monitor
+            .observe(
+                APP,
+                key,
+                None,
+                Some(FlowObservation::sent(
+                    FlowInstant::from_origin(Duration::from_millis(moment)),
+                    64,
+                )),
+                now,
+            )
+            .unwrap();
+        monitor
+            .observe(
+                APP,
+                key,
+                None,
+                Some(FlowObservation::received(
+                    FlowInstant::from_origin(Duration::from_millis(moment + 10)),
+                    1_024,
+                )),
+                now,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn a_silent_match_server_gets_a_flow_column_while_its_own_figures_stay_dashes() {
+    // The rule the whole phase exists to protect. Nothing we can send reaches a game's
+    // match server, so its round trip, jitter and loss have to stay empty — and the traffic
+    // crossing it is measured all the same, in a column of its own. Filling those three
+    // dashes with the nearest available number is precisely how this product would start
+    // lying.
+    let (mut monitor, mut registry, now) = monitor();
+    play(&mut monitor, udp(1), now, 0, 200);
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let endpoint = &view.endpoints[0];
+
+    assert_eq!(endpoint.health, HealthView::CarryingTraffic);
+    assert_eq!(endpoint.rtt_ms, None, "nothing measured a round trip");
+    assert_eq!(endpoint.jitter_ms, None);
+    assert_eq!(endpoint.loss_pct, None);
+
+    let flow = endpoint.flow.expect("its own traffic is the other column");
+    let updates = flow.updates_per_sec.expect("two hundred updates is plenty");
+    assert!(
+        (updates - 20.0).abs() < 1.0,
+        "twenty updates a second: {updates}"
+    );
+    assert!(
+        flow.arrival_mean_ms
+            .is_some_and(|mean| (mean - 50.0).abs() < 1.0),
+        "the cadence is fifty milliseconds"
+    );
+    assert!(
+        flow.arrival_jitter_ms.is_some_and(|jitter| jitter < 1.0),
+        "a regular stream is not a jittery one"
+    );
+    assert_eq!(flow.stall_ms, None, "traffic is flowing both ways");
+    assert!(flow.received_bytes_per_sec > 0.0);
+}
+
+#[test]
+fn an_endpoint_with_no_flow_events_has_no_flow_column() {
+    // A machine without the one-time tracing setup discovers TCP endpoints from the
+    // connection table and counts nothing. An empty column must read as absent, never as
+    // zero throughput on an endpoint the user is playing over.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+
+    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    assert_eq!(view.endpoints[0].flow, None);
+}
+
+#[test]
+fn an_idle_endpoint_stops_reporting_a_flow_column() {
+    // The passive figures live on the operating system's event clock, which cannot be
+    // compared with ours — so this history has no way of knowing it has gone stale. An
+    // endpoint the application stopped using would otherwise go on showing the arrival
+    // pattern of a match that ended.
+    let (mut monitor, mut registry, now) = monitor();
+    play(&mut monitor, udp(1), now, 0, 200);
+    let _ = registered(&mut monitor, &mut registry, now);
+
+    let fresh = view(&monitor, now);
+    assert!(fresh.endpoints[0].flow.is_some());
+
+    // Liveness moves on the sweep, which is where the tracker ages everything.
+    let later = now + Duration::from_secs(60);
+    let _ = monitor.sweep(&mut registry, later);
+    let stale = view(&monitor, later);
+    assert_eq!(stale.endpoints[0].liveness, nm_app::LivenessView::Idle);
+    assert_eq!(stale.endpoints[0].flow, None);
+}
+
+#[test]
+fn sending_into_silence_reports_a_stall_rather_than_a_loss_figure() {
+    // A one-way outage, seen without a probe. It is deliberately not called loss: only the
+    // far end knows what it sent, so a datagram that never arrived is invisible from here.
+    let (mut monitor, mut registry, now) = monitor();
+    play(&mut monitor, udp(1), now, 0, 100);
+    for index in 0..20 {
+        monitor
+            .observe(
+                APP,
+                udp(1),
+                None,
+                Some(FlowObservation::sent(
+                    FlowInstant::from_origin(Duration::from_millis(5_100 + index * 50)),
+                    64,
+                )),
+                now,
+            )
+            .unwrap();
+    }
+    let _ = registered(&mut monitor, &mut registry, now);
+
+    let flow = view(&monitor, now).endpoints[0]
+        .flow
+        .expect("the endpoint is still in use");
+    let stall = flow.stall_ms.expect("a second of unanswered sending");
+    assert!(
+        stall > 900.0 && stall < 1_200.0,
+        "the stall is measured from the last arrival: {stall}"
     );
 }
 

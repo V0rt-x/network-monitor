@@ -50,6 +50,7 @@ use nm_core::edge::{EdgePolicy, EdgeReading, PathEdge};
 use nm_core::endpoint::{
     AppId, EndpointKey, EndpointTracker, LifecyclePolicy, Liveness, Probing, TrackedEndpoint,
 };
+use nm_core::flow::{FlowMetrics, FlowObservation, FlowPolicy, FlowReading};
 use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
 use nm_core::path::PathTrace;
@@ -176,6 +177,12 @@ struct Entry {
     probe_kind: Option<ProbeKind>,
     filtering_confirmed: bool,
     history: SampleHistory,
+    /// What the endpoint's own traffic says, as against what our probes say.
+    ///
+    /// The second of the two columns a match server gets. It costs no packets — the events
+    /// are already being delivered for discovery — and it is the only figure that describes
+    /// the traffic the user is actually playing over.
+    flow: FlowMetrics,
 }
 
 /// The applications sharing one probe target.
@@ -230,6 +237,9 @@ pub struct AppMonitor {
     policy: AddressPolicy,
     thresholds: HealthThresholds,
     window: Duration,
+    /// How the passive figures are computed. Held here rather than per entry: every
+    /// endpoint of every application is judged by the same rules.
+    flow_policy: FlowPolicy,
     edge_policy: EdgePolicy,
     /// At most one per application — see [`AppMonitor::retune_edges`].
     edges: BTreeMap<(AppId, EndpointKey), PathEdge>,
@@ -270,6 +280,7 @@ impl AppMonitor {
             policy,
             thresholds,
             window,
+            flow_policy: FlowPolicy::default(),
             edge_policy: EdgePolicy::default(),
             edges: BTreeMap::new(),
             hops: HashMap::new(),
@@ -332,9 +343,10 @@ impl AppMonitor {
         app: AppId,
         endpoint: EndpointKey,
         source: Option<IpAddr>,
-        bytes: Option<u64>,
+        flow: Option<FlowObservation>,
         now: Instant,
     ) -> Result<(), Error> {
+        let bytes = flow.map(|flow| u64::from(flow.bytes));
         self.tracker.observe(app, endpoint, bytes, now)?;
 
         if let Some(entry) = self.entries.get_mut(&(app, endpoint)) {
@@ -344,11 +356,19 @@ impl AppMonitor {
             if source.is_some() && entry.source != source {
                 entry.source = source;
             }
+            if let Some(flow) = flow {
+                entry.flow.record(flow);
+            }
             return Ok(());
         }
 
         let tunnelled = self.policy.classify(endpoint.address.ip()) == AddressClass::TunnelSentinel;
         let history = SampleHistory::new(HISTORY_CAPACITY).map_err(nm_probes::Error::Core)?;
+        let mut metrics =
+            FlowMetrics::with_policy(self.flow_policy).map_err(nm_probes::Error::Core)?;
+        if let Some(flow) = flow {
+            metrics.record(flow);
+        }
         self.entries.insert(
             (app, endpoint),
             Entry {
@@ -362,6 +382,7 @@ impl AppMonitor {
                 probe_kind: None,
                 filtering_confirmed: false,
                 history,
+                flow: metrics,
             },
         );
         Ok(())
@@ -1019,6 +1040,18 @@ pub struct EndpointReport {
     /// it is the round trip to a *router short of* the endpoint, not to the endpoint. Merging
     /// the two into one figure called "ping" is the lie this product exists not to tell.
     pub path: Option<EdgeReading>,
+    /// What the endpoint's own traffic says, measured passively.
+    ///
+    /// The other of the two columns, and a different quantity again: not a round trip to
+    /// anything, but the arrival pattern of the data the application is actually exchanging.
+    /// A clean route beside ragged arrivals is a server-side problem; a ragged route beside
+    /// clean arrivals is a router rate-limiting our probes. That disagreement is the
+    /// diagnosis, and merging the two would destroy it.
+    ///
+    /// [`None`] where no flow source is running — the ordinary state on a Windows machine
+    /// without the one-time tracing setup — and where the application has stopped using the
+    /// endpoint, since a reading from the event clock cannot say how old it is.
+    pub flow: Option<FlowReading>,
     /// Its statistics over the health window.
     pub stats: WindowStats,
     /// The verdict those statistics imply.
@@ -1084,6 +1117,13 @@ impl EndpointReport {
             probe_kind: entry.probe_kind,
             filtering_confirmed: entry.filtering_confirmed,
             path,
+            // Only while the application is still using the endpoint. The passive figures
+            // live on the operating system's event clock, which cannot be compared with
+            // ours, so this history has no way of knowing it has gone stale — an idle
+            // endpoint would go on showing the arrival pattern of a match that ended.
+            flow: matches!(tracked.liveness(), Liveness::Active)
+                .then(|| entry.flow.reading())
+                .flatten(),
             health,
             stats,
         }

@@ -21,6 +21,10 @@ pub enum Error {
     #[error("a probe interval must be greater than zero")]
     ZeroInterval,
 
+    /// A zero flow window would make every passive rate a division by nothing.
+    #[error("the flow window must be greater than zero")]
+    ZeroFlowWindow,
+
     /// A CIDR block could not be parsed, or its prefix was wider than its address family.
     #[error("`{raw}` is not a valid CIDR block")]
     InvalidCidr {

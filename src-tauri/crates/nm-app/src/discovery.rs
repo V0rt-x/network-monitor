@@ -39,8 +39,9 @@ use std::time::{Duration, Instant};
 
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::EndpointKey;
+use nm_core::flow::{FlowInstant, FlowObservation};
 use nm_platform::connection::{Connection, ConnectionTable, Protocol};
-use nm_platform::flow::{FlowEvent, FlowEventSource, FlowSink};
+use nm_platform::flow::{FlowDirection, FlowEvent, FlowEventSource, FlowSink};
 use nm_platform::process::Pid;
 use tokio::sync::mpsc;
 
@@ -78,12 +79,24 @@ pub struct Observation {
     /// [`None`] when the socket names no address of its own, which tells us nothing about
     /// the route and must not be turned into a guess.
     pub source: Option<IpAddr>,
-    /// Bytes this sighting accounts for, or [`None`] where the source cannot count them.
+    /// What the operating system counted, when it counted anything.
     ///
     /// A connection table always answers [`None`]: it reports that a socket exists, never
-    /// how busy it is. Reporting `Some(0)` would make an unmeasured endpoint
+    /// how busy it is, and never when. Reporting a zero would make an unmeasured endpoint
     /// indistinguishable from an idle one.
-    pub bytes: Option<u64>,
+    ///
+    /// Where it is present it carries the kernel's own timestamp, which is what the passive
+    /// metrics in [`nm_core::flow`] are built on — the arrival pattern of the traffic the
+    /// application is actually exchanging, as against the probes we send in its place.
+    pub flow: Option<FlowObservation>,
+}
+
+impl Observation {
+    /// Bytes this sighting accounts for, or [`None`] where nothing counted them.
+    #[must_use]
+    pub fn bytes(&self) -> Option<u64> {
+        self.flow.map(|flow| u64::from(flow.bytes))
+    }
 }
 
 /// Whether per-process flow events are being delivered.
@@ -133,7 +146,7 @@ pub fn from_connection(row: &Connection) -> Option<Observation> {
         pid: row.pid,
         endpoint: endpoint_key(row.protocol, peer),
         source: egress(row.local.ip()),
-        bytes: None,
+        flow: None,
     })
 }
 
@@ -146,11 +159,20 @@ pub fn from_flow(event: &FlowEvent) -> Option<Observation> {
     if event.remote.ip().is_unspecified() || event.remote.port() == 0 {
         return None;
     }
+    // A byte count wider than a datagram cannot happen for these events, but saturating
+    // rather than truncating keeps an absurd value absurd instead of turning it into a
+    // plausible small one.
+    let bytes = u32::try_from(event.bytes).unwrap_or(u32::MAX);
+    let at = FlowInstant::from_origin(event.observed_at);
+    let flow = match event.direction {
+        FlowDirection::Sent => FlowObservation::sent(at, bytes),
+        FlowDirection::Received => FlowObservation::received(at, bytes),
+    };
     Some(Observation {
         pid: event.pid,
         endpoint: endpoint_key(event.protocol, event.remote),
         source: egress(event.local.ip()),
-        bytes: Some(event.bytes),
+        flow: Some(flow),
     })
 }
 

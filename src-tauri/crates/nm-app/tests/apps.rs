@@ -16,6 +16,7 @@ use nm_app::apps::{AppMonitor, TargetChange};
 use nm_core::address::AddressPolicy;
 use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
+use nm_core::flow::{FlowInstant, FlowObservation};
 use nm_core::health::{Health, HealthThresholds};
 use nm_core::path::{Hop, PathTrace};
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
@@ -24,6 +25,14 @@ use nm_probes::probe::ProbeKind;
 
 const APP: AppId = AppId::new(1);
 const OTHER: AppId = AppId::new(2);
+
+/// One sighting that carried `bytes` of traffic.
+///
+/// The moment is fixed because these tests are about what discovery does with a byte
+/// count; the arrival-timing figures, which need distinct stamps, build their own streams.
+fn traffic(bytes: u32) -> FlowObservation {
+    FlowObservation::received(FlowInstant::from_origin(Duration::from_secs(1)), bytes)
+}
 
 fn monitor() -> AppMonitor {
     AppMonitor::new(
@@ -69,7 +78,7 @@ fn registrations(changes: &[TargetChange]) -> Vec<TargetId> {
 fn a_discovered_endpoint_becomes_a_probe_target() {
     let (mut monitor, mut registry, now) = watching();
     monitor
-        .observe(APP, udp(1), Some(local(9)), Some(64), now)
+        .observe(APP, udp(1), Some(local(9)), Some(traffic(64)), now)
         .unwrap();
 
     let changes = monitor.sweep(&mut registry, now);
@@ -526,7 +535,9 @@ fn endpoints_of_one_application_hold_independent_states() {
 fn throughput_stays_unknown_when_nothing_counts_it() {
     let (mut monitor, mut registry, now) = watching();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
-    monitor.observe(APP, udp(2), None, Some(512), now).unwrap();
+    monitor
+        .observe(APP, udp(2), None, Some(traffic(512)), now)
+        .unwrap();
     monitor.sweep(&mut registry, now);
 
     let reports = monitor.endpoints(APP, now);
@@ -687,7 +698,7 @@ fn silent_but_busy() -> (
 ) {
     let (mut monitor, mut registry, now) = watching();
     monitor
-        .observe(APP, udp(1), Some(local(9)), Some(64_000), now)
+        .observe(APP, udp(1), Some(local(9)), Some(traffic(64_000)), now)
         .unwrap();
     let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
 
@@ -710,7 +721,7 @@ fn an_endpoint_that_can_still_be_probed_is_left_alone() {
     // to measure than a router short of it.
     let (mut monitor, mut registry, now) = watching();
     monitor
-        .observe(APP, udp(1), Some(local(9)), Some(64_000), now)
+        .observe(APP, udp(1), Some(local(9)), Some(traffic(64_000)), now)
         .unwrap();
     let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
     monitor.note_probe_state(endpoint, Some(ProbeKind::IcmpEcho), false, true);
@@ -848,10 +859,10 @@ fn only_the_busiest_endpoint_of_an_application_is_given_a_path_edge() {
     // allowance on a single application.
     let (mut monitor, mut registry, now) = watching();
     monitor
-        .observe(APP, udp(1), Some(local(9)), Some(1_000), now)
+        .observe(APP, udp(1), Some(local(9)), Some(traffic(1_000)), now)
         .unwrap();
     monitor
-        .observe(APP, udp(2), Some(local(9)), Some(64_000), now)
+        .observe(APP, udp(2), Some(local(9)), Some(traffic(64_000)), now)
         .unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
     for id in &registered {
@@ -884,7 +895,7 @@ fn an_edge_that_moves_to_another_endpoint_gives_up_its_hops_first() {
     // A second endpoint takes over as the busiest, and runs out of probe kinds too.
     let later = now + Duration::from_secs(1);
     monitor
-        .observe(APP, udp(2), Some(local(9)), Some(500_000), later)
+        .observe(APP, udp(2), Some(local(9)), Some(traffic(500_000)), later)
         .unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, later));
     monitor.note_probe_state(registered[0], None, false, true);

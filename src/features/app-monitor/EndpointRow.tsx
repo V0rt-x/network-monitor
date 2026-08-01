@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { formatBytes, formatMs, formatPct } from '../../shared/format';
 import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
+import { FlowPanel } from './FlowPanel';
 import { livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
 
@@ -59,10 +60,13 @@ interface EndpointRowProps {
  * baseline was already probing, whose binding was chosen before this application asked.
  * Either way the single probe cannot be promised to follow this application's route.
  *
- * An endpoint that answers nothing at all — a game's match server, normally — carries a
- * second panel for the route to it. It sits below the endpoint's own figures and never
- * replaces them: the dashes stay dashes, because nothing measured the server, and the panel
- * says in as many words which router its numbers do belong to.
+ * An endpoint that answers nothing at all — a game's match server, normally — carries two
+ * further panels, side by side and never merged: the route to it, and its own traffic. They
+ * sit below the endpoint's figures and never replace them. The dashes stay dashes, because
+ * nothing measured the server; the route panel names the router its numbers belong to, and
+ * the flow panel measures the data the application is actually exchanging. Their
+ * disagreement is the diagnosis — a clean route beside ragged arrivals is the server's
+ * problem — and a single combined "ping" would destroy it.
  *
  * **The row is the keyboard path to the chart.** Selecting it raises this endpoint's line
  * and dims the others — the same thing hovering a line does, reachable without a mouse. The
@@ -164,7 +168,18 @@ export const EndpointRow = ({
         </div>
       </dl>
 
-      {endpoint.path !== null && <PathPanel path={endpoint.path} />}
+      {/* Two columns, never one. The route is a round trip to a router short of the
+          endpoint; the flow is the arrival pattern of the traffic itself. Merging them
+          into a single figure called "ping" is the lie this product exists not to tell,
+          and their disagreement is the whole diagnosis. Either may be absent — an endpoint
+          that answers for itself needs no route, and a machine without the tracing setup
+          counts no traffic — so the pair lays out with whichever is there. */}
+      {(endpoint.path !== null || endpoint.flow !== null) && (
+        <div className="nm-endpoint__columns">
+          {endpoint.path !== null && <PathPanel path={endpoint.path} />}
+          {endpoint.flow !== null && <FlowPanel flow={endpoint.flow} />}
+        </div>
+      )}
 
       <p className="nm-endpoint__egress">
         {egressLine(endpoint, t)}

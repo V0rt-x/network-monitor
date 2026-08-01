@@ -404,6 +404,90 @@ impl From<&EdgeReading> for PathView {
     }
 }
 
+/// What an endpoint's own traffic says, measured passively.
+///
+/// The second of the two columns an endpoint that answers nothing gets, and a different
+/// quantity from the first: [`PathView`] is a round trip to a router short of the endpoint,
+/// this is the arrival pattern of the data the application is actually exchanging. **Never
+/// merged with it, and never called a ping.** Nothing here times a request against its
+/// answer — the operating system reports that datagrams arrived, not what they replied to.
+///
+/// Its value is precisely that it disagrees: a clean route beside ragged arrivals is the
+/// server's problem, a ragged route beside clean arrivals is a router rate-limiting the
+/// probes we send it. One merged figure would destroy the only diagnosis available for an
+/// endpoint nothing can be sent to.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowView {
+    /// How many seconds of traffic the figures cover.
+    ///
+    /// Stated rather than assumed: the history reaches back as far as it reaches, and a
+    /// rate quoted over a period it does not cover would be an invention.
+    pub span_secs: f64,
+    /// Bytes per second the application sent.
+    pub sent_bytes_per_sec: f64,
+    /// Bytes per second that came back.
+    pub received_bytes_per_sec: f64,
+    /// Arrivals per second from the far end, once there are enough to say.
+    ///
+    /// Datagrams of one update are counted once: a server that answers a tick with two
+    /// packets is sending twenty updates a second, not forty.
+    pub updates_per_sec: Option<f64>,
+    /// Mean interval between arrivals, in milliseconds.
+    pub arrival_mean_ms: Option<f64>,
+    /// How much those intervals vary, in milliseconds.
+    ///
+    /// **What a player feels as stutter, and not a round-trip jitter.** It folds in the
+    /// far end's own send cadence: a server that skips a tick and a network that delays one
+    /// are indistinguishable here, which is exactly why it is shown beside the route rather
+    /// than instead of it.
+    pub arrival_jitter_ms: Option<f64>,
+    /// 95th-percentile interval, in milliseconds.
+    pub arrival_p95_ms: Option<f64>,
+    /// Longest interval in the window, in milliseconds — the worst hitch.
+    pub arrival_max_ms: Option<f64>,
+    /// How long nothing has come back while the application kept sending, in milliseconds.
+    ///
+    /// A one-way outage, seen without sending a probe. `null` while traffic flows both
+    /// ways, and also whenever the application's own sending stopped — a silence of ours
+    /// says nothing about theirs.
+    pub stall_ms: Option<f64>,
+    /// How far the return traffic has fallen behind what this endpoint itself established,
+    /// as a percentage.
+    ///
+    /// Deliberately not called loss: only the far end knows what it sent, so a datagram
+    /// that never arrived is invisible here. `null` whenever it could not be said honestly.
+    pub receive_shortfall_pct: Option<f64>,
+}
+
+impl From<&nm_core::flow::FlowReading> for FlowView {
+    fn from(reading: &nm_core::flow::FlowReading) -> Self {
+        let arrival = reading.arrival;
+        Self {
+            span_secs: reading.span.as_secs_f64(),
+            sent_bytes_per_sec: reading.sent.bytes_per_sec,
+            received_bytes_per_sec: reading.received.bytes_per_sec,
+            updates_per_sec: arrival.map(|arrival| {
+                // Bounded by the ring's capacity, so the count converts exactly.
+                #[allow(clippy::cast_precision_loss)]
+                let bursts = arrival.bursts as f64;
+                let secs = reading.span.as_secs_f64();
+                if secs > 0.0 {
+                    bursts / secs
+                } else {
+                    0.0
+                }
+            }),
+            arrival_mean_ms: arrival.map(|arrival| arrival.mean_ms),
+            arrival_jitter_ms: arrival.map(|arrival| arrival.jitter_ms),
+            arrival_p95_ms: arrival.map(|arrival| arrival.p95_ms),
+            arrival_max_ms: arrival.map(|arrival| arrival.max_ms),
+            stall_ms: reading.stall.map(|stall| stall.as_secs_f64() * 1_000.0),
+            receive_shortfall_pct: reading.receive_shortfall_pct,
+        }
+    }
+}
+
 /// One endpoint of one monitored application.
 ///
 /// Per endpoint and never rolled up. Within one application some endpoints stay clean
@@ -486,6 +570,13 @@ pub struct EndpointView {
     /// this product exists not to tell. `null` for an endpoint that answers for itself, which
     /// needs no stand-in.
     pub path: Option<PathView>,
+    /// What the endpoint's own traffic says, measured passively.
+    ///
+    /// The other of the two columns. `null` where no flow source is running — the ordinary
+    /// state on a Windows machine that has not had the one-time tracing setup, where this
+    /// whole column is missing and the page's banner says why — and where the application
+    /// has stopped using the endpoint, since these figures cannot tell how old they are.
+    pub flow: Option<FlowView>,
     /// Round-trip time in each slot of the application's chart, or `null` for a slot with
     /// no answer in it.
     ///
@@ -546,8 +637,17 @@ impl EndpointView {
             filtering_confirmed: report.filtering_confirmed,
             rtt_ms: report.stats.rtt.map(|rtt| rtt.mean_ms),
             jitter_ms: report.stats.rtt.and_then(|rtt| rtt.jitter_ms),
-            loss_pct: report.stats.loss_pct,
+            // Withheld where the probes say nothing about the endpoint. A match server
+            // refuses every probe kind, so its window is 100 % loss — of ours, at a port the
+            // game never plays over. Printing that beside "carrying traffic" would report a
+            // working server as dropping everything.
+            loss_pct: report
+                .health
+                .probes_describe_the_endpoint()
+                .then_some(report.stats.loss_pct)
+                .flatten(),
             path: report.path.as_ref().map(PathView::from),
+            flow: report.flow.as_ref().map(FlowView::from),
             chart_rtt_ms: report.chart_rtt_ms.clone(),
             chart_path_ms: report.chart_path_ms.clone(),
         }

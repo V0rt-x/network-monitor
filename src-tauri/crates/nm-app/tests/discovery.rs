@@ -56,6 +56,7 @@ fn udp_flow(pid: Pid, remote: SocketAddr, bytes: u64) -> FlowEvent {
         remote,
         direction: FlowDirection::Sent,
         bytes,
+        observed_at: Duration::from_secs(1),
     }
 }
 
@@ -75,7 +76,8 @@ fn an_established_connection_becomes_an_endpoint() {
         "a probe must egress the same way the application's flow does"
     );
     assert_eq!(
-        observation.bytes, None,
+        observation.bytes(),
+        None,
         "a table row says a socket exists, never how busy it is"
     );
 }
@@ -129,7 +131,7 @@ fn a_flow_event_carries_its_byte_count() {
     assert_eq!(observation.endpoint, EndpointKey::udp(server(27_015)));
     assert_eq!(observation.source, Some(client(50_000).ip()));
     assert_eq!(
-        observation.bytes,
+        observation.bytes(),
         Some(1_280),
         "ranking by recent traffic is the whole reason flow events are worth their cost"
     );
@@ -418,7 +420,7 @@ async fn a_flow_event_reaches_the_session() {
 
     let observation = next(&mut observations).await.expect("the channel is open");
     assert_eq!(observation.endpoint, EndpointKey::udp(server(27_015)));
-    assert_eq!(observation.bytes, Some(512));
+    assert_eq!(observation.bytes(), Some(512));
     assert_eq!(discovery.dropped_flow_events(), 0);
 
     // The session and the test's own copy of the sink are the only holders of the sending

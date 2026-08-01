@@ -70,6 +70,20 @@ impl Health {
     pub const fn is_alive(self) -> bool {
         matches!(self, Self::Ok | Self::Degraded | Self::CarryingTraffic)
     }
+
+    /// Whether the probes' own statistics describe the endpoint at all.
+    ///
+    /// False for [`CarryingTraffic`](Self::CarryingTraffic), and that is not a detail. Every
+    /// probe aimed at a game's match server is refused or ignored, so a window of them is
+    /// 100 % loss — of *our* probes, at a port the game never plays over, while the match
+    /// runs perfectly. Quoting that figure beside "carrying traffic" would say "this server
+    /// is dropping everything" about a server that is dropping nothing, which is the same
+    /// fabrication as calling the endpoint unreachable. What the traffic is doing is
+    /// [`crate::flow`]'s answer; the probes have none.
+    #[must_use]
+    pub const fn probes_describe_the_endpoint(self) -> bool {
+        !matches!(self, Self::CarryingTraffic)
+    }
 }
 
 /// Folds passive evidence into a verdict the probes reached on their own.

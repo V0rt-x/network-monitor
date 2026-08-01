@@ -371,7 +371,7 @@ fn observe(apps: &mut AppMonitor, applications: &Applications, observation: Obse
         app,
         observation.endpoint,
         observation.source,
-        observation.bytes,
+        observation.flow,
         Instant::now(),
     );
 }

@@ -136,6 +136,21 @@
     "metric": {
       "traffic": "Traffic ({{seconds}} s)"
     },
+    "passive": {
+      "heading": "This endpoint's own traffic",
+      "note": "Measured from the traffic itself, without sending anything. Not a round-trip time: nothing here times a request against its answer. How evenly the data arrives is what a player feels as stutter, and it includes whatever cadence the server chose — which is why it is shown beside the route rather than instead of it.",
+      "updates": "{{rate}} updates a second arriving",
+      "updatesUnknown": "Not enough arrivals yet to time them",
+      "span": "over the last {{seconds}} s",
+      "stall": "Nothing back for {{ms}} ms",
+      "perSecond": "{{bytes}}/s",
+      "metric": {
+        "arrivalJitter": "Arrival spread (ms)",
+        "arrivalWorst": "Worst gap (ms)",
+        "shortfall": "Return shortfall (%)",
+        "incoming": "Incoming"
+      }
+    },
     "path": {
       "heading": "Path to this endpoint",
       "note": "This endpoint answers nothing we can send, so these figures belong to the deepest router that does answer on the way there. It is not the round-trip time to the server: how much further the server sits is unknown.",

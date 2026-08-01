@@ -23,6 +23,7 @@
 //! eBPF where it is permitted; macOS through `proc_pidfdinfo` on socket descriptors.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
+use std::time::Duration;
 
 use crate::connection::Protocol;
 use crate::process::Pid;
@@ -58,6 +59,19 @@ pub struct FlowEvent {
     pub direction: FlowDirection,
     /// How many bytes this observation accounts for.
     pub bytes: u64,
+    /// When the operating system says it happened, since an unspecified origin.
+    ///
+    /// **Not the moment this program heard about it.** Flow events arrive in buffered
+    /// batches — measured on a live game, half of them about half a second after the fact
+    /// and the slowest a whole second — so timing them on arrival would measure the tracing
+    /// facility's flush interval rather than the traffic. This is the stamp the kernel put
+    /// on the event when it wrote it, which is what makes an arrival-timing metric possible
+    /// at all.
+    ///
+    /// Only differences between these are meaningful. The origin is whatever the platform's
+    /// event clock counts from, and no wall-clock or monotonic instant may be subtracted
+    /// from it; `nm_core::flow::FlowInstant` is the type that enforces that at the far end.
+    pub observed_at: Duration,
 }
 
 /// Where flow events are delivered.
@@ -138,6 +152,28 @@ const SOCKADDR_IN6_ADDR_OFFSET: usize = 8;
 const SOCKADDR_IN6_ADDR_END: usize = SOCKADDR_IN6_ADDR_OFFSET + 16;
 /// Full `sockaddr_in6`, including the trailing scope identifier.
 const SOCKADDR_IN6_LEN: usize = SOCKADDR_IN6_ADDR_END + 4;
+
+/// How many 100-nanosecond ticks make a second, the unit an ETW event stamp counts in.
+const TICKS_PER_SECOND: i64 = 10_000_000;
+
+/// Turns an event's raw timestamp into a duration since the clock's origin.
+///
+/// Windows hands the consumer a count of 100-nanosecond intervals. The origin (1601, in
+/// this configuration) is of no interest — only differences are — so it is kept as an
+/// opaque offset rather than converted into a date, which also keeps a measurement clock
+/// from being mistaken for a wall clock.
+///
+/// A negative count cannot occur for a real event and would mean the session was
+/// configured for a raw clock this code does not use; it becomes the origin rather than a
+/// panic or a wrapped enormous value.
+pub(crate) fn event_time(ticks: i64) -> Duration {
+    let ticks = ticks.max(0);
+    // Both divisions are of a non-negative value by a positive constant, so neither the
+    // quotient nor the remainder can be negative and both conversions hold.
+    let secs = u64::try_from(ticks / TICKS_PER_SECOND).unwrap_or(0);
+    let nanos = u32::try_from((ticks % TICKS_PER_SECOND) * 100).unwrap_or(0);
+    Duration::new(secs, nanos)
+}
 
 /// Decodes a Win32 `SOCKADDR` blob into a socket address.
 ///
@@ -327,6 +363,41 @@ mod tests {
             decoded,
             Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
         );
+    }
+
+    #[test]
+    fn an_event_stamp_keeps_its_hundred_nanosecond_resolution() {
+        // The resolution is the whole point: intervals between datagrams of a 20 Hz stream
+        // are tens of milliseconds, and the jitter inside them is a fraction of one.
+        assert_eq!(event_time(0), Duration::ZERO);
+        assert_eq!(event_time(1), Duration::from_nanos(100));
+        assert_eq!(event_time(TICKS_PER_SECOND), Duration::from_secs(1));
+        assert_eq!(
+            event_time(TICKS_PER_SECOND + 5_000),
+            Duration::from_secs(1) + Duration::from_micros(500)
+        );
+    }
+
+    #[test]
+    fn a_real_windows_stamp_converts_without_overflowing() {
+        // Four centuries of 100 ns ticks is the actual magnitude of the field, and the
+        // arithmetic has to survive it rather than wrapping into a plausible small number.
+        let four_centuries = 133_000_000_000_000_000_i64;
+        let converted = event_time(four_centuries);
+        assert_eq!(converted.as_secs(), 13_300_000_000);
+
+        let a_millisecond_later = event_time(four_centuries + 10_000);
+        assert_eq!(
+            a_millisecond_later.saturating_sub(converted),
+            Duration::from_millis(1),
+            "the difference is the only thing this clock is for"
+        );
+    }
+
+    #[test]
+    fn a_negative_stamp_becomes_the_origin_rather_than_an_enormous_one() {
+        assert_eq!(event_time(-1), Duration::ZERO);
+        assert_eq!(event_time(i64::MIN), Duration::ZERO);
     }
 
     /// The transcribed family constants, checked against the real headers.

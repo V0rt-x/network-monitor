@@ -55,6 +55,7 @@ const ENDPOINTS: AppEndpoints = {
           jitterMs: null,
           lossPct: 100,
           path: null,
+          flow: null,
           chartRttMs: [],
           chartPathMs: [],
         },

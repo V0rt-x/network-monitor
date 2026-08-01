@@ -246,6 +246,11 @@ fn dispatch(
         return;
     }
 
+    // `NumMessages` sits beside these and is deliberately not read. It reports 1 on a send
+    // and **0 on a receive** — measured over four minutes of a live match, on every one of
+    // 4 792 arrivals — so it cannot say how many datagrams an arrival stands for. What
+    // takes its place is a measurement rather than a field: consecutive arrivals of one
+    // server update land under a millisecond apart, and `nm_core::flow` coalesces on that.
     let (Ok(local), Ok(remote), Ok(bytes)) = (
         parser.try_parse::<Vec<u8>>("LocalSockAddr"),
         parser.try_parse::<Vec<u8>>("RemoteSockAddr"),
@@ -265,6 +270,10 @@ fn dispatch(
         remote,
         direction,
         bytes: u64::from(bytes),
+        // The kernel's own stamp, not the moment this callback ran: events arrive in
+        // batches up to a buffer flush late, so the arrival-timing metrics would otherwise
+        // measure the flush interval.
+        observed_at: super::event_time(record.raw_timestamp()),
     };
 
     if let Ok(mut sink) = sink.lock() {
@@ -461,5 +470,10 @@ mod tests {
             "the byte count must be the datagram's size"
         );
         assert!(event.local.ip().is_loopback());
+        assert!(
+            !event.observed_at.is_zero(),
+            "the event must carry the kernel's own stamp — the arrival metrics measure \
+             nothing without it"
+        );
     }
 }

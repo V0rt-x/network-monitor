@@ -345,6 +345,15 @@ export type EndpointView = {
 	 */
 	path: PathView | null,
 	/**
+	 *  What the endpoint's own traffic says, measured passively.
+	 * 
+	 *  The other of the two columns. `null` where no flow source is running — the ordinary
+	 *  state on a Windows machine that has not had the one-time tracing setup, where this
+	 *  whole column is missing and the page's banner says why — and where the application
+	 *  has stopped using the endpoint, since these figures cannot tell how old they are.
+	 */
+	flow: FlowView | null,
+	/**
 	 *  Round-trip time in each slot of the application's chart, or `null` for a slot with
 	 *  no answer in it.
 	 * 
@@ -389,6 +398,72 @@ export type FlowStatusView =
 "stopped" | 
 /**  No flow source exists on this platform, or it failed for another reason. */
 "unavailable";
+
+/**
+ *  What an endpoint's own traffic says, measured passively.
+ * 
+ *  The second of the two columns an endpoint that answers nothing gets, and a different
+ *  quantity from the first: [`PathView`] is a round trip to a router short of the endpoint,
+ *  this is the arrival pattern of the data the application is actually exchanging. **Never
+ *  merged with it, and never called a ping.** Nothing here times a request against its
+ *  answer — the operating system reports that datagrams arrived, not what they replied to.
+ * 
+ *  Its value is precisely that it disagrees: a clean route beside ragged arrivals is the
+ *  server's problem, a ragged route beside clean arrivals is a router rate-limiting the
+ *  probes we send it. One merged figure would destroy the only diagnosis available for an
+ *  endpoint nothing can be sent to.
+ */
+export type FlowView = {
+	/**
+	 *  How many seconds of traffic the figures cover.
+	 * 
+	 *  Stated rather than assumed: the history reaches back as far as it reaches, and a
+	 *  rate quoted over a period it does not cover would be an invention.
+	 */
+	spanSecs: number | null,
+	/**  Bytes per second the application sent. */
+	sentBytesPerSec: number | null,
+	/**  Bytes per second that came back. */
+	receivedBytesPerSec: number | null,
+	/**
+	 *  Arrivals per second from the far end, once there are enough to say.
+	 * 
+	 *  Datagrams of one update are counted once: a server that answers a tick with two
+	 *  packets is sending twenty updates a second, not forty.
+	 */
+	updatesPerSec: number | null,
+	/**  Mean interval between arrivals, in milliseconds. */
+	arrivalMeanMs: number | null,
+	/**
+	 *  How much those intervals vary, in milliseconds.
+	 * 
+	 *  **What a player feels as stutter, and not a round-trip jitter.** It folds in the
+	 *  far end's own send cadence: a server that skips a tick and a network that delays one
+	 *  are indistinguishable here, which is exactly why it is shown beside the route rather
+	 *  than instead of it.
+	 */
+	arrivalJitterMs: number | null,
+	/**  95th-percentile interval, in milliseconds. */
+	arrivalP95Ms: number | null,
+	/**  Longest interval in the window, in milliseconds — the worst hitch. */
+	arrivalMaxMs: number | null,
+	/**
+	 *  How long nothing has come back while the application kept sending, in milliseconds.
+	 * 
+	 *  A one-way outage, seen without sending a probe. `null` while traffic flows both
+	 *  ways, and also whenever the application's own sending stopped — a silence of ours
+	 *  says nothing about theirs.
+	 */
+	stallMs: number | null,
+	/**
+	 *  How far the return traffic has fallen behind what this endpoint itself established,
+	 *  as a percentage.
+	 * 
+	 *  Deliberately not called loss: only the far end knows what it sent, so a datagram
+	 *  that never arrived is invisible here. `null` whenever it could not be said honestly.
+	 */
+	receiveShortfallPct: number | null,
+};
 
 /**  One baseline, taken together. */
 export type GroupView = {
