@@ -841,43 +841,114 @@ and **never merges them into one number called "ping"** — see the rule added t
 The only signal that measures the user's actual game traffic rather than a substitute, and
 it costs almost nothing: the events are **already being delivered**.
 
-- [ ] **Spike first, and this phase's plan depends on its answer.** `docs/etw-privileges-spike.md`
+- [x] **Spike first, and this phase's plan depends on its answer.** `docs/etw-privileges-spike.md`
       established that events `1169`/`1170` fire per *send/receive call* and carry
       `NumMessages`. Whether that gives per-datagram timing for a real game is unverified:
       a title that batches sends would report `NumMessages > 1` and the arrival timing would
       be lost. Measure on a live match: the distribution of `NumMessages`, the distribution
       of inter-event intervals on the receive direction, and the event rate per endpoint.
       Record it in `docs/`, and state plainly which of the metrics below survive.
-- [ ] **Arrival jitter**: spread of the intervals between datagrams arriving from the server.
+      — measured against a live Apex Legends session over four progressively longer runs;
+      full report in `docs/flow-metrics-spike.md`. **Every metric below survives**, and the
+      spike corrected the plan three times over:
+      *`NumMessages` is unusable.* It reports **0 on every receive event** — all 4 792 of
+      them over four minutes — and 1 on every send. The field the spike was built to
+      interrogate cannot count datagrams, so the product does not read it at all, and a
+      comment stands where it would be read so nobody restores it.
+      *What replaces it is a measurement.* One event really is one datagram: **0 of 4 791
+      intervals were under a millisecond**, and 97 % landed within 45–55 ms of each other —
+      the server's own 20 Hz tick. Per-datagram timing survives intact.
+      *But a server may answer one tick with two packets.* Another phase of the same session
+      put **a third of arrivals under a millisecond apart, in pairs**, with the usual cadence
+      between the pairs. Timed raw, that stream reports enormous jitter while arriving
+      perfectly regularly — so arrivals closer than 5 ms are coalesced into one update, a
+      threshold two orders of magnitude clear of both clusters the data showed.
+      *And the events arrive late.* Delivery lag is p50 511 ms, p95 964 ms, max 1015 ms —
+      the tracing facility's one-second buffer flush, which cannot be set lower. Timing
+      intervals on our own clock would therefore have measured the flush rather than the
+      traffic. Hence `FlowInstant`, a clock type that cannot be added to an `Instant`, and
+      hence the correction to the stall detector below.
+- [x] **Arrival jitter**: spread of the intervals between datagrams arriving from the server.
       This is what the player feels as stutter. It is **not** RTT and must never be labelled
       as one — it also folds in the server's own send cadence, which is a feature rather than
       a flaw: combined with a clean path (A) it is what points at a server-side problem.
-- [ ] **Rate asymmetry**: our send rate is fully known, so a receive rate that falls while
+      — `nm_core::flow::ArrivalStats`, over *updates* rather than raw events, with the worst
+      gap in the window shown beside the spread because that is the hitch a player recognises.
+- [x] **Rate asymmetry**: our send rate is fully known, so a receive rate that falls while
       sending holds steady is loss or a stall on the far side.
-- [ ] **Stall detector**: sending continues, nothing comes back for N hundred milliseconds.
+      — reported as a **shortfall against the endpoint's own recent past**, never against an
+      assumption of symmetry: no protocol owes one datagram back per datagram sent, so a ratio
+      of anything but one means nothing while a *change* in it means something. The window's
+      last quarter is compared with the three before it, and the figure is withheld outright
+      unless our own send rate held at four fifths of its earlier value — a game closing, a
+      match ending or a player alt-tabbing all cut the outgoing rate, and every one of them
+      would otherwise be reported as the far end dropping traffic. Deliberately not called
+      loss: only the far end knows what it sent.
+- [x] **Stall detector**: sending continues, nothing comes back for N hundred milliseconds.
       A one-way outage, visible instantly and without sending a single probe.
-- [ ] All of it pure in `nm-core`, clock-injected, tested against synthetic event streams —
+      — **with one correction the spike forced: not "instantly".** The stall itself is
+      measured exactly, from the kernel's own stamps, but the events carrying that news
+      arrive up to a second late. Half a second of silence is the threshold — ten missed
+      updates at the cadence a real game showed — and it is never claimed when the
+      application's own sending stopped too, because a silence of ours is no evidence about
+      theirs.
+- [x] All of it pure in `nm-core`, clock-injected, tested against synthetic event streams —
       the same discipline as every other metric.
+      — `nm_core::flow`, 25 unit tests, no clock and no I/O.
 
 ### C — free real RTT where the OS already has it
 
-- [ ] **Passive TCP RTT from event `1477`** (`RttUs`/`MinRttUs`/`MaxRttUs`), which the Phase 4
+- [x] **Passive TCP RTT from event `1477`** (`RttUs`/`MinRttUs`/`MaxRttUs`), which the Phase 4
       spike found on the same unelevated session the app already opens. Not the match server,
       but a *true* round-trip time for the game's login, CDN and voice endpoints, at the cost
       of one more event number in the filter. Moved here from Phase 8+, where it was parked
       as expensive; it is not.
+      — built, and it cost rather more than one event number. The spike settled three things
+      the plan had assumed:
+      *It is not on the same subscription.* The provider's manifest puts 1477 under a
+      different keyword and at level 16, where the UDP events sit at 4 — and ETW delivers an
+      event only when its level is at or below the session's. Reaching the summary therefore
+      raises the session past the `Verbose` per-path telemetry that level 4 was chosen to
+      exclude. Safe only because the event-ID filter is applied by the kernel first, which is
+      measured rather than assumed: 44 delivered events a second in total during a live game,
+      summaries included.
+      *It carries no process identifier.* The process filter every other event goes through
+      is impossible here, and the naive implementation would decode both addresses of every
+      connection closing anywhere on the machine. The gate is the **local port** — an
+      integer, tested before any address is decoded, against the set the connection table
+      already knows for the monitored applications. The promise that this program holds as
+      little of the network's shape as the job allows is kept exactly.
+      *It is periodic as well as final.* Summaries arrive when a connection closes **and**
+      every few tens of seconds while it lives, so the figure is genuinely live — just slow,
+      which is why it is shown with its age rather than as a current reading.
+      **A tunnelled endpoint is refused it**, for the same reason `select_kind` refuses a
+      TCP-connect probe there: the connection terminates on the router, so the stack would be
+      timing the round trip to the user's own hardware. That is a fake-*good* number, and
+      telling someone under censorship that their connection is fine is this product's worst
+      possible failure.
+      One defect worth recording, because it is this codebase's recurring trap: **`LocalPort`
+      is in network byte order**, so the filter matched nothing and the whole feature simply
+      appeared not to work while the addresses beside the field decoded perfectly. Found by
+      the live test, and pinned by a unit test beside the connection table's twin of it.
 
 ### The UI rule this phase exists to protect
 
-- [~] The match-server card shows **two columns, never one**: *path* (A, with how far it
+- [x] The match-server card shows **two columns, never one**: *path* (A, with how far it
       actually reaches) and *flow* (B). Merging them into a single "ping" would make the
       product lie in exactly the way it was built not to.
-      — the path half is built: its own panel under the endpoint, with the hop it belongs to,
-      how many hops are watched, where the route stops, and a note saying what the figure is
-      not. **The endpoint's own round trip stays a dash beside it** — a test asserts exactly
+      — both halves are built and they sit side by side. The path panel names the hop its
+      figures belong to, how many hops are watched, where the route stops, and what the
+      figure is *not*; the flow panel states that nothing in it times a request against its
+      answer, and that the spread it shows includes whatever cadence the server chose. **The
+      endpoint's own round trip stays a dash beside them both** — a test asserts exactly
       that, because the temptation to fill three empty fields with the nearest available
-      number is precisely how this product would start lying. The flow column arrives with
-      section B.
+      number is precisely how this product would start lying.
+      A defect found while writing that test, and fixed here: the match server was showing
+      **"100 % loss" beside "carrying traffic"**. Those probes were ours, aimed at a port the
+      game never plays over, and the figure read as "this server is dropping everything"
+      about a server the user was playing on. `Health` now answers whether the probes
+      describe the endpoint at all, and the loss figure is withheld where they do not — the
+      same rule that already kept the round trip and the jitter empty.
 
 - **Accept**: on a live match, the match server shows a moving path figure with its hop
   count and an arrival-jitter figure from its own traffic; killing the route to the chosen
@@ -885,13 +956,48 @@ it costs almost nothing: the events are **already being delivered**.
   deepest hop alone is *not* reported as path degradation (verify with a rate-limiting hop or
   a simulated trace); no figure anywhere is labelled as a round trip to the server; the whole
   thing stays inside the probe budget with five applications monitored.
-  *Section A is complete and covered by tests: `nm-core` replays route changes, rate-limiting
-  and recovery against a fake clock, and `nm-app`'s integration tests assert what the probe
-  engine would be asked for — hops registered on the application's own egress, one edge per
-  application, hops released when the route moves or the application is dropped. **Not yet
-  verified against a live match**, which is what the accept criterion asks for and needs a
-  real game session; nothing above should be read as a measured claim. Section B is untouched
-  and its spike still comes first.*
+  *Met on a live match, on 2026-08-01, with Apex Legends monitored during a session.* The
+  match server — silent to every probe kind, as always — showed **both columns at once**: a
+  route figure of 111 ms to a hop eleven out, three hops watched, the route stopping past a
+  long-haul link; and beside it, from its own traffic, 20.1 updates a second arriving with an
+  arrival spread of 1.9 ms and a worst gap of 57 ms. Its own round trip, jitter and loss
+  stayed dashes throughout. The arrival figures match the spike's independent measurement of
+  the same stream exactly, which is the cross-check that matters: two different code paths,
+  the same 20 Hz cadence.
+  Covered by tests rather than by that session: `nm-core` replays route changes, rate-limiting
+  and recovery against a fake clock; `nm-app`'s integration tests assert what the probe engine
+  would be asked for — hops registered on the application's own egress, one edge per
+  application, hops released when the route moves or the application is dropped; and
+  `nm_core::flow` replays arrival streams, stalls and shortfalls against synthetic event
+  streams.
+  **Three things are not verified, and none should be read as done:**
+  - *Killing the route to the chosen hop* to watch the app re-walk. The logic is replayed
+    against a fake clock in `nm_core::edge`, but no route was actually broken on a live match.
+  - *Five applications monitored at once* against the probe budget. One was.
+  - *The operating system's own round trip appearing in the running UI.* The mechanism is
+    proven live at the platform layer — a diagnostic run with the product's exact local-port
+    gate passed two of the game's own summaries in 90 seconds, at 135 ms and 193 ms, agreeing
+    with what the probes measured for the same two endpoints — and every hop of the wiring
+    above it is unit-tested. But the figure had not yet appeared on a row in the running
+    application when it was last looked at, and the reason is expected to be simple: at
+    roughly one summary per connection per few minutes, the app had not been up long enough.
+    Expected, not established.
+
+Phase 5 decisions worth remembering:
+
+- **Two clocks that must never be added together.** The passive metrics run on `FlowInstant`,
+  the stamp the kernel puts on an event, and never on `Instant`. Measured: events arrive up to
+  a second after the moment they describe, so timing them on arrival would have measured the
+  tracing facility's buffer flush and called it network jitter. The separate type is what makes
+  that mistake a compile error rather than a plausible-looking number.
+- **The reading's "now" is the last event, not the clock.** Which means this history cannot
+  tell how stale it is, so the layer above withholds the whole column once the application
+  stops using the endpoint — otherwise an idle row would go on showing the arrival pattern of
+  a match that ended.
+- **Every passive figure is refused rather than guessed when its precondition fails.** No
+  stall while our own sending has stopped; no shortfall unless our send rate held; no arrival
+  spread under eight updates; no shortfall below five per cent, which is the arithmetic of the
+  comparison rather than a finding. Each of those refusals is a test.
 
 ## Phase 6 — Service status, game reference pools & diagnosis verdicts
 

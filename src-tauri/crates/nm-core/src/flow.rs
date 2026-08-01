@@ -58,6 +58,17 @@ const JITTER_SMOOTHING: f64 = 16.0;
 /// rate, and every one of them would otherwise show up as the server dropping traffic.
 const SENDS_HOLDING_FRACTION: f64 = 0.8;
 
+/// The smallest shortfall worth reporting, as a percentage.
+///
+/// Below this the figure is the quarter boundary, not a finding. The comparison counts
+/// whole datagrams either side of a line drawn through the window, so at the twenty updates
+/// a second a real game produces the recent quarter holds about fifty of them and a single
+/// one landing on the wrong side of the line is already two per cent. Found by running the
+/// build against a live match, where a perfectly healthy endpoint reported a flickering
+/// "0.7 %" — true, meaningless, and exactly the sort of number that makes a user go looking
+/// for a fault that is not there.
+const MIN_REPORTED_SHORTFALL_PCT: f64 = 5.0;
+
 /// How many observations of one endpoint are retained.
 ///
 /// A busy game endpoint produces about forty events a second — twenty datagrams each way —
@@ -294,9 +305,10 @@ pub struct FlowReading {
     /// than against any assumption of symmetry, because no protocol owes us one datagram
     /// back per datagram sent.
     ///
-    /// [`None`] whenever it could not be said honestly: too little history, or the
-    /// application's own sending fell away too, in which case the drop is ours and blaming
-    /// the far end would be a fabrication.
+    /// [`None`] whenever it could not be said honestly: too little history, the
+    /// application's own sending fell away too — in which case the drop is ours and blaming
+    /// the far end would be a fabrication — or the difference is small enough to be the
+    /// arithmetic of the comparison rather than a finding.
     pub receive_shortfall_pct: Option<f64>,
 }
 
@@ -508,7 +520,7 @@ impl FlowMetrics {
         }
 
         let shortfall = (1.0 - recent_ratio / earlier_ratio) * 100.0;
-        (shortfall > 0.0).then_some(shortfall.min(100.0))
+        (shortfall >= MIN_REPORTED_SHORTFALL_PCT).then_some(shortfall.min(100.0))
     }
 }
 
@@ -1032,6 +1044,28 @@ mod tests {
             flow.reading().expect("a reading").receive_shortfall_pct,
             None,
             "our silence explains theirs; blaming the far end would be a fabrication"
+        );
+    }
+
+    #[test]
+    fn a_shortfall_too_small_to_mean_anything_is_not_reported() {
+        // Found by running the build against a live match: a healthy endpoint reported a
+        // flickering "0.7 %". True, and meaningless — the comparison counts whole datagrams
+        // either side of a line through the window, so one landing on the wrong side of it
+        // is already a couple of per cent. A number that small sends a user looking for a
+        // fault that is not there.
+        let mut flow = metrics();
+        for index in 0..200_u64 {
+            let moment = index * 50;
+            flow.record(FlowObservation::sent(at(moment), 64));
+            // One arrival missing out of the last fifty: about 2 %.
+            if index != 175 {
+                flow.record(FlowObservation::received(at(moment + 10), 256));
+            }
+        }
+        assert_eq!(
+            flow.reading().expect("a reading").receive_shortfall_pct,
+            None
         );
     }
 
