@@ -273,10 +273,20 @@ fn a_pool_reports_the_share_of_its_members_that_answer() {
     }
     let changes = pools.sweep(&mut registry, epoch(1_001));
 
-    // Two members answer and two do not.
+    // Every member answered half an hour ago — which is what earns it a place in the ratio
+    // at all — and then two of them went silent. The old answer sits outside the window the
+    // verdict is computed over, so it proves the member *can* answer without propping up a
+    // figure about how it is doing now.
+    let long_ago = now
+        .checked_sub(Duration::from_secs(1_800))
+        .expect("the test clock has a past");
     let mut answering = true;
     for change in &changes {
         if let TargetChange::Register { id, .. } = change {
+            pools.record(
+                *id,
+                ProbeSample::new(long_ago, ProbeOutcome::Success(Rtt::from_micros(40_000))),
+            );
             let outcome = if answering {
                 ProbeOutcome::Success(Rtt::from_micros(40_000))
             } else {
@@ -292,7 +302,40 @@ fn a_pool_reports_the_share_of_its_members_that_answer() {
     let report = pools.reading(app(), now).expect("the pool has members");
     assert_eq!(report.seeded, 0);
     assert_eq!(report.learned, 4);
+    assert_eq!(report.reading.unproven, 0);
     assert_eq!(report.reading.answering_ratio(), Some(0.5));
+}
+
+#[test]
+fn learned_match_servers_that_answer_nothing_never_become_an_outage() {
+    // The failure this rule exists to prevent, and it is the *normal* case: a learned
+    // member is an endpoint a game connected to, and for a UDP title that is a match server
+    // which answers nothing anyone can send while the match runs perfectly. Counted as
+    // unreachable, a pool of those would report a working game as down on every match.
+    let now = std::time::Instant::now();
+    let mut registry = TargetRegistry::new();
+    let mut pools = PoolMonitor::new(PoolSeeds::empty(), HealthThresholds::default(), true);
+    pools.track(app(), "valorant", &[], &mut registry, epoch(1_000));
+    for last in 10..14 {
+        pools.observe(app(), address(last), epoch(1_000));
+    }
+    let changes = pools.sweep(&mut registry, epoch(1_001));
+
+    for change in &changes {
+        if let TargetChange::Register { id, .. } = change {
+            for _ in 0..6 {
+                pools.record(*id, ProbeSample::new(now, ProbeOutcome::Timeout));
+            }
+        }
+    }
+
+    let report = pools.reading(app(), now).expect("the pool has members");
+    assert_eq!(report.reading.unproven, 4);
+    assert_eq!(
+        report.reading.answering_ratio(),
+        None,
+        "an address the app has no baseline for cannot say that anything changed"
+    );
 }
 
 #[test]
@@ -317,8 +360,10 @@ fn a_probe_belonging_to_nothing_here_is_ignored() {
     );
 
     let report = pools.reading(app(), now).unwrap();
-    assert_eq!(report.reading.counts.total(), report.seeded);
-    assert_eq!(report.reading.counts.unknown, report.seeded);
+    // The stranger's success must not have landed on a pool member: every seed is still
+    // waiting to prove it answers.
+    assert_eq!(report.reading.unproven, report.seeded);
+    assert_eq!(report.reading.counts.total(), 0);
 }
 
 #[test]

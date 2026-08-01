@@ -65,6 +65,9 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
         </div>
       </dl>
 
+      {pool.unproven > 0 && (
+        <p className="nm-panel__note">{t('apps.pool.unproven', { count: pool.unproven })}</p>
+      )}
       <p className="nm-panel__note">{t('apps.pool.note')}</p>
     </section>
   );

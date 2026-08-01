@@ -29,7 +29,7 @@ use std::time::{Duration, Instant, SystemTime};
 use nm_core::endpoint::AppId;
 use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
-use nm_core::pool::{PoolEntry, PoolPolicy, PoolReading, PoolSource, ReferencePool};
+use nm_core::pool::{PoolEntry, PoolMember, PoolPolicy, PoolReading, PoolSource, ReferencePool};
 use nm_core::sample::ProbeSample;
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
@@ -359,13 +359,27 @@ impl LearnedPools {
     }
 }
 
+/// One pool target being probed.
+#[derive(Debug, Clone)]
+struct Probed {
+    id: TargetId,
+    history: SampleHistory,
+    /// Whether this target has ever answered a probe.
+    ///
+    /// Kept because silence only means something once a target has shown it *can* answer —
+    /// see [`nm_core::pool::PoolMember::answered_before`]. It survives a re-registration on
+    /// a sweep for the same reason the history does: a target's record is about the target,
+    /// not about our bookkeeping.
+    answered: bool,
+}
+
 /// One monitored application's pool, its handles and its histories.
 #[derive(Debug, Clone)]
 struct Tracked {
     preset: String,
     pool: ReferencePool,
-    /// Handle and history per registered target, in the order the pool listed them.
-    probed: Vec<(TargetId, SampleHistory)>,
+    /// Handle, history and whether it has ever answered, per registered target.
+    probed: Vec<Probed>,
     /// Whether the registered set still matches the pool. Set by [`ReferencePool::observe`]
     /// landing a new address, cleared once the change has been handed to the probe engine.
     dirty: bool,
@@ -465,10 +479,10 @@ impl PoolMonitor {
             return Vec::new();
         };
         let mut changes = Vec::new();
-        for (id, _) in tracked.probed {
-            self.owners.remove(&id);
-            if registry.untag(id, TargetTag::GameReferencePool) {
-                changes.push(TargetChange::Unregister { id });
+        for probed in tracked.probed {
+            self.owners.remove(&probed.id);
+            if registry.untag(probed.id, TargetTag::GameReferencePool) {
+                changes.push(TargetChange::Unregister { id: probed.id });
             }
         }
         changes
@@ -527,8 +541,11 @@ impl PoolMonitor {
         let Some(tracked) = self.tracked.get_mut(&app) else {
             return;
         };
-        if let Some((_, history)) = tracked.probed.iter_mut().find(|(seen, _)| *seen == id) {
-            history.record(sample);
+        if let Some(probed) = tracked.probed.iter_mut().find(|probed| probed.id == id) {
+            probed.history.record(sample);
+            if sample.outcome.rtt().is_some() {
+                probed.answered = true;
+            }
         }
     }
 
@@ -545,23 +562,31 @@ impl PoolMonitor {
             return None;
         }
 
-        let stats: Vec<WindowStats> = tracked
+        let stats: Vec<(bool, WindowStats)> = tracked
             .probed
             .iter()
-            .map(|(_, history)| history.stats_for_window(now, POOL_WINDOW))
+            .map(|probed| {
+                (
+                    probed.answered,
+                    probed.history.stats_for_window(now, POOL_WINDOW),
+                )
+            })
             .collect();
         let entries = tracked.pool.entries();
+        let seeded = entries
+            .iter()
+            .filter(|entry| entry.source == PoolSource::Bundled)
+            .count();
         Some(PoolReport {
-            seeded: entries
-                .iter()
-                .filter(|entry| entry.source == PoolSource::Bundled)
-                .count(),
-            learned: entries.len()
-                - entries
-                    .iter()
-                    .filter(|e| e.source == PoolSource::Bundled)
-                    .count(),
-            reading: PoolReading::of(stats.iter(), &self.thresholds),
+            seeded,
+            learned: entries.len() - seeded,
+            reading: PoolReading::of(
+                stats.iter().map(|(answered, stats)| PoolMember {
+                    answered_before: *answered,
+                    stats,
+                }),
+                &self.thresholds,
+            ),
         })
     }
 
@@ -585,7 +610,7 @@ impl PoolMonitor {
 
         let wanted = tracked.pool.entries();
         let mut changes = Vec::new();
-        let mut kept: Vec<(TargetId, SampleHistory)> = Vec::new();
+        let mut kept: Vec<Probed> = Vec::new();
         let mut owners = Vec::new();
 
         for entry in &wanted {
@@ -599,13 +624,17 @@ impl PoolMonitor {
             // An address already probed for this pool keeps its history: a sweep is
             // bookkeeping, and re-registering must not amnesty a target that has been
             // silent for an hour.
-            if let Some((_, history)) = tracked.probed.iter().find(|(seen, _)| *seen == id) {
-                kept.push((id, history.clone()));
+            if let Some(probed) = tracked.probed.iter().find(|probed| probed.id == id) {
+                kept.push(probed.clone());
             } else {
                 let Ok(history) = SampleHistory::new(HISTORY_CAPACITY) else {
                     continue;
                 };
-                kept.push((id, history));
+                kept.push(Probed {
+                    id,
+                    history,
+                    answered: false,
+                });
                 changes.push(TargetChange::Register {
                     id,
                     address: entry.address,
@@ -625,7 +654,7 @@ impl PoolMonitor {
         let gone: Vec<TargetId> = tracked
             .probed
             .iter()
-            .map(|(id, _)| *id)
+            .map(|probed| probed.id)
             .filter(|id| !owners.contains(id))
             .collect();
         for id in gone {

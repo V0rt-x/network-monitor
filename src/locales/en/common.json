@@ -90,6 +90,8 @@
       "rtt": "Median round trip",
       "members": "Members",
       "membership": "{{seeded}} published, {{learned}} learned",
+      "unproven_one": "{{count}} member has never answered a probe and is not counted — a game's match server answers nothing anyone can send, so its silence proves nothing.",
+      "unproven_other": "{{count}} members have never answered a probe and are not counted — a game's match server answers nothing anyone can send, so their silence proves nothing.",
       "note": "Several addresses belonging to this game, in different places, probed rarely. All of them silent while your baselines are clean is the only evidence that points at the game rather than at your path."
     },
     "waiting": "Waiting for the core…",

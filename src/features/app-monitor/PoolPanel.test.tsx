@@ -8,6 +8,7 @@ import { PoolPanel } from './PoolPanel';
 const pool = (overrides: Partial<PoolView> = {}): PoolView => ({
   seeded: 8,
   learned: 3,
+  unproven: 0,
   health: 'ok',
   counts: { ok: 11, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
   answeringPct: 100,
@@ -60,6 +61,34 @@ describe('PoolPanel', () => {
 
     expect(screen.getByText('Degraded')).toBeInTheDocument();
     expect(screen.getByText('50')).toBeInTheDocument();
+  });
+
+  it('says which members it cannot speak for', () => {
+    // A learned member is usually a match server that answers nothing anyone can send.
+    // Its silence proves nothing, and the panel has to say so rather than let a small
+    // "answering" figure imply an outage.
+    render(
+      <PoolPanel
+        pool={pool({
+          unproven: 4,
+          counts: {
+            ok: 8,
+            degraded: 0,
+            unreachable: 0,
+            blocked: 0,
+            carryingTraffic: 0,
+            unknown: 0,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/4 members have never answered a probe/u)).toBeInTheDocument();
+  });
+
+  it('says nothing about unproven members when there are none', () => {
+    render(<PoolPanel pool={pool()} />);
+    expect(screen.queryByText(/never answered a probe/u)).not.toBeInTheDocument();
   });
 
   it('explains what the pool is evidence for', () => {

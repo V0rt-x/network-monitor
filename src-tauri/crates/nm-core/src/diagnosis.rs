@@ -291,6 +291,7 @@ mod tests {
     fn pool(answering: usize, unreachable: usize) -> PoolReading {
         PoolReading {
             counts: counts(answering, 0, unreachable),
+            unproven: 0,
             rtt_ms: None,
             loss_pct: None,
         }
@@ -303,6 +304,7 @@ mod tests {
                 blocked: members,
                 ..HealthCounts::default()
             },
+            unproven: 0,
             rtt_ms: None,
             loss_pct: None,
         }
@@ -428,6 +430,23 @@ mod tests {
         // fall through to what *was* measured.
         let evidence = Evidence::baselines(Health::Ok, Health::Ok)
             .about(app(counts(3, 0, 1), Some(filtered_pool(8))));
+        assert_eq!(diagnose(&evidence).verdict, Verdict::RouteToThisApplication);
+    }
+
+    #[test]
+    fn a_pool_of_members_that_have_never_answered_never_blames_the_game() {
+        // The state of every pool built purely from a UDP title's own match servers, which
+        // answer nothing by design. Left unguarded this would report an outage on every
+        // match of every such game — so it must fall through to what was actually measured.
+        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+            counts(3, 0, 1),
+            Some(PoolReading {
+                counts: HealthCounts::default(),
+                unproven: 6,
+                rtt_ms: None,
+                loss_pct: None,
+            }),
+        ));
         assert_eq!(diagnose(&evidence).verdict, Verdict::RouteToThisApplication);
     }
 

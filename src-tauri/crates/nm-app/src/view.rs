@@ -298,6 +298,13 @@ pub struct PoolView {
     /// a server this user was actually placed on, which is stronger, and it exists only
     /// because the user allowed it to be remembered.
     pub learned: u32,
+    /// How many members have never answered a probe, and so speak for nothing.
+    ///
+    /// The normal state of a pool built from a UDP title's own match servers, which answer
+    /// nothing anyone can send. They are held out of every figure below rather than counted
+    /// as failures: an address with no baseline cannot tell us that something changed, and
+    /// counting one would report a working game as down.
+    pub unproven: u32,
     /// What the members say together.
     pub health: HealthView,
     /// The distribution behind it.
@@ -320,6 +327,7 @@ impl PoolView {
         Self {
             seeded: narrow(seeded),
             learned: narrow(learned),
+            unproven: narrow(reading.unproven),
             health: reading.health().into(),
             counts: reading.counts.into(),
             answering_pct: reading.answering_ratio().map(|ratio| ratio * 100.0),

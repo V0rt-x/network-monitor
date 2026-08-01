@@ -754,6 +754,15 @@ export type PoolView = {
 	 *  because the user allowed it to be remembered.
 	 */
 	learned: number,
+	/**
+	 *  How many members have never answered a probe, and so speak for nothing.
+	 * 
+	 *  The normal state of a pool built from a UDP title's own match servers, which answer
+	 *  nothing anyone can send. They are held out of every figure below rather than counted
+	 *  as failures: an address with no baseline cannot tell us that something changed, and
+	 *  counting one would report a working game as down.
+	 */
+	unproven: number,
 	/**  What the members say together. */
 	health: HealthView,
 	/**  The distribution behind it. */

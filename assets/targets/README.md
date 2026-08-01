@@ -11,6 +11,7 @@ updated behind the user's back: a new list ships with a new release of the app.
 domestic/<country>.json   services expected to be reachable inside that country
 foreign.json              services typically degraded or blocked at a country's border
 services.json             the status page: platforms and infrastructure, grouped
+pools/<network>.json      a game's own reference targets, for telling its outage from yours
 ```
 
 The country is chosen by the user in Settings. There is no geo-detection: guessing the
@@ -115,3 +116,63 @@ three silent checks — over two minutes at this cadence — before trying the o
 The bundled entries name `tcpConnect`, because a front door is *defined* by its port
 answering, which is the question the card asks; whether the operator's edge router echoes a
 ping is a different question.
+
+## Game reference pools: `pools/<network>.json`
+
+The one thing no single endpoint can tell you: whether a *game's* servers are unreachable
+or the path to them is. Both look identical from one address, and they call for opposite
+actions — wait, or turn on a VPN. A pool is several addresses belonging to the same game's
+infrastructure, in different places, probed at a trickle while that game is monitored.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "id": "valve-sdr",
+  "label": "Steam Datagram Relay",
+  "applications": ["cs2", "dota2"], // preset ids from assets/apps/presets.json
+  "targets": [
+    { "id": "fra", "label": "Frankfurt (Germany)", "address": "155.133.226.68" }
+  ]
+}
+```
+
+`applications` is a list because one relay network really does serve several titles;
+duplicating the file per game would guarantee the copies drift apart.
+
+### Addresses here, names everywhere else
+
+The opposite rule from the status page, and for the opposite reason. A status check asks
+whether an operator's *front door* answers, and that lives on a content network whose
+address depends on where you are — so it must be a name. A pool asks whether specific
+machines of a relay network answer, and a name resolved once at start-up would be measured
+forever against whichever of them the resolver happened to pick. A test enforces it.
+
+The consequence is that a pool goes stale with a release, exactly like every other list
+here. That is the trade the no-auto-fetch promise buys.
+
+### Where the addresses come from
+
+**Only from what the operator publishes.** The Valve entries are read out of the SDR network
+configuration Steam publishes at `api.steampowered.com/ISteamApps/GetSDRConfig/v1/`, one
+relay per point of presence. They are never anything observed on a developer's machine, and
+a guessed naming scheme is what produced the unusable hostnames Phase 2 had to throw away.
+
+### Most titles have no pool, and that is honest
+
+Only Valve publishes reachable reference addresses among the titles this app presets. For
+the rest the pool is whatever this machine has learned from the user's own traffic, and
+until it has learned something the app says plainly that it cannot tell an outage of the
+game's servers apart from a path the user cannot reach. Inventing entries for Riot, EA or
+Epic from guesswork would produce exactly that failure with a confident face on it.
+
+Published cloud ranges such as AWS GameLift's were considered and rejected: a CIDR block is
+not a reachable address, and probing an arbitrary member of one measures nothing.
+
+### A member only counts once it has answered
+
+Enforced in `nm_core::pool`, and it is the rule that keeps a pool honest. A learned member
+is an endpoint a game connected to — which for a UDP title is a match server that answers
+nothing anyone can send, by design, while the match runs perfectly. Counted as unreachable,
+a pool of those would report a working game as down on every match. So a member's silence
+means nothing until it has shown it *can* answer; before that it is an address with no
+baseline, held out of every figure and reported as such.

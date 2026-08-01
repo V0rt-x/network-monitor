@@ -217,6 +217,25 @@ impl ReferencePool {
     }
 }
 
+/// One pool member as the reading reads it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PoolMember<'a> {
+    /// Whether this member has *ever* answered a probe since it joined the pool.
+    ///
+    /// The single most important field here, and the reason a pool cannot be judged from
+    /// its statistics alone. **A learned member is an endpoint a game connected to, and for
+    /// most titles that is a UDP match server — which answers nothing we can send, by
+    /// design, while the match runs perfectly.** Counting one of those as unreachable would
+    /// fill a pool with silence and report a working game as down: precisely the lie this
+    /// product exists not to tell, arrived at from a new direction.
+    ///
+    /// So silence only means something once the member has shown it *can* answer. Until
+    /// then it is not evidence about the game, it is an address we have no baseline for.
+    pub answered_before: bool,
+    /// Its window of probe results.
+    pub stats: &'a WindowStats,
+}
+
 /// What a pool says about the game's own infrastructure.
 ///
 /// Deliberately **not** a verdict about the game. It reports how much of the pool answers
@@ -224,8 +243,15 @@ impl ReferencePool {
 /// [`crate::diagnosis`], which is the only place that has the baselines to compare against.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PoolReading {
-    /// The distribution across the pool's members.
+    /// The distribution across the members that have proven they answer.
     pub counts: HealthCounts,
+    /// How many members have never answered a probe at all.
+    ///
+    /// Held out of every figure above rather than folded in as failures — see
+    /// [`PoolMember::answered_before`]. Reported so the UI can say what the pool is
+    /// *unable* to speak for, which for a title whose servers all ignore probes is the
+    /// whole of it.
+    pub unproven: usize,
     /// Median round-trip time across the answering members, in milliseconds.
     pub rtt_ms: Option<f64>,
     /// Loss across the pool, weighted by probes.
@@ -233,15 +259,29 @@ pub struct PoolReading {
 }
 
 impl PoolReading {
-    /// Judges a pool from its members' windows.
+    /// Judges a pool from its members.
+    ///
+    /// Members that have never answered are counted apart and left out of every ratio: an
+    /// address we have no baseline for cannot tell us that something changed.
     #[must_use]
     pub fn of<'a, I>(members: I, thresholds: &crate::health::HealthThresholds) -> Self
     where
-        I: IntoIterator<Item = &'a WindowStats>,
+        I: IntoIterator<Item = PoolMember<'a>>,
     {
-        let health = GroupHealth::of(members, thresholds);
+        let mut proven: Vec<&WindowStats> = Vec::new();
+        let mut unproven = 0_usize;
+        for member in members {
+            if member.answered_before {
+                proven.push(member.stats);
+            } else {
+                unproven += 1;
+            }
+        }
+
+        let health = GroupHealth::of(proven, thresholds);
         Self {
             counts: health.counts,
+            unproven,
             rtt_ms: health.rtt_ms,
             loss_pct: health.loss_pct,
         }
@@ -331,6 +371,22 @@ mod tests {
         PoolPolicy {
             max_learned: 3,
             expire_after: Duration::from_secs(100),
+        }
+    }
+
+    /// A member that has proven it answers, over `stats`.
+    fn proven(stats: &WindowStats) -> PoolMember<'_> {
+        PoolMember {
+            answered_before: true,
+            stats,
+        }
+    }
+
+    /// A member that has never answered anything.
+    fn unproven(stats: &WindowStats) -> PoolMember<'_> {
+        PoolMember {
+            answered_before: false,
+            stats,
         }
     }
 
@@ -521,7 +577,7 @@ mod tests {
     #[test]
     fn a_pool_answering_everywhere_is_ok() {
         let windows = [window(&[ok(), ok()]), window(&[ok(), ok()])];
-        let reading = PoolReading::of(windows.iter(), &HealthThresholds::default());
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
 
         assert_eq!(reading.health(), Health::Ok);
         assert_eq!(reading.answering_ratio(), Some(1.0));
@@ -531,7 +587,7 @@ mod tests {
     fn a_pool_answering_nowhere_is_unreachable() {
         let dead = [ProbeOutcome::Timeout, ProbeOutcome::Timeout];
         let windows = [window(&dead), window(&dead)];
-        let reading = PoolReading::of(windows.iter(), &HealthThresholds::default());
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
 
         assert_eq!(reading.health(), Health::Unreachable);
         assert_eq!(reading.answering_ratio(), Some(0.0));
@@ -548,7 +604,7 @@ mod tests {
             window(&dead),
             window(&dead),
         ];
-        let reading = PoolReading::of(windows.iter(), &HealthThresholds::default());
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
 
         assert_eq!(reading.health(), Health::Degraded);
         assert_eq!(reading.answering_ratio(), Some(0.5));
@@ -561,10 +617,62 @@ mod tests {
         // answered" would be a finding it has not earned.
         let filtered = [ProbeOutcome::Blocked, ProbeOutcome::Blocked];
         let windows = [window(&filtered), window(&filtered)];
-        let reading = PoolReading::of(windows.iter(), &HealthThresholds::default());
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
 
         assert_eq!(reading.health(), Health::Blocked);
         assert_eq!(reading.answering_ratio(), None);
+    }
+
+    #[test]
+    fn a_member_that_has_never_answered_is_not_evidence_of_anything() {
+        // The failure this rule exists to prevent, and it is the *normal* case for most
+        // titles: a learned member is an endpoint a game connected to, which for a UDP
+        // match server answers nothing we can send while the match runs perfectly. Counted
+        // as unreachable it would fill a pool with silence and report a working game as
+        // down — the same lie as calling the endpoint itself unreachable, reached from a
+        // new direction.
+        let dead = [ProbeOutcome::Timeout, ProbeOutcome::Timeout];
+        let windows = [window(&dead), window(&dead), window(&dead)];
+        let reading = PoolReading::of(windows.iter().map(unproven), &HealthThresholds::default());
+
+        assert_eq!(reading.unproven, 3);
+        assert_eq!(reading.counts.total(), 0);
+        assert_eq!(reading.answering_ratio(), None);
+        assert_eq!(
+            reading.health(),
+            Health::Unknown,
+            "a pool with no baseline for any member knows nothing, and must not say otherwise"
+        );
+    }
+
+    #[test]
+    fn a_member_that_answered_once_and_then_went_silent_is_the_real_signal() {
+        // The complement: silence *after* a member has shown it can answer is exactly what
+        // a pool exists to notice.
+        let dead = [ProbeOutcome::Timeout, ProbeOutcome::Timeout];
+        let windows = [window(&dead)];
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
+
+        assert_eq!(reading.unproven, 0);
+        assert_eq!(reading.health(), Health::Unreachable);
+        assert_eq!(reading.answering_ratio(), Some(0.0));
+    }
+
+    #[test]
+    fn proven_members_are_judged_while_unproven_ones_are_only_counted() {
+        // The mixed case, which is what a Valve title looks like: published relays that
+        // answer beside learned match servers that never will.
+        let dead = [ProbeOutcome::Timeout, ProbeOutcome::Timeout];
+        let alive = window(&[ok(), ok()]);
+        let silent = window(&dead);
+        let reading = PoolReading::of(
+            [proven(&alive), unproven(&silent), unproven(&silent)],
+            &HealthThresholds::default(),
+        );
+
+        assert_eq!(reading.unproven, 2);
+        assert_eq!(reading.answering_ratio(), Some(1.0));
+        assert_eq!(reading.health(), Health::Ok);
     }
 
     #[test]
@@ -572,7 +680,7 @@ mod tests {
         let filtered = [ProbeOutcome::Blocked, ProbeOutcome::Blocked];
         let dead = [ProbeOutcome::Timeout, ProbeOutcome::Timeout];
         let windows = [window(&[ok(), ok()]), window(&dead), window(&filtered)];
-        let reading = PoolReading::of(windows.iter(), &HealthThresholds::default());
+        let reading = PoolReading::of(windows.iter().map(proven), &HealthThresholds::default());
 
         assert_eq!(reading.judged(), 2);
         assert_eq!(reading.answering_ratio(), Some(0.5));

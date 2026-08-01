@@ -1003,20 +1003,335 @@ Phase 5 decisions worth remembering:
 
 Goal: at-a-glance "is it them or me", including "the game's servers are down (or partly)".
 
-- [ ] Status check definitions as data: `assets/targets/services.json` — Steam, Epic, Discord, Riot, EA/Origin, Battle.net, Xbox Live, PSN, AWS, GCP, Cloudflare (per-service: endpoints + probe kind)
-- [ ] Periodic low-frequency checks (e.g. 30–60 s) reusing the probe engine
-- [ ] Status page UI: service cards with state (reachable / slow / unreachable), latency, last-checked; grouping (platforms / infra)
-- [ ] Per-service history (session-scoped ring buffer) with mini-timeline
-- [ ] Game reference pools — bundled seeds as data: Valve SDR POP ping endpoints (from Valve's published SDR config), AWS GameLift ranges, Riot/Blizzard known targets; refreshed only via app releases or explicit "Update target lists" action
-- [ ] Learned endpoint history: persist endpoints the user connected to, tagged per game preset (cap ~32/game, LRU, expire after N days unseen); cold start covered by bundled seeds
-- [ ] Reference-pool trickle probing (round-robin, active only while the game is monitored or on explicit "Diagnose"), inside the global probe budget
-- [ ] Diagnosis verdict engine in `nm-core`: pure rules combining baselines + app metrics + path-probe death point + reference-pool response ratio + platform-API status into verdicts (ISP / border / routing-to-game / game servers down / partial outage); every matrix row unit-tested; verdicts phrased as network-level facts only
-- [ ] Verdict surfacing in UI (dashboard + app-monitor banner). A verdict covers *the endpoints
+- [x] Status check definitions as data: `assets/targets/services.json` — Steam, Epic, Discord, Riot, EA/Origin, Battle.net, Xbox Live, PSN, AWS, GCP, Cloudflare (per-service: endpoints + probe kind)
+      — eleven services, thirteen endpoints, schema and rules in `assets/targets/README.md`.
+      **Names, never addresses**, and a test enforces it: a platform's front door lives on a
+      content network whose address depends on where the user is, so a bundled literal would
+      pin whichever edge the *developer* was nearest and go stale silently.
+      **The probe-kind field is a hint, not a permission.** It reorders the kinds
+      `preferred_kinds` has already judged honest for the address and can never introduce one
+      it refuses — a tunnelled endpoint still gets the end-to-end probe whatever the file
+      says, which a test in `nm_probes::chain` pins. It earns its place by arithmetic: the
+      ordinary chain opens on the cheapest kind and needs three silent checks — over two
+      minutes at this cadence — before reaching the one that works, which on a status page is
+      a red card about a service that is up.
+- [x] Periodic low-frequency checks (e.g. 30–60 s) reusing the probe engine
+      — 45 s per endpoint, on the one probe engine and the one registry everything else
+      shares; a second runner would have a second token bucket and quietly double the traffic
+      the product promises not to send. A test asserts the whole list costs under a third of a
+      probe a second against the cap of thirty-two, because these checks run whether or not
+      the user is doing anything.
+- [x] Status page UI: service cards with state (reachable / slow / unreachable), latency, last-checked; grouping (platforms / infra)
+      — `src/features/status-page/`. **The verdict rule is not the dashboard's**
+      (`nm_core::status`), and that is the phase's main design decision. A baseline reports
+      what a window has been like; a card asks whether a service answers *now*, and at a check
+      every forty-odd seconds a window rule answers that badly at both ends — a service that
+      died a minute ago still reads mostly green, one that has just recovered still reads
+      mostly red. The rule reads the most recent checks instead and reacts within one interval
+      in both directions.
+      It still refuses to call one lost check an outage: the card leaves `Ok` at once and the
+      strip shows the failed check, but the word *unreachable* waits for the second
+      consecutive failure — the same reasoning as `min_delivery_attempts`, since a status page
+      that flashed "Steam is down" on every lost packet would be worth nothing on the day it
+      was true.
+      **A card states what this machine can reach**, never that a company's service is down:
+      from inside a filtered network those two are indistinguishable and only one of them is
+      observable here. The page says so in as many words.
+      A card whose last check is older than two intervals says *that*, rather than showing a
+      larger number — a status page whose data quietly stopped arriving looks exactly like one
+      reporting calm.
+- [x] Per-service history (session-scoped ring buffer) with mini-timeline
+      — one cell per check, oldest left, capped at 24 of the 60 retained. **A cell is a fact,
+      not a verdict**: it keeps the four ways a check can fail apart, which one colour on the
+      card cannot, and it is what distinguishes "a packet went missing twenty minutes ago"
+      from "nothing has answered since". Colour is never the only channel — every cell carries
+      its translated word.
+- [x] Game reference pools — bundled seeds as data: Valve SDR POP ping endpoints (from Valve's published SDR config), AWS GameLift ranges, Riot/Blizzard known targets; refreshed only via app releases or explicit "Update target lists" action
+      — `assets/targets/pools/valve-sdr.json`, eight points of presence read out of the SDR
+      network configuration Steam publishes, **not from a guessed naming scheme** — the
+      correction Phase 2 demanded. One file seeds both Valve titles, because one relay network
+      really does serve several and duplicating it would guarantee the copies drift.
+      **Two of the three named sources were rejected rather than faked.** AWS GameLift
+      publishes CIDR ranges, and a CIDR block is not a reachable address: probing an arbitrary
+      member of one measures nothing. Riot and Blizzard publish no reference address that
+      answers a probe at all. Inventing entries for them would have reproduced exactly the
+      failure the SDR hostnames already caused, with a confident face on it — so those titles
+      have **no bundled pool**, their pool is whatever this machine learns, and the page says
+      plainly that until it has learned something it cannot tell a game's outage from a path
+      the user cannot reach.
+      Pools are **addresses**, the opposite of the status page's rule and for the opposite
+      reason: a pool asks whether specific machines answer, and a name resolved once at
+      start-up would be measured forever against whichever of them the resolver picked.
+- [x] Learned endpoint history: persist endpoints the user connected to, tagged per game preset (cap ~32/game, LRU, expire after N days unseen); cold start covered by bundled seeds
+      — `nm_core::pool` for the model, `nm_app::pools` for the file. Thirty-two learned
+      entries per preset, least-recently-seen evicted, expiring after a fortnight unseen.
+      **Wall clock appears here and nowhere else in the product**: the span has to survive the
+      app being closed, which is the exception `CLAUDE.md` allows. Nothing here times a probe,
+      so a clock that jumps can only expire an entry early or late.
+      Expiry is not tidiness — **game server addresses rotate**, so a stale entry is as likely
+      to be a stranger's machine as the game's, and a pool full of those would report an
+      outage that is not happening.
+      **It writes a record of where the user plays**, so it is a setting rather than an
+      assumption: on by default because the feature is worthless without it, and turning it
+      off deletes what was already written rather than merely stopping new entries. For this
+      audience that choice is worth one boolean.
+- [x] Reference-pool trickle probing (round-robin, active only while the game is monitored or on explicit "Diagnose"), inside the global probe budget
+      — registered with the shared engine at one probe per target every five minutes and left
+      there while the game is watched; the engine's own scheduler spreads them, its fallback
+      chain gives each a history, and the rate cap covers them like everything else. About a
+      tenth of a probe a second per game. A sweep that changes nothing asks the engine for
+      nothing, which a test pins, because it runs every five seconds for as long as a game is
+      monitored.
+      **The explicit "Diagnose" action is deliberately not shipped.** The pool is already
+      probed continuously for every monitored game, so a button would only re-ask a question
+      being answered the whole time; the case it would actually serve — diagnosing a game that
+      is *not* being monitored — needs targets the app has no reason to hold, and a burst of
+      probes on a button press is exactly the shape the rate cap exists to prevent.
+- [x] Diagnosis verdict engine in `nm-core`: pure rules combining baselines + app metrics + path-probe death point + reference-pool response ratio + platform-API status into verdicts (ISP / border / routing-to-game / game servers down / partial outage); every matrix row unit-tested; verdicts phrased as network-level facts only
+      — `nm_core::diagnosis`, pure and exhaustively tested, with the matrix written out in the
+      module documentation. **The ordering is the argument**: the general network is settled
+      before anything is blamed on an application, because an application's endpoints failing
+      while the whole network is failing says nothing about that application — and a user sent
+      to a game accelerator over their own broken line has been wasted. A test asserts exactly
+      that, and its mirror for a border problem.
+      **A border is named only when the domestic baseline corroborates it**, which is the
+      claim `nm_core::path` deliberately refuses to make on one traceroute — and even then it
+      names a *path*, because throttling, a blocked route and a broken transit link are
+      indistinguishable from here.
+      **Absence of knowledge is never a finding.** Every probe filtered produces "nothing
+      could be measured", never a confident verdict about a border; an endpoint proven alive
+      by its own traffic is not counted as a failure, since that is the normal state of every
+      UDP match server; and an application whose every endpoint was merely filtered reports
+      that it cannot see rather than that everything is clear.
+      Two inputs the plan named are **not** read, and neither is a gap: the path-probe death
+      point is already the input to Phase 5's own panel and adding it here would let one
+      traceroute outvote the baselines, which is the failure mode the border rule exists to
+      avoid; and there is no "platform-API status" to combine, because the product fetches
+      nothing — what stands in its place is the status page, measured the same way as
+      everything else.
+- [x] Verdict surfacing in UI (dashboard + app-monitor banner). A verdict covers *the endpoints
       it actually explains* and says which — an app whose voice endpoint is blocked while its
       game server is clean gets a verdict about that endpoint, not about the app. See the
       per-endpoint state requirement in Phase 4: partial failure inside one application is the
       normal case under filtering, not an edge case.
+      — `src/shared/VerdictBanner.tsx`, on the dashboard above the two baselines it is drawn
+      from and on every application card. **It is always shown, including when it has nothing
+      to say**: a banner that appeared only on bad news would make its absence mean "fine", and
+      the state before anything has been measured would read as good news.
+      It states its scope — "about 2 of 7 endpoints" — and keeps **what to try separate from
+      what was observed**, because they are different claims: the app can see that the evidence
+      points past the border and cannot see whether a VPN would help. It never suggests one for
+      a failure inside the user's own network, which would waste their time and, in some
+      places, expose them for nothing. A test pins that.
+      Beside it, `PoolPanel` shows the evidence the game-server verdicts rest on, including
+      what the pool *cannot* speak for.
 - **Accept**: page reflects a manually blocked host (hosts-file test) within one check interval; service list extendable by editing JSON only; simulated scenarios (mocked probe outcomes) produce correct verdicts incl. partial game-server outage; stale cache entries expire and never fake an outage.
+  *Met in the parts that tests can establish, and the gap is named rather than papered over.*
+  The service list is extendable by editing JSON only — schema, validation and the budget rule
+  are all data-driven and covered by `tests/services.rs`. The simulated scenarios are
+  `nm_core::diagnosis`'s 24 unit tests, one per row of the matrix including the partial
+  game-server outage and every row whose honest answer is "we could not see". Stale entries
+  expiring without faking an outage is covered twice over: `nm_core::pool` replays expiry,
+  eviction and a clock that steps backwards, and `tests/pools.rs` asserts an expired entry
+  stops being probed.
+  **Not verified: a manually blocked host on a running build.** The reaction time is a
+  property of `StatusThresholds` and is replayed against synthetic checks — a card leaves `Ok`
+  on the first failed check and reads *unreachable* on the second — but no host was actually
+  blocked with a firewall rule while the app was running, and the numbers on a real status
+  page have not been looked at.
+
+**Phase 6 status: every item is built. Two things are not verified and neither should be
+read as done.**
+
+- **No real session has been run.** The status page has never been seen rendering, no service
+  has been blocked to watch a card react, and no pool has been probed against a live game.
+  Everything above is unit-tested against synthetic checks, fake clocks and fake registries.
+- **The bundled service and pool addresses have not been probed from this machine.** The lists
+  validate and stay inside the budget, and whether each front door actually answers a
+  TCP-connect — and whether the Valve relays actually answer an echo — is exactly the kind of
+  thing the Phase 2 spike existed to establish and has not been established here.
+
+Phase 6 decisions worth remembering:
+
+- **A pool member only counts once it has answered.** Found by reasoning about what a learned
+  entry actually is: an endpoint a game connected to, which for a UDP title is a match server
+  that answers nothing anyone can send — by design, while the match runs perfectly. Counted as
+  unreachable, a pool built from those would report a working game as down on *every* match.
+  So silence means nothing until a member has shown it can answer; before that it is an
+  address with no baseline, held out of every ratio and reported as such. It is the same lie
+  `Health::CarryingTraffic` was introduced to prevent in Phase 4, arrived at from a new
+  direction, and it is the single most important line in this phase.
+- **`GroupHealth::of_judged` exists so one piece of arithmetic serves three rules.** The
+  headline-plus-distribution logic is the same whatever decided each member's state, and a
+  second copy of "anything mixed is degraded, and the counts say how much" would drift from
+  the first. The baselines, the status page and the pools all roll up through it.
+- **The status page and the pools take opposite rules about names and addresses**, and both
+  are right. A front door must be a name, because its address depends on where the user is; a
+  relay must be an address, because a name would be resolved once and then measured forever
+  against whichever machine the resolver picked.
+
+## Phase 6.5 — The page a player can read (amendments from use, 2026-08-01)
+
+Stated by the user after running the build, in their order. Everything here is about what the
+page *says* and how it behaves under a reader; **nothing here changes what is measured, and no
+figure is deleted** — item 4 moves several of them one level down, and that is the whole of it.
+
+The audience this phase is written for is a player, not an engineer: someone who knows their
+game stutters and does not know what jitter is. The depth stays reachable for whoever wants it,
+because a measurement tool that cannot explain itself is asking to be trusted on faith, and this
+audience has no reason to extend that.
+
+- [ ] **1. UDP first: that is where the match is played.** The endpoint list is one flat list
+      ordered by severity alone (`nm_app::view::severity`), with transport as a badge on the
+      row. During a game the endpoints that matter are the UDP flows, and today they sit
+      wherever their health happens to put them, between a launcher's TCP connection, a CDN
+      and a telemetry host. What changes:
+      – **Two labelled groups**: the match traffic (UDP) first, the supporting connections
+        (TCP) below. Grouping is by transport; the ordering *inside* a group stays exactly the
+        worst-first severity judgement Rust already makes, and stays in Rust.
+      – **TCP is demoted, never hidden.** For this audience a blocked or throttled TCP endpoint
+        is a first-class finding — a login service or a CDN with a filter sitting on it is what
+        "I cannot get into the game" actually looks like. So the TCP group carries its own
+        distribution in its header, and a member in any state worse than `Ok` is surfaced
+        there; the group may start collapsed only when every member is `Ok`.
+      – **The chart follows the same emphasis**: UDP lines at full weight, TCP lines lighter.
+        Colour still identifies and never states health — the list remains the authority.
+      – **The honest caveat this creates.** Without the one-time tracing setup there are *no*
+        UDP endpoints at all, so on such a machine the match-traffic group is empty. An empty
+        group must say why and point at the same explanation the flow-status banner gives; an
+        unexplained empty "match traffic" reads as a game that plays over nothing.
+      – Probe-budget ranking is untouched: recent bytes then recency, in `nm_core::endpoint`,
+        which already finds the match server on its own. This item is presentation only.
+- [ ] **2. Names for the games, not file names.** `assets/apps/presets.json` labels six
+      applications; everything else shows an executable name, so the titles the user named —
+      World of Tanks, Forza Horizon, Deadlock — appear as `WorldOfTanks.exe` and the picker
+      reads like a task manager.
+      – **Split the two jobs a preset does today.** *Grouping* joins several executables into
+        one application; *labelling* names one. A single-process game needs no grouping and
+        still needs a name. This matters for the existing safety rule rather than against it:
+        "never list an executable several applications share" is a rule about **grouping** —
+        `steam.exe` may be *labelled* "Steam" as long as labelling joins nothing to it. The
+        schema gains a name-only entry, and the test that refuses a shared executable keeps
+        applying, unchanged, to grouping entries.
+      – **Fill the list out**: the five titles of item 7 first, then the launchers and platform
+        applications a player meets in the picker (Steam, Epic, Riot, EA, Battle.net, Xbox) and
+        the usual companions (Discord, browsers). Every executable name verified against a real
+        installation, not recalled — a wrong name is a preset that never fires and a label
+        nobody ever sees, and it fails silently.
+      – Labels stay proper nouns, shown as written and never translated. The picker shows the
+        label with the executable name beside it: a grouping the user cannot inspect is one
+        they cannot correct.
+- [ ] **3. The chart grows from the left instead of sliding under the cursor.**
+      `nm_core::series::Grid` ends at `now`, so a fresh application draws a short line pinned to
+      the right edge with empty space behind it, and every emission walks the whole picture one
+      second to the left — which is what makes a line something the user has to *catch* with
+      the pointer.
+      – **Anchor at the beginning.** Time starts where monitoring did, at the left edge, and the
+        drawing grows rightwards until it fills the window's span; only then does the window
+        begin to scroll.
+      – **Sliding becomes stepping**, and the mechanism already exists: slots are three seconds,
+        so quantising the axis to slot boundaries advances the chart once every three seconds
+        instead of drifting every one. Cheapest fix first; if it is not enough, hold the axis
+        still while the pointer is inside the chart and catch up when it leaves.
+      – The axis then wants labelling as elapsed time from the start rather than as negative
+        ages, and the note under the chart has to agree with it.
+- [ ] **4. The vocabulary: what a player reads first, and what waits for whoever asks.** The
+      page states everything it knows at once — probe kind, proven filtering, both egress
+      addresses and their adapters, the window a rate is taken over, five separate passive
+      figures — and the result is that the numbers that matter are indistinguishable from the
+      caveats attached to them. The UDP panel is the worst of it. **Two levels of depth, not
+      two products**: the same data from Rust, rendered at the depth the reader asked for.
+      – **Level one, the default row**: what it is, one word of state, and three figures —
+        response, stability, loss. Nothing else.
+      – **Level two is a per-row expander**, and there is **no setting**. A mode is a second
+        product to keep consistent and one a user forgets they are in; an expander is a
+        question asked and answered in place. What moves there: probe kind, proven filtering,
+        egress address and adapter, the span a rate covers, the incoming byte rate, the hop
+        count and where the route stops. An egress *conflict* does not move — it is a warning,
+        not a detail.
+      – **Level three is an ⓘ on every metric**: a tooltip of one or two plain sentences on
+        hover *and* on focus — keyboard-reachable, like everything else on this page — with
+        "Learn more" opening a **bundled** help page at that metric's own section.
+        Bundled, not a website: an external link is a network request this product promised not
+        to make on the user's behalf, and it is useless to a user who is being filtered. The
+        renderer supports links so that they can be added later, and any link it is given opens
+        in the system browser as an explicit act; **none ship now**.
+      – **The UDP panel is reworded, not thinned.** Its five figures stay; what changes is that
+        each one is named for the thing the player experiences: the server's own update rate,
+        the smoothness of arrivals, the worst pause, the drop-off against this endpoint's own
+        recent past, and — kept prominent, not demoted — a freeze. The drop-off keeps its
+        careful name: it is not loss, because only the far end knows what it sent.
+      – **The route panel leads with one number** ("the round trip to a router on the way, not
+        to the server") and puts its hop count and stopping point on level two. The rule Phase 5
+        exists to protect is unchanged: this is never labelled a round trip to the server, and
+        it never merges with the flow figures.
+      – **"Why this is not the ping your game shows" is its own block on the match-server card**,
+        collapsed to one line, and the first section of the help. Three points: the game times a
+        packet only it can answer; we do not read its protocol, because that means a capture
+        driver, its memory, or its wire format, and all three are refused; so what is shown is
+        the path and the flow, and their disagreement is the diagnosis. **This is the single
+        most important string in the application** — without it the honest answer looks like a
+        wrong one, and the user concludes the tool is broken rather than that the number they
+        knew was never what they thought.
+      – **Endpoints are not labelled by role** — no "match server", no "voice", no "login".
+        Everything except the transport and the traffic volume would be a guess, and a wrong
+        label on the right number is worse than no label. Naming a destination is the Phase 8+
+        enrichment item, where it is done from data rather than inference.
+      – Every string is an i18next key, so this is additive for Russian, help text included.
+- [ ] **5. A warm-up window, so the first seconds are not read as findings.** The samples right
+      after an application is picked are the least informative it will ever have: no window is
+      full, jitter is computed over a handful of samples, the fallback chain is still trying
+      kinds, ranking has not run yet, and the flow figures need eight updates before they say
+      anything at all. The page presents all of it as measurement.
+      – Show the application, and each newly discovered endpoint, as **warming up** for a stated
+        period with the remaining time visible, and withhold the *derived* figures — jitter,
+        loss, shortfall, the verdict banner — until the window behind them is real. **Rust
+        decides this**, not the UI: it is the same "absent knowledge stays absent" rule that
+        already withholds a figure whose precondition failed. The duration follows the health
+        window (`nm_app::monitor::health_window`) rather than becoming a new constant.
+      – **A warm-up must never hide something already certain.** Filtering proven, unreachable,
+        carrying traffic proven by bytes, a stall — those are answers, and arriving fast is the
+        point of them. Warm-up suppresses figures that are still noisy, never states that are
+        known.
+      – And it must end. Nothing discovered is a state of its own — "no endpoints yet, and here
+        is what that means" — not an indefinite spinner.
+- [ ] **6. The page must stop jumping.** Four separate causes, and they need separate fixes:
+      rows re-sort as health flickers between states; a row changes height when an optional
+      panel or field appears (path, flow, the stack round trip); endpoints appear and disappear
+      as discovery finds and forgets them; the chart is rebuilt whenever the *set* of lines
+      changes.
+      – **Hysteresis on the ordering, in Rust.** A health change moves a row only once it has
+        held for a few seconds, while the badge on the row changes immediately — so the order is
+        stable without any state on screen ever being stale. Ordering is a judgement and stays
+        where the judgements live.
+      – **Reserved space** for the optional panels and fields, so their arrival changes nothing
+        above them, and a fixed chart height across a rebuild.
+      – **A pinned endpoint holds its place.** Pinning is the user's own answer to a page that
+        moves while they read it, and it must survive re-sorting, new endpoints and a chart
+        rebuild.
+- [ ] **7. A verification pass across five titles**: CS2, Dota 2, World of Tanks, Forza Horizon,
+      Deadlock — one live session each. They are not five instances of the same check: Valve's
+      SDR backs three of them (CS2, Dota 2, Deadlock), which is the cross-check Phase 6's
+      reference pools were built for; World of Tanks runs on Wargaming's own infrastructure; and
+      Forza Horizon is a Microsoft title with its own launcher and peer traffic, which is the
+      case none of the others cover.
+      Record per title: whether a preset named it, which processes it grouped and whether that
+      grouping was right, whether a UDP match server appeared and whether it was the busiest
+      endpoint, whether the path edge engaged and how far it reached, what the flow figures
+      said, what the reference pool had, and the CPU/RAM cost. Report in `docs/` (Russian), and
+      the corrections it produces come back into this plan — the same loop the two spikes ran.
+      This does **not** replace the acceptance criteria still open from Phases 4 and 5: Discord
+      and a game at once, a single endpoint blocked by a firewall rule, five applications
+      against the probe budget.
+- **Accept**: on a live session, the match traffic is the first thing on the page and named as
+  such; a title from item 2's list appears by its own name; the chart can be pointed at without
+  chasing it, and neither a new endpoint nor a health change moves the row being read; the first
+  seconds of a capture show a warm-up rather than a verdict; a closed row carries three figures
+  and no caveats, every one of them has a keyboard-reachable explanation, and the match-server
+  card says in as many words why the game's own ping is a different number; the five titles are
+  recorded in `docs/` with the corrections they force.
+  A test asserts what the *closed* row contains, because the whole item is about what is not
+  shown by default, and that is exactly the kind of thing that grows back one field at a time.
 
 ## Phase 7 — Polish, persistence, packaging
 
