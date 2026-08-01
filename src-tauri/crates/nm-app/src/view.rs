@@ -13,7 +13,7 @@
 //!   `switch`, so a new variant is a TypeScript compile error rather than a missing string
 //!   at runtime.
 
-use nm_core::diagnosis::{Diagnosis, Verdict};
+use nm_core::diagnosis::{AppEvidence, BaselineEvidence, Diagnosis, Evidence, Verdict};
 use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
@@ -1066,7 +1066,7 @@ impl AppView {
         interfaces: &InterfaceNames,
         reports: &[EndpointReport],
         pool: Option<(usize, usize, PoolReading)>,
-        baselines: (Health, Health),
+        baselines: (BaselineEvidence, BaselineEvidence),
     ) -> Self {
         let mut counts = HealthCounts::default();
         for report in reports {
@@ -1074,14 +1074,14 @@ impl AppView {
         }
 
         let (domestic, foreign) = baselines;
-        let diagnosis = nm_core::diagnosis::diagnose(
-            &nm_core::diagnosis::Evidence::baselines(domestic, foreign).about(
-                nm_core::diagnosis::AppEvidence {
-                    endpoints: counts,
-                    pool: pool.map(|(_, _, reading)| reading),
-                },
-            ),
-        );
+        let diagnosis = nm_core::diagnosis::diagnose(&Evidence {
+            domestic,
+            foreign,
+            app: Some(AppEvidence {
+                endpoints: counts,
+                pool: pool.map(|(_, _, reading)| reading),
+            }),
+        });
 
         let mut endpoints: Vec<EndpointView> = reports
             .iter()

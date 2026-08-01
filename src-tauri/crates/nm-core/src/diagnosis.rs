@@ -29,7 +29,7 @@
 //! confident verdict about a border — the same rule `nm_probes::chain` follows when it
 //! refuses to claim filtering without proof, applied one level up.
 
-use crate::health::{Health, HealthCounts};
+use crate::health::HealthCounts;
 use crate::pool::PoolReading;
 
 /// What the evidence adds up to, as a network-level statement.
@@ -47,7 +47,11 @@ pub enum Verdict {
     /// see, which is different from — and far more honest than — reporting what it cannot
     /// see as an outage.
     NothingMeasurable,
-    /// Everything measured is within its thresholds.
+    /// Nothing measured points at a network-wide problem.
+    ///
+    /// Deliberately not "everything is fine": a single slow or unreachable member is still
+    /// on its own card with its own state, and a verdict that claimed otherwise would
+    /// contradict the page it sits on.
     Clear,
     /// Services inside the user's own country are degraded or unreachable.
     ///
@@ -106,17 +110,115 @@ pub struct AppEvidence {
     pub pool: Option<PoolReading>,
 }
 
+/// What one baseline group contributes.
+///
+/// The **distribution**, not the headline verdict, and that difference is a defect this
+/// module already made once. `GroupHealth` calls anything less than a clean sweep
+/// `Degraded`, which is right for a card that shows the counts beside it and wrong as an
+/// input here: read as a headline, one slow member among three clean ones became "services
+/// abroad do not answer" — a border claim built on a group that was answering everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BaselineEvidence {
+    /// How the group's members are distributed across the health states.
+    pub counts: HealthCounts,
+    /// Loss across the whole group, weighted by probes.
+    ///
+    /// Carried because it is the one thing that separates the two shapes of degradation.
+    /// Latency alone says almost nothing about a path — a tunnelled member and a service on
+    /// another continent are both slow for reasons nobody is doing to the user — while loss
+    /// spread across a group of unrelated operators is a path problem by construction.
+    /// Throttling, which is the more common shape of censorship than outright blocking,
+    /// arrives here as loss rather than as silence, so a rule reading only "does it answer"
+    /// would miss the case the product mostly exists for.
+    pub loss_pct: Option<f64>,
+}
+
+/// Loss across a whole baseline group that points at the path rather than at bad luck.
+///
+/// A couple of percent is ordinary internet, and the per-target threshold is already set
+/// there. This is a different question: a tenth of every packet lost across four unrelated
+/// operators at once is not four operators having a bad day.
+pub const GROUP_LOSS_THAT_POINTS_AT_A_PATH: f64 = 10.0;
+
+impl BaselineEvidence {
+    /// A group whose members are distributed like this, with no loss figure.
+    #[must_use]
+    pub const fn of(counts: HealthCounts) -> Self {
+        Self {
+            counts,
+            loss_pct: None,
+        }
+    }
+
+    /// The same group, with the loss its probes measured.
+    #[must_use]
+    pub const fn losing(mut self, loss_pct: Option<f64>) -> Self {
+        self.loss_pct = loss_pct;
+        self
+    }
+
+    /// How many members produced a usable answer.
+    ///
+    /// Members whose probes were all filtered are excluded: they measured nothing, and
+    /// counting them either way would turn an absence of knowledge into a finding.
+    #[must_use]
+    const fn judged(self) -> usize {
+        self.counts.known() - self.counts.blocked
+    }
+
+    /// Whether anything about this group is known at all.
+    #[must_use]
+    const fn is_measured(self) -> bool {
+        self.judged() > 0
+    }
+
+    /// Whether the group is failing as a *group*.
+    ///
+    /// **More than half its judged members answering nothing at all.** Two deliberate
+    /// choices in one line:
+    ///
+    /// *A proportion, not any failure.* The lists are built from a handful of diverse
+    /// operators precisely so that one of them being down is that operator's problem while
+    /// all of them being down is a network's — see `assets/targets/README.md`. A single
+    /// unreachable member is shown on its own card and must not become a verdict about the
+    /// user's country.
+    ///
+    /// *Answering, not healthy.* A slow member is answering. Latency is a poor basis for a
+    /// claim about a border, because a figure measured through a tunnel, or to a service
+    /// that is simply far away, is high for reasons nobody is doing to the user.
+    ///
+    /// Or the group is **losing packets across the board**, which is the other shape the
+    /// same finding takes: throttling degrades rather than blocks, and a rule that only
+    /// asked "does it answer" would miss the case this product mostly exists for.
+    #[must_use]
+    fn is_failing(self) -> bool {
+        if !self.is_measured() {
+            return false;
+        }
+        self.counts.answering() * 2 < self.judged()
+            || self
+                .loss_pct
+                .is_some_and(|loss| loss >= GROUP_LOSS_THAT_POINTS_AT_A_PATH)
+    }
+
+    /// Whether every probe this group sent was filtered.
+    #[must_use]
+    const fn is_entirely_filtered(self) -> bool {
+        self.counts.blocked > 0 && self.judged() == 0
+    }
+}
+
 /// Everything the diagnosis reads.
 ///
-/// A plain struct of already-computed verdicts rather than raw samples: each field is the
-/// product of a rule that is unit-tested where it lives, and re-deriving any of them here
-/// would put two answers to the same question in the codebase.
+/// A plain struct of already-computed distributions rather than raw samples: each field is
+/// the product of a rule that is unit-tested where it lives, and re-deriving any of them
+/// here would put two answers to the same question in the codebase.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Evidence {
-    /// The domestic baseline group's headline verdict.
-    pub domestic: Health,
-    /// The foreign baseline group's headline verdict.
-    pub foreign: Health,
+    /// The domestic baseline group.
+    pub domestic: BaselineEvidence,
+    /// The foreign baseline group.
+    pub foreign: BaselineEvidence,
     /// The application being diagnosed, when the verdict is about one.
     pub app: Option<AppEvidence>,
 }
@@ -124,10 +226,10 @@ pub struct Evidence {
 impl Evidence {
     /// The evidence for the general network alone, with no application in view.
     #[must_use]
-    pub const fn baselines(domestic: Health, foreign: Health) -> Self {
+    pub const fn baselines(domestic: HealthCounts, foreign: HealthCounts) -> Self {
         Self {
-            domestic,
-            foreign,
+            domestic: BaselineEvidence::of(domestic),
+            foreign: BaselineEvidence::of(foreign),
             app: None,
         }
     }
@@ -179,47 +281,44 @@ impl Diagnosis {
 /// may be rendered as good news.
 #[must_use]
 pub fn diagnose(evidence: &Evidence) -> Diagnosis {
-    // Nothing has been measured yet at all. First, because every rule below reads a verdict
-    // that would otherwise be `Unknown` and mean nothing.
-    if !evidence.domestic.is_known() && !evidence.foreign.is_known() {
-        return Diagnosis::general(Verdict::NotEnoughEvidence);
-    }
-
-    // Every probe that could have said something was filtered. This is a statement about
-    // what the app can see, and it outranks every verdict below precisely because those
-    // would all be guesses built on an absence.
-    if evidence.domestic == Health::Blocked && evidence.foreign == Health::Blocked {
-        return Diagnosis::general(Verdict::NothingMeasurable);
+    // Nothing has been measured yet at all. First, because every rule below reads a
+    // distribution that would otherwise be empty and mean nothing.
+    if !evidence.domestic.is_measured() && !evidence.foreign.is_measured() {
+        // Filtered everywhere is a different statement from "not yet": it says the app
+        // cannot see, which is far more honest than reporting what it cannot see as an
+        // outage, and it is a real state on this product's target networks.
+        let filtered =
+            evidence.domestic.is_entirely_filtered() || evidence.foreign.is_entirely_filtered();
+        return Diagnosis::general(if filtered {
+            Verdict::NothingMeasurable
+        } else {
+            Verdict::NotEnoughEvidence
+        });
     }
 
     // The domestic baseline is the one that points inward. Traffic to a service inside the
     // country never reaches a border, so a border cannot explain its failure.
-    if evidence.domestic.is_known() && !evidence.domestic.is_answering() {
-        return Diagnosis::general(Verdict::LocalNetworkOrProvider);
-    }
-    if evidence.domestic == Health::Degraded {
+    if evidence.domestic.is_failing() {
         return Diagnosis::general(Verdict::LocalNetworkOrProvider);
     }
 
     // Domestic services answer and foreign ones do not: the corroboration a single
     // traceroute could never supply.
-    if evidence.foreign.is_known() && !evidence.foreign.is_answering() {
+    if evidence.foreign.is_failing() {
         return Diagnosis::general(Verdict::CrossBorderPath);
     }
-    if evidence.foreign == Health::Degraded {
+    // The same finding in its other shape. Filtering that applies to foreign destinations
+    // while domestic ones answer the *same probe kind* is not a local firewall and not a
+    // dead host — it is the border's own signature, and the domestic group answering is
+    // exactly what makes it evidence rather than a guess about our own machine.
+    if evidence.domestic.is_measured() && evidence.foreign.is_entirely_filtered() {
         return Diagnosis::general(Verdict::CrossBorderPath);
     }
 
-    // The general network is as good as this app can measure. Anything left is about the
-    // application in view — and with none in view there is nothing further to say.
+    // Nothing at the network level points anywhere. Anything left is about the application
+    // in view — and with none in view there is nothing further to say.
     let Some(app) = evidence.app else {
-        return Diagnosis::general(
-            if evidence.domestic.is_known() || evidence.foreign.is_known() {
-                Verdict::Clear
-            } else {
-                Verdict::NotEnoughEvidence
-            },
-        );
+        return Diagnosis::general(Verdict::Clear);
     };
 
     diagnose_app(&app)
@@ -276,6 +375,28 @@ fn diagnose_app(app: &AppEvidence) -> Diagnosis {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::health::Health;
+
+    /// A four-member baseline group whose members are all in `health`.
+    ///
+    /// The bundled lists hold about four entries each, so this is the shape the rules
+    /// actually meet.
+    fn as_group(health: Health) -> HealthCounts {
+        let mut counts = HealthCounts::default();
+        for _ in 0..4 {
+            counts.record(health);
+        }
+        counts
+    }
+
+    /// A baseline group of `answering` members that answer and `silent` that do not.
+    fn mixed_group(answering: usize, silent: usize) -> HealthCounts {
+        HealthCounts {
+            ok: answering,
+            unreachable: silent,
+            ..HealthCounts::default()
+        }
+    }
 
     /// A distribution built from the states that matter, in the order they are named.
     fn counts(ok: usize, degraded: usize, unreachable: usize) -> HealthCounts {
@@ -316,7 +437,10 @@ mod tests {
 
     #[test]
     fn nothing_measured_yet_says_so_rather_than_anything_reassuring() {
-        let diagnosis = diagnose(&Evidence::baselines(Health::Unknown, Health::Unknown));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Unknown),
+            as_group(Health::Unknown),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::NotEnoughEvidence);
         assert!(!diagnosis.verdict.is_actionable());
     }
@@ -325,13 +449,19 @@ mod tests {
     fn every_probe_filtered_is_reported_as_not_being_able_to_see() {
         // The alternative — calling it a border — would be inventing a finding out of an
         // absence, on exactly the networks where being wrong matters most.
-        let diagnosis = diagnose(&Evidence::baselines(Health::Blocked, Health::Blocked));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Blocked),
+            as_group(Health::Blocked),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::NothingMeasurable);
     }
 
     #[test]
     fn both_baselines_healthy_and_no_application_is_clear() {
-        let diagnosis = diagnose(&Evidence::baselines(Health::Ok, Health::Ok));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Ok),
+            as_group(Health::Ok),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::Clear);
         assert_eq!(diagnosis.endpoints_total, 0);
     }
@@ -340,25 +470,77 @@ mod tests {
     fn a_failing_domestic_baseline_points_inward() {
         // Traffic to a service inside the country never reaches a border, so a border
         // cannot be the explanation.
-        for domestic in [Health::Unreachable, Health::Degraded, Health::Blocked] {
-            let diagnosis = diagnose(&Evidence::baselines(domestic, Health::Unreachable));
-            assert_eq!(
-                diagnosis.verdict,
-                Verdict::LocalNetworkOrProvider,
-                "{domestic:?}"
-            );
-        }
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Unreachable),
+            as_group(Health::Unreachable),
+        ));
+        assert_eq!(diagnosis.verdict, Verdict::LocalNetworkOrProvider);
+    }
+
+    #[test]
+    fn a_group_fails_only_when_most_of_it_has_stopped_answering() {
+        // The lists are a handful of *diverse operators* precisely so that one of them being
+        // down is that operator's problem. A single unreachable member is on its own card
+        // and must not become a verdict about the user's country.
+        let diagnosis = diagnose(&Evidence::baselines(
+            mixed_group(3, 1),
+            as_group(Health::Ok),
+        ));
+        assert_eq!(diagnosis.verdict, Verdict::Clear);
+
+        let diagnosis = diagnose(&Evidence::baselines(
+            mixed_group(1, 3),
+            as_group(Health::Ok),
+        ));
+        assert_eq!(diagnosis.verdict, Verdict::LocalNetworkOrProvider);
+    }
+
+    #[test]
+    fn a_slow_baseline_group_is_not_a_border() {
+        // Found by running the build: one tunnelled foreign member reading 177 ms among
+        // three clean ones made the group `Degraded`, and reading that headline turned it
+        // into "services abroad do not answer" — about a group that was answering
+        // everywhere. A slow member is an answering member; latency is high for reasons
+        // that have nothing to do with anything being blocked.
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Ok),
+            HealthCounts {
+                ok: 3,
+                degraded: 1,
+                ..HealthCounts::default()
+            },
+        ));
+        assert_eq!(diagnosis.verdict, Verdict::Clear);
+    }
+
+    #[test]
+    fn a_wholly_degraded_domestic_group_is_not_reported_as_an_outage_either() {
+        // Everything answering but slowly is a real observation, and it is the group cards'
+        // to report. A verdict naming the user's provider on the strength of latency alone
+        // would send them to argue with a call centre about a figure the app cannot
+        // attribute.
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Degraded),
+            as_group(Health::Ok),
+        ));
+        assert_eq!(diagnosis.verdict, Verdict::Clear);
     }
 
     #[test]
     fn a_failing_domestic_baseline_outranks_a_failing_foreign_one() {
-        let diagnosis = diagnose(&Evidence::baselines(Health::Unreachable, Health::Ok));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Unreachable),
+            as_group(Health::Ok),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::LocalNetworkOrProvider);
     }
 
     #[test]
     fn domestic_clean_with_foreign_dead_is_the_path_out_of_the_country() {
-        let diagnosis = diagnose(&Evidence::baselines(Health::Ok, Health::Unreachable));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Ok),
+            as_group(Health::Unreachable),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::CrossBorderPath);
     }
 
@@ -366,28 +548,61 @@ mod tests {
     fn a_foreign_baseline_whose_probes_are_all_filtered_is_still_the_path_out() {
         // Filtering that stops at the border is one of the things a border does, and the
         // domestic baseline answering is what makes it a finding rather than a guess.
-        let diagnosis = diagnose(&Evidence::baselines(Health::Ok, Health::Blocked));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Ok),
+            as_group(Health::Blocked),
+        ));
         assert_eq!(diagnosis.verdict, Verdict::CrossBorderPath);
     }
 
     #[test]
-    fn a_merely_degraded_foreign_baseline_is_still_the_path_out() {
-        // Throttling rather than blocking, which is the more common shape and reads the same
-        // way here: the app cannot tell them apart and does not pretend to.
-        let diagnosis = diagnose(&Evidence::baselines(Health::Ok, Health::Degraded));
-        assert_eq!(diagnosis.verdict, Verdict::CrossBorderPath);
+    fn a_foreign_group_losing_packets_across_the_board_is_the_path_out() {
+        // Throttling rather than blocking, which is the more common shape of censorship and
+        // the case the product mostly exists for. It arrives as loss, not as silence, so a
+        // rule that only asked "does it answer" would miss it entirely.
+        let evidence = Evidence {
+            domestic: BaselineEvidence::of(as_group(Health::Ok)).losing(Some(0.0)),
+            foreign: BaselineEvidence::of(as_group(Health::Degraded)).losing(Some(22.0)),
+            app: None,
+        };
+        assert_eq!(diagnose(&evidence).verdict, Verdict::CrossBorderPath);
+    }
+
+    #[test]
+    fn ordinary_packet_loss_is_not_a_border() {
+        // A couple of percent is what the internet does. The line is a tenth of every
+        // packet across four unrelated operators at once.
+        let evidence = Evidence {
+            domestic: BaselineEvidence::of(as_group(Health::Ok)).losing(Some(0.0)),
+            foreign: BaselineEvidence::of(as_group(Health::Degraded)).losing(Some(3.0)),
+            app: None,
+        };
+        assert_eq!(diagnose(&evidence).verdict, Verdict::Clear);
+    }
+
+    #[test]
+    fn loss_across_the_domestic_group_points_inward_before_it_points_out() {
+        let evidence = Evidence {
+            domestic: BaselineEvidence::of(as_group(Health::Degraded)).losing(Some(30.0)),
+            foreign: BaselineEvidence::of(as_group(Health::Degraded)).losing(Some(40.0)),
+            app: None,
+        };
+        assert_eq!(diagnose(&evidence).verdict, Verdict::LocalNetworkOrProvider);
     }
 
     #[test]
     fn a_general_verdict_covers_no_particular_endpoint() {
-        let diagnosis = diagnose(&Evidence::baselines(Health::Ok, Health::Unreachable));
+        let diagnosis = diagnose(&Evidence::baselines(
+            as_group(Health::Ok),
+            as_group(Health::Unreachable),
+        ));
         assert_eq!(diagnosis.endpoints_affected, 0);
         assert_eq!(diagnosis.endpoints_total, 0);
     }
 
     #[test]
     fn a_clean_network_and_a_clean_application_is_clear() {
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
             .about(app(counts(4, 0, 0), Some(pool(8, 0))));
         assert_eq!(diagnose(&evidence).verdict, Verdict::Clear);
     }
@@ -396,7 +611,7 @@ mod tests {
     fn a_clean_network_and_a_clean_pool_blames_the_route_to_the_application() {
         // The case a game accelerator exists for: everything else is fine, the game's own
         // infrastructure is fine, and the path this application's traffic takes is not.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
             .about(app(counts(5, 0, 2), Some(pool(8, 0))));
         let diagnosis = diagnose(&evidence);
 
@@ -407,7 +622,7 @@ mod tests {
 
     #[test]
     fn a_silent_pool_blames_the_games_own_infrastructure() {
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
             .about(app(counts(1, 0, 3), Some(pool(0, 8))));
         assert_eq!(diagnose(&evidence).verdict, Verdict::GameServersUnreachable);
     }
@@ -416,7 +631,7 @@ mod tests {
     fn a_partly_silent_pool_reports_a_partial_outage() {
         // The thing no single endpoint could show: some of a game's regions gone while
         // others serve normally.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
             .about(app(counts(2, 0, 2), Some(pool(4, 4))));
         assert_eq!(
             diagnose(&evidence).verdict,
@@ -428,7 +643,7 @@ mod tests {
     fn a_pool_that_could_not_be_judged_never_becomes_a_verdict_about_the_game() {
         // Every pool probe filtered says nothing about the game's servers, so the rules must
         // fall through to what *was* measured.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
             .about(app(counts(3, 0, 1), Some(filtered_pool(8))));
         assert_eq!(diagnose(&evidence).verdict, Verdict::RouteToThisApplication);
     }
@@ -438,7 +653,7 @@ mod tests {
         // The state of every pool built purely from a UDP title's own match servers, which
         // answer nothing by design. Left unguarded this would report an outage on every
         // match of every such game — so it must fall through to what was actually measured.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok)).about(app(
             counts(3, 0, 1),
             Some(PoolReading {
                 counts: HealthCounts::default(),
@@ -455,8 +670,8 @@ mod tests {
         // Most titles publish no reference address, so this is the ordinary case rather than
         // an edge one, and the verdict must be the weaker true one rather than the stronger
         // guess.
-        let evidence =
-            Evidence::baselines(Health::Ok, Health::Ok).about(app(counts(3, 0, 1), None));
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
+            .about(app(counts(3, 0, 1), None));
         assert_eq!(diagnose(&evidence).verdict, Verdict::RouteToThisApplication);
     }
 
@@ -465,7 +680,7 @@ mod tests {
         // The normal state of every UDP game server: nothing we can send is answered, while
         // the match runs perfectly. Counting it as a failure would report a working game as
         // broken, which is the one lie this product exists not to tell.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok)).about(app(
             HealthCounts {
                 ok: 3,
                 carrying_traffic: 1,
@@ -481,7 +696,7 @@ mod tests {
 
     #[test]
     fn an_endpoint_whose_probes_were_filtered_is_not_counted_as_a_failure_either() {
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok)).about(app(
             HealthCounts {
                 ok: 2,
                 blocked: 2,
@@ -500,7 +715,7 @@ mod tests {
     fn an_application_whose_every_endpoint_was_filtered_reports_that_it_cannot_see() {
         // Nothing failed and nothing succeeded. Calling it clear would present an absence of
         // measurement as good news.
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok)).about(app(
             HealthCounts {
                 blocked: 3,
                 ..HealthCounts::default()
@@ -512,14 +727,14 @@ mod tests {
 
     #[test]
     fn an_application_with_no_endpoints_yet_says_so() {
-        let evidence =
-            Evidence::baselines(Health::Ok, Health::Ok).about(app(HealthCounts::default(), None));
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok))
+            .about(app(HealthCounts::default(), None));
         assert_eq!(diagnose(&evidence).verdict, Verdict::NotEnoughEvidence);
     }
 
     #[test]
     fn an_application_whose_endpoints_are_all_unknown_says_so() {
-        let evidence = Evidence::baselines(Health::Ok, Health::Ok).about(app(
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Ok)).about(app(
             HealthCounts {
                 unknown: 4,
                 ..HealthCounts::default()
@@ -534,14 +749,15 @@ mod tests {
         // The ordering rule in one test: an application's endpoints failing while the whole
         // network is failing says nothing whatever about that application, and a verdict
         // sending the user to a game accelerator would waste their time and their money.
-        let evidence = Evidence::baselines(Health::Unreachable, Health::Unreachable)
-            .about(app(counts(0, 0, 7), Some(pool(0, 8))));
+        let evidence =
+            Evidence::baselines(as_group(Health::Unreachable), as_group(Health::Unreachable))
+                .about(app(counts(0, 0, 7), Some(pool(0, 8))));
         assert_eq!(diagnose(&evidence).verdict, Verdict::LocalNetworkOrProvider);
     }
 
     #[test]
     fn a_border_problem_is_never_blamed_on_the_game() {
-        let evidence = Evidence::baselines(Health::Ok, Health::Unreachable)
+        let evidence = Evidence::baselines(as_group(Health::Ok), as_group(Health::Unreachable))
             .about(app(counts(0, 0, 7), Some(pool(0, 8))));
         assert_eq!(diagnose(&evidence).verdict, Verdict::CrossBorderPath);
     }

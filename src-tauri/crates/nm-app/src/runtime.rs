@@ -725,7 +725,7 @@ fn emit_apps(
     // Read once for the whole emission rather than per application: it is the same answer
     // for all of them, and it is what stops an application being blamed for a network that
     // is failing underneath it.
-    let verdicts = baselines.verdicts(now);
+    let verdicts = baselines.evidence(now);
     let views = applications
         .iter()
         .map(|application| {

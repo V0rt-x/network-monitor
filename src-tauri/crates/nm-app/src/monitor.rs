@@ -17,7 +17,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use nm_core::health::{GroupHealth, Health, HealthThresholds};
+use nm_core::diagnosis::{BaselineEvidence, Evidence};
+use nm_core::health::{GroupHealth, HealthThresholds};
 use nm_core::history::SampleHistory;
 use nm_core::sample::{ProbeSample, Rtt};
 use nm_core::stats::WindowStats;
@@ -227,29 +228,37 @@ impl BaselineMonitor {
             .map(|group| self.group_view(*group, now))
             .collect();
 
-        let (domestic, foreign) = self.verdicts(now);
+        let (domestic, foreign) = self.evidence(now);
         NetworkHealth {
             uptime_secs,
             window_secs: nm_core::time::elapsed_secs(self.window),
-            diagnosis: nm_core::diagnosis::diagnose(&nm_core::diagnosis::Evidence::baselines(
-                domestic, foreign,
-            ))
+            diagnosis: nm_core::diagnosis::diagnose(&Evidence {
+                domestic,
+                foreign,
+                app: None,
+            })
             .into(),
             groups,
         }
     }
 
-    /// Each baseline's headline verdict, as of `now`.
+    /// What each baseline contributes to a diagnosis, as of `now`.
     ///
     /// Exposed because the applications need it too: an application's endpoints failing
     /// while the whole network is failing says nothing about that application, and the
     /// diagnosis engine cannot apply that rule without both baselines in front of it.
+    ///
+    /// The **distribution and the loss figure**, not the headline verdict. `GroupHealth`
+    /// calls anything less than a clean sweep `Degraded`, which is right on a card that
+    /// shows the counts beside it and wrong as an input to a conclusion — see
+    /// [`nm_core::diagnosis::BaselineEvidence`].
     #[must_use]
-    pub fn verdicts(&self, now: Instant) -> (Health, Health) {
-        (
-            self.group_health(BaselineGroup::Domestic, now).verdict,
-            self.group_health(BaselineGroup::Foreign, now).verdict,
-        )
+    pub fn evidence(&self, now: Instant) -> (BaselineEvidence, BaselineEvidence) {
+        let of = |group| {
+            let health = self.group_health(group, now);
+            BaselineEvidence::of(health.counts).losing(health.loss_pct)
+        };
+        (of(BaselineGroup::Domestic), of(BaselineGroup::Foreign))
     }
 
     fn group_health(&self, group: BaselineGroup, now: Instant) -> GroupHealth {

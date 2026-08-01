@@ -18,9 +18,10 @@ use nm_app::apps::AppMonitor;
 use nm_app::discovery::PassiveRtt;
 use nm_app::{AppProcessView, AppView, HealthCountsView, HealthView, ProbeKindView, TransportView};
 use nm_core::address::AddressPolicy;
+use nm_core::diagnosis::BaselineEvidence;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::flow::{FlowInstant, FlowObservation};
-use nm_core::health::{Health, HealthThresholds};
+use nm_core::health::{Health, HealthCounts, HealthThresholds};
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
 use nm_core::target::{TargetId, TargetRegistry};
 use nm_platform::interface::{InterfaceNames, NetworkInterface};
@@ -97,6 +98,16 @@ fn adapters() -> InterfaceNames {
     }])
 }
 
+/// A baseline group whose four members all answer, so nothing the tests assert about an
+/// application is ever shadowed by a verdict about the network underneath it.
+fn clean_baseline() -> HealthCounts {
+    let mut counts = HealthCounts::default();
+    for _ in 0..4 {
+        counts.record(Health::Ok);
+    }
+    counts
+}
+
 fn view(monitor: &AppMonitor, now: Instant) -> AppView {
     AppView::of(
         APP_ID,
@@ -109,7 +120,10 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
         &adapters(),
         &monitor.endpoints(APP, now),
         None,
-        (Health::Ok, Health::Ok),
+        (
+            BaselineEvidence::of(clean_baseline()),
+            BaselineEvidence::of(clean_baseline()),
+        ),
     )
 }
 

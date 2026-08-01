@@ -208,7 +208,7 @@
     "scope": "About {{affected}} of {{total}} endpoints",
     "notEnoughEvidence": "Not enough measured yet to say",
     "nothingMeasurable": "Probes are being filtered — nothing could be measured",
-    "clear": "Everything measured is within its thresholds",
+    "clear": "Nothing points at a network-wide problem",
     "localNetworkOrProvider": "Services inside your country are failing too — your connection or your provider",
     "crossBorderPath": "Services inside your country answer and services abroad do not — the path out",
     "routeToThisApplication": "The network is fine and this application's own endpoints are not — the route it takes",

@@ -1143,16 +1143,39 @@ Goal: at-a-glance "is it them or me", including "the game's servers are down (or
 **Phase 6 status: every item is built. Two things are not verified and neither should be
 read as done.**
 
-- **No real session has been run.** The status page has never been seen rendering, no service
-  has been blocked to watch a card react, and no pool has been probed against a live game.
-  Everything above is unit-tested against synthetic checks, fake clocks and fake registries.
-- **The bundled service and pool addresses have not been probed from this machine.** The lists
-  validate and stay inside the budget, and whether each front door actually answers a
-  TCP-connect — and whether the Valve relays actually answer an echo — is exactly the kind of
-  thing the Phase 2 spike existed to establish and has not been established here.
+- **The build was run, and the dashboard's verdict was seen rendering** on 2026-08-02 — which
+  immediately found the defect recorded below. **The status page itself has not been seen**,
+  no service has been blocked to watch a card react, and no pool has been probed against a
+  live game. Everything else above is unit-tested against synthetic checks, fake clocks and
+  fake registries.
+*One thing that **is** verified, because it was the riskier of the two unknowns:* every
+bundled address was probed from this machine on 2026-08-02, with the probe kind the app will
+actually use. **All thirteen service front doors answered a TCP connect**, and **all eight
+Valve relays answered an ICMP echo** — so neither list is the kind of guesswork that produced
+Phase 2's unusable SDR hostnames, and a pool built on those seeds will have members that can
+prove they answer. Timings are not recorded here: they describe a real person's network.
 
 Phase 6 decisions worth remembering:
 
+- **A verdict must read the distribution, never the group's headline.** Found within a minute
+  of running the build: the dashboard announced *"services inside your country answer and
+  services abroad do not — the path out"* while three of four foreign targets were perfectly
+  clean. The fourth was the tunnelled member reading 177 ms, which made the group `Degraded`,
+  and `Degraded` read as a headline became a claim about a border. `GroupHealth` calls
+  anything less than a clean sweep degraded — correct on a card that shows the counts beside
+  it, wrong as the input to a conclusion. A group now fails only when **more than half its
+  judged members answer nothing at all**, which is exactly why the lists are built from
+  diverse operators: one of them down is that operator's problem, all of them down is a
+  network's.
+  **Latency alone was dropped as evidence and loss was added in its place.** A slow member is
+  an answering member, and a figure high because of a tunnel or an ocean is not something
+  being done to the user — but throttling, which is the commoner shape of censorship than
+  outright blocking, arrives as *loss*, so a rule that only asked "does it answer" would have
+  missed the case the product mostly exists for. A group losing a tenth of every packet across
+  four unrelated operators is a path problem by construction.
+  This is the second time in this phase a verdict had to be weakened from what the plan
+  originally wrote, and both times for the same reason: the strong claim was reached from
+  evidence that did not support it.
 - **A pool member only counts once it has answered.** Found by reasoning about what a learned
   entry actually is: an endpoint a game connected to, which for a UDP title is a match server
   that answers nothing anyone can send — by design, while the match runs perfectly. Counted as
