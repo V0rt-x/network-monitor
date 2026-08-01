@@ -27,7 +27,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use nm_core::address::{AddressClass, AddressPolicy};
 use nm_core::endpoint::{AppId, LifecyclePolicy};
@@ -54,6 +54,7 @@ use crate::baselines::{self, BaselineGroup, BaselineTarget};
 use crate::discovery::{Discovery, FlowStatus, Sighting};
 use crate::events::AppEndpoints;
 use crate::monitor::{health_window, BaselineMonitor};
+use crate::pools::{LearnedPools, PoolMonitor, PoolSeeds};
 use crate::presets::PresetList;
 use crate::services::{self, ResolvedService};
 use crate::settings::Settings;
@@ -174,6 +175,25 @@ async fn run(
     });
     let mut applications = Applications::new(presets);
 
+    let seeds = PoolSeeds::bundled().unwrap_or_else(|error| {
+        // Validated by a test, so close to unreachable. Without seeds the pools are
+        // whatever this machine has learned, which is the state most titles are in anyway.
+        eprintln!("network-monitor: the bundled reference pools could not be loaded: {error}");
+        PoolSeeds::empty()
+    });
+    let store_path = pools_path(&app);
+    let mut store = match (&store_path, settings.remember_game_servers) {
+        (Some(path), true) => LearnedPools::load(path),
+        // Asked not to remember: nothing is read, and anything already written is removed
+        // rather than left lying there. A setting that stopped *adding* to a record while
+        // keeping the record would not be the promise the wording makes.
+        (Some(path), false) => {
+            let _ = std::fs::remove_file(path);
+            LearnedPools::default()
+        }
+        (None, _) => LearnedPools::default(),
+    };
+
     loop {
         let end = session(
             &app,
@@ -182,6 +202,9 @@ async fn run(
             &visible,
             started,
             &mut applications,
+            &seeds,
+            &mut store,
+            store_path.as_deref(),
         )
         .await;
         match end {
@@ -196,7 +219,10 @@ async fn run(
 // the session drops all of it at once, and splitting the setup out would only move the
 // declarations away from the loop that borrows them. The decisions themselves live in the
 // helpers below and in the crates underneath.
-#[allow(clippy::too_many_lines)]
+// Many arguments for the same reason it is long: everything the session borrows from the
+// process above it arrives here, and bundling them into a struct would only move the list
+// somewhere the reader has to go and find it.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn session(
     app: &AppHandle<Wry>,
     settings: &Settings,
@@ -204,12 +230,20 @@ async fn session(
     visible: &AtomicBool,
     started: Instant,
     applications: &mut Applications,
+    seeds: &PoolSeeds,
+    store: &mut LearnedPools,
+    store_path: Option<&std::path::Path>,
 ) -> SessionEnd {
     let interval = settings.baseline_interval();
     let policy = AddressPolicy::default();
     let lifecycle = LifecyclePolicy::default();
     let mut baselines = BaselineMonitor::new(HealthThresholds::default(), health_window(interval));
     let mut services = ServiceMonitor::new(StatusThresholds::default());
+    let mut pools = PoolMonitor::new(
+        seeds.clone(),
+        HealthThresholds::default(),
+        settings.remember_game_servers,
+    );
     let mut apps = match AppMonitor::new(
         policy.clone(),
         lifecycle,
@@ -263,6 +297,10 @@ async fn session(
     for id in applications.iter().map(Application::id).collect::<Vec<_>>() {
         let _ = apps.monitor(id);
     }
+    for application in applications.iter() {
+        let changes = track_pool(&mut pools, application, store, &mut registry);
+        queue(&mut pending, changes, &refusals);
+    }
     discovery.watch(&applications.watched_pids());
 
     let mut ticker = tokio::time::interval(EMIT_PERIOD);
@@ -283,7 +321,15 @@ async fn session(
                 Some(MonitorCommand::WindowRevealed) => {
                     emit_health(app, &baselines, started);
                     emit_services(app, &services);
-                    emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
+                    emit_apps(
+                        app,
+                        &apps,
+                        &pools,
+                        &baselines,
+                        applications,
+                        &interfaces,
+                        discovery.flow_status(),
+                    );
                 }
                 Some(MonitorCommand::MonitorApp(pid)) => {
                     // A fresh snapshot rather than the last periodic one: the user has just
@@ -293,6 +339,12 @@ async fn session(
                         if let Some(id) = applications.adopt(pid, &snapshot) {
                             if apps.monitor(id).is_err() {
                                 applications.forget(id);
+                            } else if let Some(application) =
+                                applications.iter().find(|entry| entry.id() == id)
+                            {
+                                let changes =
+                                    track_pool(&mut pools, application, store, &mut registry);
+                                queue(&mut pending, changes, &refusals);
                             }
                             discovery.watch(&applications.watched_pids());
                         }
@@ -303,6 +355,10 @@ async fn session(
                         discovery.watch(&applications.watched_pids());
                         let changes = apps.forget(&mut registry, id);
                         queue(&mut pending, changes, &refusals);
+                        // The pool's own targets go with it: a trickle is only justified
+                        // while the user is watching the game it describes.
+                        let released = pools.forget(id, &mut registry);
+                        queue(&mut pending, released, &refusals);
                     }
                 }
                 None => return SessionEnd::Shutdown,
@@ -311,13 +367,16 @@ async fn session(
                 let changes = fold_in(
                     &mut baselines,
                     &mut services,
+                    &mut pools,
                     &mut apps,
                     &mut registry,
                     &completed,
                 );
                 queue(&mut pending, changes, &refusals);
             }
-            Some(observation) = observations.recv() => observe(&mut apps, applications, observation),
+            Some(observation) = observations.recv() => {
+                observe(&mut apps, &mut pools, applications, observation);
+            }
             Some(id) = refused.recv() => apps.note_unmeasurable(id),
             _ = membership.tick(), if !applications.is_empty() => {
                 // What an application consists of changes underneath it: a launcher exits
@@ -329,6 +388,14 @@ async fn session(
                     discovery.watch(&applications.watched_pids());
                 }
                 interfaces = read_interfaces();
+                // Wall clock, and only here: a pool entry ages across restarts, which a
+                // monotonic clock cannot express. Nothing it decides is a measurement.
+                let changes = pools.sweep(&mut registry, SystemTime::now());
+                queue(&mut pending, changes, &refusals);
+                if pools.take_learned_change() {
+                    pools.merge_learned_into(store);
+                    persist_pools(store, store_path);
+                }
             }
             _ = ticker.tick() => {
                 // All of this runs whether the window is visible or not: hidden means "stop
@@ -340,11 +407,72 @@ async fn session(
                 if visible.load(Ordering::Relaxed) {
                     emit_health(app, &baselines, started);
                     emit_services(app, &services);
-                    emit_apps(app, &apps, applications, &interfaces, discovery.flow_status());
+                    emit_apps(
+                        app,
+                        &apps,
+                        &pools,
+                        &baselines,
+                        applications,
+                        &interfaces,
+                        discovery.flow_status(),
+                    );
                 }
             }
         }
     }
+}
+
+/// Starts a pool for one application, if it is a title we can look one up for.
+///
+/// An application with no bundled preset gets no pool, and that is honest rather than
+/// lazy: a pool is keyed on an identity that survives a restart, and an application the
+/// user grouped by executable name has no such identity to remember it under.
+fn track_pool(
+    pools: &mut PoolMonitor,
+    application: &Application,
+    store: &LearnedPools,
+    registry: &mut TargetRegistry,
+) -> Vec<TargetChange> {
+    let Some(preset) = application.preset() else {
+        return Vec::new();
+    };
+    let learned = store.for_preset(preset);
+    pools.track(
+        application.id(),
+        preset,
+        &learned,
+        registry,
+        SystemTime::now(),
+    )
+}
+
+/// Writes the learned endpoints out, if there is anywhere to write them.
+///
+/// Failure is reported once and then dropped: everything this file holds is a convenience
+/// the running session already has in memory, and refusing to monitor because a disk is
+/// full would be a far worse answer than starting from the bundled seeds next time.
+fn persist_pools(store: &LearnedPools, path: Option<&std::path::Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    if store.is_empty() {
+        // Nothing left to remember — every entry expired, or the user asked for none. The
+        // file goes rather than being left as an empty shell of what it used to hold.
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+    if store.store(path).is_err() {
+        eprintln!("network-monitor: the learned game servers could not be written");
+    }
+}
+
+/// Where the learned-endpoint file lives, when the platform can tell us.
+fn pools_path(app: &AppHandle<Wry>) -> Option<std::path::PathBuf> {
+    use tauri::Manager as _;
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|directory| directory.join(crate::pools::FILE_NAME))
 }
 
 /// Takes a process snapshot without blocking the monitoring loop's thread.
@@ -383,12 +511,25 @@ fn read_interfaces() -> InterfaceNames {
 /// stopped watching between a poll being taken and its rows arriving maps to nothing and
 /// the sighting is dropped — that race is normal rather than a fault, and so is a process
 /// that has not yet been adopted into the application it will belong to.
-fn observe(apps: &mut AppMonitor, applications: &Applications, sighting: Sighting) {
+fn observe(
+    apps: &mut AppMonitor,
+    pools: &mut PoolMonitor,
+    applications: &Applications,
+    sighting: Sighting,
+) {
     match sighting {
         Sighting::Endpoint(observation) => {
             let Some(app) = applications.app_of(observation.pid) else {
                 return;
             };
+            // The pool learns from the same sighting, without a port: what it wants to know
+            // later is whether that *machine* answers, and the port the game happened to
+            // play over carries nothing we can send.
+            pools.observe(
+                app,
+                nm_core::target::TargetAddress::icmp(observation.endpoint.address.ip()),
+                SystemTime::now(),
+            );
             let _ = apps.observe(
                 app,
                 observation.endpoint,
@@ -502,6 +643,7 @@ fn flush(pending: &mut VecDeque<ProbeCommand>, probe_commands: &mpsc::Sender<Pro
 fn fold_in(
     baselines: &mut BaselineMonitor,
     services: &mut ServiceMonitor,
+    pools: &mut PoolMonitor,
     apps: &mut AppMonitor,
     registry: &mut TargetRegistry,
     completed: &Completed,
@@ -535,6 +677,7 @@ fn fold_in(
             let sample = ProbeSample::new(completed.report.at, *outcome);
             baselines.record(id, sample);
             services.record(id, sample);
+            pools.record(id, sample);
             apps.record(id, sample);
             Vec::new()
         }
@@ -568,18 +711,28 @@ fn emit_services(app: &AppHandle<Wry>, monitor: &ServiceMonitor) {
 /// Sent even with nothing monitored, because the page still has to say whether flow events
 /// are available: without them there are no UDP endpoints and no byte counters anywhere,
 /// and an empty list must not be mistaken for an application that is quiet.
+#[allow(clippy::too_many_arguments)]
 fn emit_apps(
     app: &AppHandle<Wry>,
     apps: &AppMonitor,
+    pools: &PoolMonitor,
+    baselines: &BaselineMonitor,
     applications: &Applications,
     interfaces: &InterfaceNames,
     flow_status: FlowStatus,
 ) {
     let now = Instant::now();
+    // Read once for the whole emission rather than per application: it is the same answer
+    // for all of them, and it is what stops an application being blamed for a network that
+    // is failing underneath it.
+    let verdicts = baselines.verdicts(now);
     let views = applications
         .iter()
         .map(|application| {
             let reports = apps.endpoints(application.id(), now);
+            let pool = pools
+                .reading(application.id(), now)
+                .map(|report| (report.seeded, report.learned, report.reading));
             let processes = application
                 .members()
                 .iter()
@@ -595,6 +748,8 @@ fn emit_apps(
                 apps.chart_ages_secs(),
                 interfaces,
                 &reports,
+                pool,
+                verdicts,
             )
         })
         .collect();

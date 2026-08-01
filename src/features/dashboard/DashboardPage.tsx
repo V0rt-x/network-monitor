@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { VerdictBanner } from '../../shared/VerdictBanner';
 import { CoreStatusPanel } from './CoreStatusPanel';
 import { GroupCard } from './GroupCard';
 import { useNetworkHealth } from './useNetworkHealth';
@@ -29,6 +30,10 @@ export const DashboardPage = () => {
 
       {health.kind === 'measuring' && (
         <>
+          {/* The comparison, above the two columns it is drawn from: neither baseline means
+              much on its own, and the whole reason they sit side by side is what their
+              disagreement says. */}
+          <VerdictBanner diagnosis={health.health.diagnosis} />
           <p className="nm-dashboard__window">
             {t('dashboard.window', { seconds: health.health.windowSecs })}
           </p>

@@ -100,6 +100,19 @@ export const SettingsPage = () => {
         <p className="nm-field__hint">{t('settings.autostartHint')}</p>
       </div>
 
+      <div className="nm-field nm-field--inline">
+        <input
+          id="nm-remember-servers"
+          type="checkbox"
+          checked={settings.rememberGameServers}
+          onChange={(event) => {
+            change({ rememberGameServers: event.target.checked });
+          }}
+        />
+        <label htmlFor="nm-remember-servers">{t('settings.rememberGameServers')}</label>
+        <p className="nm-field__hint">{t('settings.rememberGameServersHint')}</p>
+      </div>
+
       <p className="nm-settings__privacy">{t('settings.privacyNote')}</p>
     </section>
   );

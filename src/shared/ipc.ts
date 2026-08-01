@@ -33,6 +33,7 @@ export type {
   CoreHeartbeat,
   CoreReadiness,
   CoreStatus,
+  DiagnosisView,
   EndpointView,
   FlowStatusView,
   PassiveRttView,
@@ -46,6 +47,7 @@ export type {
   PathQualityView,
   PathView,
   PlatformKind,
+  PoolView,
   ProbeKindView,
   ProbingView,
   ServiceEndpointView,
@@ -58,6 +60,7 @@ export type {
   TargetView,
   TransportView,
   TrayLabels,
+  VerdictView,
 } from '../bindings';
 
 export const fetchCoreStatus = (): Promise<CoreStatus> => commands.coreStatus();

@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next';
 
 import { formatCount } from '../../shared/format';
 import type { AppView } from '../../shared/ipc';
+import { VerdictBanner } from '../../shared/VerdictBanner';
 import { healthModifier } from '../dashboard/labels';
 import type { ChartLine } from './chartSeries';
 import { EndpointChart } from './EndpointChart';
 import { EndpointColours } from './endpointColours';
 import { EndpointRow } from './EndpointRow';
+import { PoolPanel } from './PoolPanel';
 
 interface AppCardProps {
   readonly app: AppView;
@@ -124,6 +126,9 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
           {t('apps.stop')}
         </button>
       </header>
+
+      <VerdictBanner diagnosis={app.diagnosis} subject={app.name} />
+      <PoolPanel pool={app.pool} />
 
       {counts.length > 0 && (
         <ul className="nm-appcard__distribution">

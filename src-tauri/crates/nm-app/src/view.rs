@@ -13,10 +13,12 @@
 //!   `switch`, so a new variant is a TypeScript compile error rather than a missing string
 //!   at runtime.
 
+use nm_core::diagnosis::{Diagnosis, Verdict};
 use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
 use nm_core::health::{GroupHealth, Health, HealthCounts};
 use nm_core::path::PathEnd;
+use nm_core::pool::PoolReading;
 use nm_core::status::CheckMark;
 use nm_platform::interface::InterfaceNames;
 use nm_probes::probe::ProbeKind;
@@ -200,6 +202,128 @@ impl GroupView {
             jitter_ms: health.jitter_ms,
             loss_pct: health.loss_pct,
             targets,
+        }
+    }
+}
+
+/// What the evidence adds up to, as a network-level statement.
+///
+/// Every variant is a fact about a *network path*. None of them says a game is broken or a
+/// company's service is down — the app cannot observe either, and claiming one would be
+/// exactly the failure this product exists to avoid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum VerdictView {
+    /// Too little has been measured to say anything at all.
+    NotEnoughEvidence,
+    /// Probes are being filtered wherever they were sent, so nothing was measured.
+    NothingMeasurable,
+    /// Everything measured is within its thresholds.
+    Clear,
+    /// Services inside the user's own country are degraded or unreachable.
+    LocalNetworkOrProvider,
+    /// Domestic services answer normally and foreign ones do not.
+    CrossBorderPath,
+    /// The general network is fine and this application's own endpoints are not.
+    RouteToThisApplication,
+    /// The game's own reference targets have all gone silent while the network is fine.
+    GameServersUnreachable,
+    /// Part of the game's reference pool is silent while the rest answers.
+    GameServersPartlyUnreachable,
+}
+
+impl From<Verdict> for VerdictView {
+    fn from(verdict: Verdict) -> Self {
+        match verdict {
+            Verdict::NothingMeasurable => Self::NothingMeasurable,
+            Verdict::Clear => Self::Clear,
+            Verdict::LocalNetworkOrProvider => Self::LocalNetworkOrProvider,
+            Verdict::CrossBorderPath => Self::CrossBorderPath,
+            Verdict::RouteToThisApplication => Self::RouteToThisApplication,
+            Verdict::GameServersUnreachable => Self::GameServersUnreachable,
+            Verdict::GameServersPartlyUnreachable => Self::GameServersPartlyUnreachable,
+            // A verdict this build has no word for must read as "we cannot say", never as
+            // anything the user might act on.
+            _ => Self::NotEnoughEvidence,
+        }
+    }
+}
+
+/// A verdict and the endpoints it actually covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosisView {
+    /// What the evidence says.
+    pub verdict: VerdictView,
+    /// Whether it is something the user can act on, as against a state of not knowing.
+    ///
+    /// Sent rather than derived in TypeScript, because which verdicts are actionable is a
+    /// judgement and every judgement in this product lives in Rust where it is tested.
+    pub actionable: bool,
+    /// How many of the application's endpoints the verdict is about.
+    ///
+    /// Zero for a verdict about the general network. "Two of seven endpoints" is a
+    /// different message from "your game is unreachable", and only one of them is true.
+    pub endpoints_affected: u32,
+    /// How many endpoints the application has in total.
+    pub endpoints_total: u32,
+}
+
+impl From<Diagnosis> for DiagnosisView {
+    fn from(diagnosis: Diagnosis) -> Self {
+        let narrow = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
+        Self {
+            verdict: diagnosis.verdict.into(),
+            actionable: diagnosis.verdict.is_actionable(),
+            endpoints_affected: narrow(diagnosis.endpoints_affected),
+            endpoints_total: narrow(diagnosis.endpoints_total),
+        }
+    }
+}
+
+/// What a monitored game's reference pool says about its own infrastructure.
+///
+/// The one signal that can separate "the game's servers are not answering" from "you cannot
+/// reach them" — several addresses belonging to the same game, in different places, probed
+/// at a trickle. Shown beside the verdict rather than instead of it: the numbers are what
+/// let a user check the conclusion.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolView {
+    /// How many members came from the bundled seeds the operator published.
+    pub seeded: u32,
+    /// How many this machine learned from the game's own traffic.
+    ///
+    /// Distinguished from the seeds because they are different evidence: a learned member is
+    /// a server this user was actually placed on, which is stronger, and it exists only
+    /// because the user allowed it to be remembered.
+    pub learned: u32,
+    /// What the members say together.
+    pub health: HealthView,
+    /// The distribution behind it.
+    pub counts: HealthCountsView,
+    /// How many of the judged members answer, as a percentage.
+    ///
+    /// `null` where nothing could be judged — every probe filtered, or nothing probed yet.
+    /// That must stay distinct from zero: one is an absence of knowledge and the other is a
+    /// finding.
+    pub answering_pct: Option<f64>,
+    /// Median round-trip time across the answering members, in milliseconds.
+    pub rtt_ms: Option<f64>,
+}
+
+impl PoolView {
+    /// Renders one application's pool report.
+    #[must_use]
+    pub fn of(seeded: usize, learned: usize, reading: &PoolReading) -> Self {
+        let narrow = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
+        Self {
+            seeded: narrow(seeded),
+            learned: narrow(learned),
+            health: reading.health().into(),
+            counts: reading.counts.into(),
+            answering_pct: reading.answering_ratio().map(|ratio| ratio * 100.0),
+            rtt_ms: reading.rtt_ms,
         }
     }
 }
@@ -899,6 +1023,19 @@ pub struct AppView {
     /// distribution is what the page shows, because partial failure inside one application
     /// is the normal case under filtering rather than an edge case.
     pub counts: HealthCountsView,
+    /// What all the evidence says together, and which endpoints it covers.
+    ///
+    /// The one place the app draws a conclusion rather than reporting a measurement. It is
+    /// still a network-level statement: it never says the game is broken, and it says how
+    /// much of the application it is about, because partial failure inside one application
+    /// is the normal case under filtering rather than an edge one.
+    pub diagnosis: DiagnosisView,
+    /// What the game's own reference pool says, when it has one.
+    ///
+    /// `null` for a title whose operator publishes no reference address and whose servers
+    /// this machine has never seen — the ordinary case for most games, and one the page must
+    /// state, because an absent pool can neither report an outage nor rule one out.
+    pub pool: Option<PoolView>,
     /// Seconds before now for each slot of the chart, negative and ascending.
     ///
     /// One axis for the whole application, which is the point: a list of sparklines answers
@@ -920,11 +1057,23 @@ impl AppView {
         chart_age_secs: Vec<f64>,
         interfaces: &InterfaceNames,
         reports: &[EndpointReport],
+        pool: Option<(usize, usize, PoolReading)>,
+        baselines: (Health, Health),
     ) -> Self {
         let mut counts = HealthCounts::default();
         for report in reports {
             counts.record(report.health);
         }
+
+        let (domestic, foreign) = baselines;
+        let diagnosis = nm_core::diagnosis::diagnose(
+            &nm_core::diagnosis::Evidence::baselines(domestic, foreign).about(
+                nm_core::diagnosis::AppEvidence {
+                    endpoints: counts,
+                    pool: pool.map(|(_, _, reading)| reading),
+                },
+            ),
+        );
 
         let mut endpoints: Vec<EndpointView> = reports
             .iter()
@@ -943,6 +1092,8 @@ impl AppView {
             name,
             processes,
             counts: counts.into(),
+            diagnosis: diagnosis.into(),
+            pool: pool.map(|(seeded, learned, reading)| PoolView::of(seeded, learned, &reading)),
             chart_age_secs,
             endpoints,
         }

@@ -937,3 +937,75 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * The verdict banner: the one place the app states a conclusion.
+ *
+ * Always present, including when it has nothing to say. A banner that appeared only on bad
+ * news would make its absence mean "fine", and the state before anything has been measured
+ * would then read as good news.
+ */
+.nm-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--nm-border);
+  border-left-width: 4px;
+  background: var(--nm-surface);
+}
+
+.nm-verdict__headline {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.nm-verdict__scope,
+.nm-verdict__advice {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.78rem;
+}
+
+/* States of not knowing stay grey: neither reassuring nor alarming. */
+.nm-verdict--notEnoughEvidence,
+.nm-verdict--nothingMeasurable {
+  border-left-color: var(--nm-unknown);
+}
+
+.nm-verdict--clear {
+  border-left-color: var(--nm-ok);
+}
+
+.nm-verdict--localNetworkOrProvider,
+.nm-verdict--crossBorderPath {
+  border-left-color: var(--nm-unreachable);
+}
+
+.nm-verdict--routeToThisApplication,
+.nm-verdict--gameServersPartlyUnreachable {
+  border-left-color: var(--nm-degraded);
+}
+
+.nm-verdict--gameServersUnreachable {
+  border-left-color: var(--nm-blocked);
+}
+
+.nm-pool__metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.nm-pool__metrics dt {
+  color: var(--nm-muted);
+}
+
+.nm-pool__metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}

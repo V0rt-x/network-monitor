@@ -22,6 +22,12 @@ vi.mock('./Sparkline', () => ({ Sparkline: () => <div data-testid="sparkline" />
 const HEALTH: NetworkHealth = {
   uptimeSecs: 30,
   windowSecs: 60,
+  diagnosis: {
+    verdict: 'crossBorderPath',
+    actionable: true,
+    endpointsAffected: 0,
+    endpointsTotal: 0,
+  },
   groups: [
     {
       group: 'domestic',

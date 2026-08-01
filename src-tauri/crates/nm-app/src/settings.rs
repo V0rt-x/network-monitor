@@ -63,6 +63,15 @@ pub struct Settings {
     pub baseline_interval_secs: u32,
     /// Whether the app starts with the user's session. Off unless asked for.
     pub autostart: bool,
+    /// Whether the addresses a monitored game connects to are remembered between sessions.
+    ///
+    /// On by default, because without it a game reference pool is only as good as what the
+    /// operator publishes — and for most titles that is nothing, leaving the app unable to
+    /// tell "the game's servers are down" from "you cannot reach them". It is a setting all
+    /// the same: it is the one thing this application writes to disk that describes what the
+    /// user plays and where, and for the people this product is for that is worth a choice
+    /// rather than an assumption. Turning it off also deletes what was already remembered.
+    pub remember_game_servers: bool,
 }
 
 impl Default for Settings {
@@ -72,6 +81,7 @@ impl Default for Settings {
             country: DEFAULT_COUNTRY.to_owned(),
             baseline_interval_secs: DEFAULT_BASELINE_INTERVAL_SECS,
             autostart: false,
+            remember_game_servers: true,
         }
     }
 }
@@ -100,6 +110,7 @@ impl Settings {
                 .baseline_interval_secs
                 .clamp(MIN_BASELINE_INTERVAL_SECS, MAX_BASELINE_INTERVAL_SECS),
             autostart: self.autostart,
+            remember_game_servers: self.remember_game_servers,
         }
     }
 
@@ -123,6 +134,7 @@ pub struct Stored {
     country: Option<String>,
     baseline_interval_secs: Option<u32>,
     autostart: Option<bool>,
+    remember_game_servers: Option<bool>,
 }
 
 impl Stored {
@@ -136,6 +148,9 @@ impl Stored {
                 .baseline_interval_secs
                 .unwrap_or(defaults.baseline_interval_secs),
             autostart: self.autostart.unwrap_or(defaults.autostart),
+            remember_game_servers: self
+                .remember_game_servers
+                .unwrap_or(defaults.remember_game_servers),
         }
     }
 }

@@ -83,6 +83,15 @@
     }
   },
   "apps": {
+    "pool": {
+      "title": "The game's own reference servers",
+      "absent": "No reference servers for this application yet. Its operator publishes none, and this machine has not seen it connect to any — so the app cannot tell an outage of the game's servers apart from a path you cannot reach.",
+      "answering": "Answering",
+      "rtt": "Median round trip",
+      "members": "Members",
+      "membership": "{{seeded}} published, {{learned}} learned",
+      "note": "Several addresses belonging to this game, in different places, probed rarely. All of them silent while your baselines are clean is the only evidence that points at the game rather than at your path."
+    },
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
     "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
@@ -191,6 +200,25 @@
       "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
     }
   },
+  "verdict": {
+    "label": "What the measurements add up to",
+    "about": "{{subject}}: {{verdict}}",
+    "scope": "About {{affected}} of {{total}} endpoints",
+    "notEnoughEvidence": "Not enough measured yet to say",
+    "nothingMeasurable": "Probes are being filtered — nothing could be measured",
+    "clear": "Everything measured is within its thresholds",
+    "localNetworkOrProvider": "Services inside your country are failing too — your connection or your provider",
+    "crossBorderPath": "Services inside your country answer and services abroad do not — the path out",
+    "routeToThisApplication": "The network is fine and this application's own endpoints are not — the route it takes",
+    "gameServersUnreachable": "The game's own reference servers are not answering from here",
+    "gameServersPartlyUnreachable": "Part of the game's reference servers are not answering from here",
+    "advice": {
+      "localNetworkOrProvider": "Check your own equipment first; if that is fine, the problem is upstream of you and a VPN will not help.",
+      "crossBorderPath": "A VPN may help, since the failure is on the way out rather than on your own line.",
+      "routeToThisApplication": "A game accelerator may help: everything else reaches the network normally and this application's traffic does not.",
+      "gameServers": "Nothing on your side would change this. The addresses that belong to this game are not answering from here."
+    }
+  },
   "status": {
     "waiting": "Checking services…",
     "unavailable": "The core stopped sending service checks",
@@ -236,6 +264,8 @@
     "intervalHint": "How often each baseline target is probed. Longer intervals leave more of the probe budget for the applications you monitor.",
     "autostart": "Start with the system",
     "autostartHint": "Off unless you turn it on. Reflects what the system reports, not what was requested.",
+    "rememberGameServers": "Remember the servers your games connect to",
+    "rememberGameServersHint": "Kept on this machine and sent nowhere. It is what lets the app tell \"this game's servers are down\" apart from \"you cannot reach them\". Turning it off deletes what was already remembered.",
     "privacyNote": "All measurements stay on this machine. The app sends nothing anywhere except the probes on these lists.",
     "problem": {
       "unreadable": "The settings file could not be read; defaults are in use.",

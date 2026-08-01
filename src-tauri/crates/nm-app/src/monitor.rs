@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use nm_core::health::{GroupHealth, HealthThresholds};
+use nm_core::health::{GroupHealth, Health, HealthThresholds};
 use nm_core::history::SampleHistory;
 use nm_core::sample::{ProbeSample, Rtt};
 use nm_core::stats::WindowStats;
@@ -222,16 +222,44 @@ impl BaselineMonitor {
     /// the vectors it builds are off every hot path.
     #[must_use]
     pub fn snapshot(&self, now: Instant, uptime_secs: u32) -> NetworkHealth {
-        let groups = BaselineGroup::ALL
+        let groups: Vec<GroupView> = BaselineGroup::ALL
             .iter()
             .map(|group| self.group_view(*group, now))
             .collect();
 
+        let (domestic, foreign) = self.verdicts(now);
         NetworkHealth {
             uptime_secs,
             window_secs: nm_core::time::elapsed_secs(self.window),
+            diagnosis: nm_core::diagnosis::diagnose(&nm_core::diagnosis::Evidence::baselines(
+                domestic, foreign,
+            ))
+            .into(),
             groups,
         }
+    }
+
+    /// Each baseline's headline verdict, as of `now`.
+    ///
+    /// Exposed because the applications need it too: an application's endpoints failing
+    /// while the whole network is failing says nothing about that application, and the
+    /// diagnosis engine cannot apply that rule without both baselines in front of it.
+    #[must_use]
+    pub fn verdicts(&self, now: Instant) -> (Health, Health) {
+        (
+            self.group_health(BaselineGroup::Domestic, now).verdict,
+            self.group_health(BaselineGroup::Foreign, now).verdict,
+        )
+    }
+
+    fn group_health(&self, group: BaselineGroup, now: Instant) -> GroupHealth {
+        let stats: Vec<WindowStats> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.group == group)
+            .map(|entry| entry.history.stats_for_window(now, self.window))
+            .collect();
+        GroupHealth::of(stats.iter(), &self.thresholds)
     }
 
     fn group_view(&self, group: BaselineGroup, now: Instant) -> GroupView {

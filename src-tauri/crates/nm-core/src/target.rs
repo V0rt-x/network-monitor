@@ -58,6 +58,14 @@ pub enum TargetTag {
     ForeignBaseline,
     /// An entry on the service status page.
     StatusService,
+    /// A reference target of a monitored game's pool.
+    ///
+    /// Probed at a trickle to answer the one question no single endpoint can: whether the
+    /// *game's* infrastructure is reachable, as distinct from the path to any one server.
+    /// A tag rather than a pipeline of its own, because a pool member can equally be an
+    /// endpoint the game is currently playing over — and then it is probed once and answers
+    /// both.
+    GameReferencePool,
 }
 
 /// Where a target lives on the network.

@@ -65,6 +65,13 @@ const app = (overrides: Partial<AppView> = {}): AppView => ({
   name: 'game.exe',
   processes: [{ pid: 4242, name: 'game.exe' }],
   counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
+  diagnosis: {
+    verdict: 'clear',
+    actionable: false,
+    endpointsAffected: 0,
+    endpointsTotal: 1,
+  },
+  pool: null,
   chartAgeSecs: [-2, -1, 0],
   endpoints: [endpoint()],
   ...overrides,

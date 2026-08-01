@@ -33,6 +33,14 @@ pub enum Error {
         country: String,
     },
 
+    /// Something the app remembers between sessions could not be written.
+    ///
+    /// Never fatal: everything it covers is a convenience the session can do without, and
+    /// the alternative — refusing to monitor because a disk is full — would be worse than
+    /// starting from the bundled seeds next time.
+    #[error("the local record could not be written")]
+    Persistence,
+
     /// The probe engine could not be started or configured.
     #[error("the probe engine failed: {0}")]
     Probes(#[from] nm_probes::Error),

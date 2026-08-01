@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "valve-sdr",
+  "label": "Steam Datagram Relay",
+  "applications": ["cs2", "dota2"],
+  "targets": [
+    {
+      "id": "fra",
+      "label": "Frankfurt (Germany)",
+      "address": "155.133.226.68"
+    },
+    {
+      "id": "sto",
+      "label": "Stockholm - Kista (Sweden)",
+      "address": "162.254.198.41"
+    },
+    {
+      "id": "waw",
+      "label": "Warsaw (Poland)",
+      "address": "155.133.230.98"
+    },
+    {
+      "id": "vie",
+      "label": "Vienna (Austria)",
+      "address": "146.66.155.66"
+    },
+    {
+      "id": "ams",
+      "label": "Amsterdam (Netherlands)",
+      "address": "155.133.248.36"
+    },
+    {
+      "id": "lhr",
+      "label": "London (England)",
+      "address": "162.254.196.66"
+    },
+    {
+      "id": "dxb",
+      "label": "Dubai (United Arab Emirates)",
+      "address": "185.25.183.163"
+    },
+    {
+      "id": "iad",
+      "label": "Sterling (Virginia)",
+      "address": "162.254.192.88"
+    }
+  ]
+}

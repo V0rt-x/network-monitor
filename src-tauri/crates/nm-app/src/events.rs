@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::view::{AppView, FlowStatusView, GroupView, ServiceView};
+use crate::view::{AppView, DiagnosisView, FlowStatusView, GroupView, ServiceView};
 
 /// Liveness signal proving the Rust core is running and the event channel is wired.
 ///
@@ -37,6 +37,14 @@ pub struct NetworkHealth {
     pub uptime_secs: u32,
     /// Length of the window every figure is computed over, in seconds.
     pub window_secs: u32,
+    /// What the two baselines say together.
+    ///
+    /// The comparison, not either column: domestic and foreign both failing points at the
+    /// user's own line, domestic clean with foreign failing points at the path out of the
+    /// country, and neither group means much on its own. It is the only claim on this page
+    /// that is a conclusion rather than a measurement, and it stays a claim about a
+    /// *network path* — never about a policy, a country or a company.
+    pub diagnosis: DiagnosisView,
     /// The baselines, domestic first.
     pub groups: Vec<GroupView>,
 }

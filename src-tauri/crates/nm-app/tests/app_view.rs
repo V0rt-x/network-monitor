@@ -20,7 +20,7 @@ use nm_app::{AppProcessView, AppView, HealthCountsView, HealthView, ProbeKindVie
 use nm_core::address::AddressPolicy;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::flow::{FlowInstant, FlowObservation};
-use nm_core::health::HealthThresholds;
+use nm_core::health::{Health, HealthThresholds};
 use nm_core::sample::{ProbeOutcome, ProbeSample, Rtt};
 use nm_core::target::{TargetId, TargetRegistry};
 use nm_platform::interface::{InterfaceNames, NetworkInterface};
@@ -108,6 +108,8 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
         monitor.chart_ages_secs(),
         &adapters(),
         &monitor.endpoints(APP, now),
+        None,
+        (Health::Ok, Health::Ok),
     )
 }
 

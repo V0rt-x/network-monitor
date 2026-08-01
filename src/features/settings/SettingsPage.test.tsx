@@ -14,7 +14,13 @@ const { fetchSettings, storeSettings } = vi.hoisted(() => ({
 vi.mock('../../shared/ipc', () => ({ fetchSettings, storeSettings }));
 
 const view = (overrides: Partial<SettingsView> = {}): SettingsView => ({
-  settings: { language: 'en', country: 'ru', baselineIntervalSecs: 5, autostart: false },
+  settings: {
+    language: 'en',
+    country: 'ru',
+    baselineIntervalSecs: 5,
+    autostart: false,
+    rememberGameServers: true,
+  },
   problem: null,
   countries: ['ru', 'ir'],
   minIntervalSecs: 1,
@@ -50,6 +56,7 @@ describe('SettingsPage', () => {
       country: 'ir',
       baselineIntervalSecs: 5,
       autostart: false,
+      rememberGameServers: true,
     });
   });
 
@@ -67,7 +74,13 @@ describe('SettingsPage', () => {
     // would claim something about the machine that may not be true.
     storeSettings.mockResolvedValue(
       view({
-        settings: { language: 'en', country: 'ru', baselineIntervalSecs: 5, autostart: false },
+        settings: {
+          language: 'en',
+          country: 'ru',
+          baselineIntervalSecs: 5,
+          autostart: false,
+          rememberGameServers: true,
+        },
       }),
     );
     render(<SettingsPage />);

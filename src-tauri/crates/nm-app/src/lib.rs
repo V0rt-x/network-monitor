@@ -38,6 +38,7 @@ pub mod apps;
 pub mod baselines;
 pub mod discovery;
 pub mod monitor;
+pub mod pools;
 pub mod presets;
 pub mod services;
 pub mod settings;

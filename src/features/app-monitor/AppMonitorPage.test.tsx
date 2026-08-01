@@ -32,6 +32,13 @@ const ENDPOINTS: AppEndpoints = {
       name: 'game.exe',
       processes: [{ pid: 4242, name: 'game.exe' }],
       counts: { ok: 1, degraded: 0, unreachable: 1, blocked: 0, carryingTraffic: 0, unknown: 0 },
+      diagnosis: {
+        verdict: 'routeToThisApplication',
+        actionable: true,
+        endpointsAffected: 1,
+        endpointsTotal: 2,
+      },
+      pool: null,
       chartAgeSecs: [],
       endpoints: [
         {
@@ -175,7 +182,13 @@ describe('AppMonitorPage', () => {
     });
 
     await screen.findByRole('heading', { name: 'game.exe' });
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // The flow banner specifically, not every live region: an application's verdict is
+    // also announced, and it is announced whatever the tracing session is doing.
+    expect(
+      screen
+        .queryAllByRole('status')
+        .filter((element) => element.classList.contains('nm-apps__flow')),
+    ).toHaveLength(0);
   });
 
   it('reports a dead event channel instead of looking like nothing was chosen', async () => {

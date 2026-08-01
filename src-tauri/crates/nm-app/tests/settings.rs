@@ -125,6 +125,7 @@ fn settings_survive_a_round_trip_through_the_file() {
         country: "ir".to_owned(),
         baseline_interval_secs: 12,
         autostart: true,
+        remember_game_servers: false,
     };
 
     settings::store(&scratch.file(), &wanted).expect("the directory must be created");

@@ -148,6 +148,23 @@ export type AppView = {
 	 */
 	counts: HealthCountsView,
 	/**
+	 *  What all the evidence says together, and which endpoints it covers.
+	 * 
+	 *  The one place the app draws a conclusion rather than reporting a measurement. It is
+	 *  still a network-level statement: it never says the game is broken, and it says how
+	 *  much of the application it is about, because partial failure inside one application
+	 *  is the normal case under filtering rather than an edge one.
+	 */
+	diagnosis: DiagnosisView,
+	/**
+	 *  What the game's own reference pool says, when it has one.
+	 * 
+	 *  `null` for a title whose operator publishes no reference address and whose servers
+	 *  this machine has never seen — the ordinary case for most games, and one the page must
+	 *  state, because an absent pool can neither report an outage nor rule one out.
+	 */
+	pool: PoolView | null,
+	/**
 	 *  Seconds before now for each slot of the chart, negative and ascending.
 	 * 
 	 *  One axis for the whole application, which is the point: a list of sparklines answers
@@ -282,6 +299,28 @@ export type CoreStatus = {
 	platform: PlatformKind,
 	/**  Readiness of the core. */
 	readiness: CoreReadiness,
+};
+
+/**  A verdict and the endpoints it actually covers. */
+export type DiagnosisView = {
+	/**  What the evidence says. */
+	verdict: VerdictView,
+	/**
+	 *  Whether it is something the user can act on, as against a state of not knowing.
+	 * 
+	 *  Sent rather than derived in TypeScript, because which verdicts are actionable is a
+	 *  judgement and every judgement in this product lives in Rust where it is tested.
+	 */
+	actionable: boolean,
+	/**
+	 *  How many of the application's endpoints the verdict is about.
+	 * 
+	 *  Zero for a verdict about the general network. "Two of seven endpoints" is a
+	 *  different message from "your game is unreachable", and only one of them is true.
+	 */
+	endpointsAffected: number,
+	/**  How many endpoints the application has in total. */
+	endpointsTotal: number,
 };
 
 /**
@@ -573,6 +612,16 @@ export type NetworkHealth = {
 	uptimeSecs: number,
 	/**  Length of the window every figure is computed over, in seconds. */
 	windowSecs: number,
+	/**
+	 *  What the two baselines say together.
+	 * 
+	 *  The comparison, not either column: domestic and foreign both failing points at the
+	 *  user's own line, domestic clean with foreign failing points at the path out of the
+	 *  country, and neither group means much on its own. It is the only claim on this page
+	 *  that is a conclusion rather than a measurement, and it stays a claim about a
+	 *  *network path* — never about a policy, a country or a company.
+	 */
+	diagnosis: DiagnosisView,
 	/**  The baselines, domestic first. */
 	groups: GroupView[],
 };
@@ -685,6 +734,41 @@ export type PlatformKind =
 "macOs" | 
 /**  An operating system `nm-platform` has no implementation for. */
 "unsupported";
+
+/**
+ *  What a monitored game's reference pool says about its own infrastructure.
+ * 
+ *  The one signal that can separate "the game's servers are not answering" from "you cannot
+ *  reach them" — several addresses belonging to the same game, in different places, probed
+ *  at a trickle. Shown beside the verdict rather than instead of it: the numbers are what
+ *  let a user check the conclusion.
+ */
+export type PoolView = {
+	/**  How many members came from the bundled seeds the operator published. */
+	seeded: number,
+	/**
+	 *  How many this machine learned from the game's own traffic.
+	 * 
+	 *  Distinguished from the seeds because they are different evidence: a learned member is
+	 *  a server this user was actually placed on, which is stronger, and it exists only
+	 *  because the user allowed it to be remembered.
+	 */
+	learned: number,
+	/**  What the members say together. */
+	health: HealthView,
+	/**  The distribution behind it. */
+	counts: HealthCountsView,
+	/**
+	 *  How many of the judged members answer, as a percentage.
+	 * 
+	 *  `null` where nothing could be judged — every probe filtered, or nothing probed yet.
+	 *  That must stay distinct from zero: one is an absence of knowledge and the other is a
+	 *  finding.
+	 */
+	answeringPct: number | null,
+	/**  Median round-trip time across the answering members, in milliseconds. */
+	rttMs: number | null,
+};
 
 /**
  *  Which probe kind produced a target's numbers.
@@ -834,6 +918,17 @@ export type Settings = {
 	baselineIntervalSecs: number,
 	/**  Whether the app starts with the user's session. Off unless asked for. */
 	autostart: boolean,
+	/**
+	 *  Whether the addresses a monitored game connects to are remembered between sessions.
+	 * 
+	 *  On by default, because without it a game reference pool is only as good as what the
+	 *  operator publishes — and for most titles that is nothing, leaving the app unable to
+	 *  tell "the game's servers are down" from "you cannot reach them". It is a setting all
+	 *  the same: it is the one thing this application writes to disk that describes what the
+	 *  user plays and where, and for the people this product is for that is worth a choice
+	 *  rather than an assumption. Turning it off also deletes what was already remembered.
+	 */
+	rememberGameServers: boolean,
 };
 
 /**
@@ -926,6 +1021,31 @@ export type TrayLabels = {
 	/**  "Quit". */
 	quit: string,
 };
+
+/**
+ *  What the evidence adds up to, as a network-level statement.
+ * 
+ *  Every variant is a fact about a *network path*. None of them says a game is broken or a
+ *  company's service is down — the app cannot observe either, and claiming one would be
+ *  exactly the failure this product exists to avoid.
+ */
+export type VerdictView = 
+/**  Too little has been measured to say anything at all. */
+"notEnoughEvidence" | 
+/**  Probes are being filtered wherever they were sent, so nothing was measured. */
+"nothingMeasurable" | 
+/**  Everything measured is within its thresholds. */
+"clear" | 
+/**  Services inside the user's own country are degraded or unreachable. */
+"localNetworkOrProvider" | 
+/**  Domestic services answer normally and foreign ones do not. */
+"crossBorderPath" | 
+/**  The general network is fine and this application's own endpoints are not. */
+"routeToThisApplication" | 
+/**  The game's own reference targets have all gone silent while the network is fine. */
+"gameServersUnreachable" | 
+/**  Part of the game's reference pool is silent while the rest answers. */
+"gameServersPartlyUnreachable";
 
 /* Tauri Specta runtime */
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
