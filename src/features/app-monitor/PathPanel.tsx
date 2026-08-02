@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatMs, formatPct } from '../../shared/format';
 import type { PathView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 import { pathPositionKey, pathQualityKey, pathQualityModifier } from './labels';
 
 interface PathPanelProps {
@@ -24,6 +25,12 @@ interface PathPanelProps {
  * The verdict has a state the user has to be able to tell from a fault: routers rate-limit
  * echoes addressed to themselves while forwarding traffic perfectly, so a figure that moved
  * at the last hop alone is reported as ambiguous rather than as a degraded path.
+ *
+ * **It leads with one number**, under a heading that says what that number is a round trip
+ * *to*. How many hops are being watched and where the route stops are a level down, in the
+ * row's own expander: they qualify the figure rather than being what a player reads. What
+ * does not move is the sentence saying this is not the round trip to the server — that is the
+ * rule this panel exists to protect.
  */
 export const PathPanel = ({ path }: PathPanelProps) => {
   const { t, i18n } = useTranslation();
@@ -40,30 +47,25 @@ export const PathPanel = ({ path }: PathPanelProps) => {
 
       <p className="nm-panel__note">{t('apps.path.note')}</p>
 
-      <p className="nm-panel__where">
-        {path.hopTtl === null
-          ? t('apps.path.hopUnknown')
-          : t('apps.path.hop', { ttl: path.hopTtl })}
-        {' · '}
-        {t('apps.path.hopsProbed', { count: path.hopsProbed })}
-        {' · '}
-        {t(pathPositionKey(path.position))}
-      </p>
-
       <dl className="nm-endpoint__metrics">
         <div>
-          <dt>{t('dashboard.metric.rtt')}</dt>
+          <dt>
+            {t('apps.path.metric.rtt')}
+            <MetricHelp topic="route" />
+          </dt>
           <dd>{formatMs(path.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.jitter')}</dt>
+          <dt>{t('apps.metric.stability')}</dt>
           <dd>{formatMs(path.jitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.loss')}</dt>
+          <dt>{t('apps.metric.loss')}</dt>
           <dd>{formatPct(path.lossPct, locale)}</dd>
         </div>
       </dl>
+
+      <p className="nm-panel__where">{t(pathPositionKey(path.position))}</p>
     </section>
   );
 };

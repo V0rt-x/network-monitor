@@ -1307,7 +1307,7 @@ audience has no reason to extend that.
       was not needed.
       Each application is anchored separately, and stopping and restarting one starts a new
       chart — the old session's axis says nothing about the new one.
-- [ ] **4. The vocabulary: what a player reads first, and what waits for whoever asks.** The
+- [x] **4. The vocabulary: what a player reads first, and what waits for whoever asks.** The
       page states everything it knows at once — probe kind, proven filtering, both egress
       addresses and their adapters, the window a rate is taken over, five separate passive
       figures — and the result is that the numbers that matter are indistinguishable from the
@@ -1350,6 +1350,30 @@ audience has no reason to extend that.
         label on the right number is worse than no label. Naming a destination is the Phase 8+
         enrichment item, where it is done from data rather than inference.
       – Every string is an i18next key, so this is additive for Russian, help text included.
+      — the row is now three figures and one word of state; everything that *qualifies* a
+      number rather than being one moved into the row's own `<details>`. A test asserts what
+      the **closed** row contains and that the moved fields are present but not visible,
+      because the whole item is about what is not shown by default and that is exactly the
+      kind of thing that grows back one field at a time.
+      **Nothing was deleted and no figure lost its meaning.** The UDP panel keeps all five,
+      renamed for what a player feels — updates from the server, evenness, worst pause,
+      drop-off, and a freeze kept prominent. The drop-off keeps its careful name and a test
+      pins that it is never called packet loss. The route panel leads with "round trip to
+      that router" and sends its hop count and stopping point down a level.
+      **The ⓘ is a disclosure, not a hover tooltip**, and that is a correction the plan's
+      own requirement forced: a "Learn more" that vanished the moment a keyboard user moved
+      towards it would not be reachable at all. It opens on focus and on hover, and the
+      pointer can travel into the panel because the handlers sit on the wrapper.
+      The help is a page of its own — thirteen topics, one list shared with the ⓘ so a
+      tooltip can never point at a section that does not exist. **No link ships, and that is
+      a decision rather than an omission**: following one honestly means opening the system
+      browser, a link that navigated the window would leave the user with no application, and
+      that means a Tauri plugin. Adding a dependency for zero links is not a trade worth
+      making; it becomes one the first time a link earns its place. The plan asked for a
+      renderer that supports links — this is the deviation, and the reason.
+      "Why this is not the ping your game shows" sits on any row whose own round trip is a
+      dash while a route or its traffic speaks for it — which is what a match server looks
+      like, and without naming any endpoint as one.
 - [ ] **5. A warm-up window, so the first seconds are not read as findings.** The samples right
       after an application is picked are the least informative it will ever have: no window is
       full, jitter is computed over a handful of samples, the fallback chain is still trying

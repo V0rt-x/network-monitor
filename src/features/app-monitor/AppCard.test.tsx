@@ -342,11 +342,14 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Path to this endpoint')).toBeInTheDocument();
-    expect(screen.getByText(/12 hops out/)).toBeInTheDocument();
-    // Three dashes for the endpoint itself — round trip, jitter and loss — beside the
-    // route's three figures.
+    expect(screen.getByText('The route towards it')).toBeInTheDocument();
+    expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
+    // Three dashes for the endpoint itself — response, steadiness and lost replies — beside
+    // the route's three figures.
     expect(screen.getAllByText('—')).toHaveLength(3);
+    // And the row says in as many words why this is not the number the game shows. It is
+    // the most important string in the application, and this is the row it belongs on.
+    expect(screen.getByText('Why this is not the ping your game shows')).toBeInTheDocument();
   });
 
   it('states what an endpoint could not be measured with rather than showing a bare number', () => {
@@ -369,13 +372,81 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Through a tunnel')).toBeInTheDocument();
-    expect(screen.getByText('TLS')).toBeInTheDocument();
-    expect(screen.getByText('Filtering confirmed')).toBeInTheDocument();
+    // The caveats live a level down, where they qualify the figure instead of competing
+    // with it — except the egress conflict, which is a warning and stays on the row.
+    expect(screen.getByText(/TLS · Through a tunnel · Filtering confirmed/)).toBeInTheDocument();
     expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
+    expect(screen.getByText("Probe may not follow this app's route")).toBeVisible();
     expect(
       screen.getByText(/This app's traffic leaves via Ethernet \(192\.0\.2\.10\)/),
     ).toBeInTheDocument();
+  });
+
+  it('shows three figures and no caveats until the reader asks for more', () => {
+    // The whole item is about what is *not* shown by default, and that is exactly the kind
+    // of thing that grows back one field at a time.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [endpoint({ probeKind: 'tlsHello', tunnelled: true, recentBytes: 4096 })],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    for (const shown of ['Response', 'Steadiness', 'Lost replies']) {
+      expect(screen.getByText(shown)).toBeVisible();
+    }
+    // Present in the document — the expander is a disclosure, not a second request to Rust —
+    // and not on screen until it is opened.
+    for (const hidden of [
+      'How it is being measured',
+      'Which adapter it leaves by',
+      'Data exchanged (30 s)',
+      'In use',
+    ]) {
+      expect(screen.getByText(hidden)).not.toBeVisible();
+    }
+  });
+
+  it('opens the caveats in place, with no setting to forget being in', async () => {
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ probeKind: 'tlsHello' })] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByText('More about this connection'));
+
+    expect(screen.getByText('How it is being measured')).toBeVisible();
+    expect(screen.getByText('Data exchanged (30 s)')).toBeVisible();
+  });
+
+  it('gives every figure on the closed row an explanation reachable without a mouse', async () => {
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    for (const metric of ['Response', 'Steadiness', 'Lost replies']) {
+      expect(screen.getByRole('button', { name: `What ${metric} means` })).toBeInTheDocument();
+    }
+    // Reached by keyboard, like everything else on this page.
+    const help = screen.getByRole('button', { name: 'What Response means' });
+    help.focus();
+    expect(await screen.findByRole('note')).toBeInTheDocument();
   });
 
   it('names the adapter, not only the address, so a VPN change is recognisable', () => {
@@ -490,9 +561,11 @@ describe('AppCard', () => {
     expect(screen.getAllByText('Carrying traffic').length).toBeGreaterThan(0);
     expect(screen.queryByText('Unreachable')).not.toBeInTheDocument();
     // It claims nothing it did not measure.
-    const rtt = screen.getByText('RTT').parentElement;
-    expect(rtt).toHaveTextContent('—');
-    expect(screen.getByText('Traffic (30 s)').parentElement).toHaveTextContent('630 kB');
+    const response = screen.getByText('Response').parentElement?.parentElement;
+    expect(response).toHaveTextContent('—');
+    expect(
+      screen.getByText('Data exchanged (30 s)').parentElement?.parentElement,
+    ).toHaveTextContent('630 kB');
   });
 
   it("shows the operating system's own round trip with its age, never as a live figure", () => {
@@ -515,7 +588,7 @@ describe('AppCard', () => {
       />,
     );
 
-    const stack = screen.getByText('RTT from the OS (ms)').parentElement;
+    const stack = screen.getByText('Round trip measured by Windows').parentElement;
     // Rounded by the same rule the probes' own figure uses: whole milliseconds above 10.
     expect(stack).toHaveTextContent('25');
     expect(stack).toHaveTextContent('37 s ago');
@@ -532,7 +605,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.queryByText('RTT from the OS (ms)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Round trip measured by Windows')).not.toBeInTheDocument();
   });
 
   it('shows a dash rather than a zero where nothing counted the traffic', () => {
@@ -546,7 +619,7 @@ describe('AppCard', () => {
       />,
     );
 
-    const traffic = screen.getByText('Traffic (30 s)').parentElement;
+    const traffic = screen.getByText('Data exchanged (30 s)').parentElement?.parentElement;
     expect(traffic).toHaveTextContent('—');
     expect(screen.queryByText('0 B')).not.toBeInTheDocument();
   });

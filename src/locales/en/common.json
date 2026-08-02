@@ -10,6 +10,7 @@
     "dashboard": "Dashboard",
     "apps": "Applications",
     "status": "Service status",
+    "help": "What the numbers mean",
     "settings": "Settings"
   },
   "tray": {
@@ -158,28 +159,49 @@
       "egressConflict": "Probe may not follow this app's route"
     },
     "metric": {
-      "traffic": "Traffic ({{seconds}} s)",
-      "stackRtt": "RTT from the OS (ms)",
+      "response": "Response",
+      "stability": "Steadiness",
+      "loss": "Lost replies",
+      "traffic": "Data exchanged ({{seconds}} s)",
+      "stackRtt": "Round trip measured by Windows",
       "stackRttAge": "· {{seconds}} s ago"
     },
+    "details": {
+      "summary": "More about this connection",
+      "probeKind": "How it is being measured",
+      "probeKindNone": "Nothing can measure it directly",
+      "use": "In use",
+      "incoming": "Coming back",
+      "route": "How far the route reaches",
+      "egress": "Which adapter it leaves by"
+    },
+    "whyPing": {
+      "summary": "Why this is not the ping your game shows",
+      "timed": "Your game measures a packet only it can answer — its own, in its own language, timed inside the game.",
+      "refused": "This app never reads a game's traffic. Doing that means a capture driver, the game's memory, or its wire format, and all three are refused: they are what anti-cheat systems look for, and none of them is safe for you.",
+      "instead": "So you get two honest numbers instead: the route towards the server, and the traffic itself. When they disagree, that disagreement is the answer — a clean route with ragged arrivals is the server's problem, not yours."
+    },
     "passive": {
-      "heading": "This endpoint's own traffic",
-      "note": "Measured from the traffic itself, without sending anything. Not a round-trip time: nothing here times a request against its answer. How evenly the data arrives is what a player feels as stutter, and it includes whatever cadence the server chose — which is why it is shown beside the route rather than instead of it.",
-      "updates": "{{rate}} updates a second arriving",
-      "updatesUnknown": "Not enough arrivals yet to time them",
+      "heading": "The traffic itself",
+      "note": "Measured from the data your game is already exchanging, without sending anything. Nothing here is a ping: no request is timed against its answer. How evenly the data arrives is what you feel as stutter, and it includes whatever pace the server chose — which is why it sits beside the route rather than instead of it.",
+      "updatesPerSec": "{{rate}} a second",
+      "updatesUnknown": "Not enough arriving yet to tell",
       "span": "over the last {{seconds}} s",
-      "stall": "Nothing back for {{ms}} ms",
+      "stall": "Frozen for {{ms}} ms",
       "perSecond": "{{bytes}}/s",
       "metric": {
-        "arrivalJitter": "Arrival spread (ms)",
-        "arrivalWorst": "Worst gap (ms)",
-        "shortfall": "Return shortfall (%)",
-        "incoming": "Incoming"
+        "updates": "Updates from the server",
+        "smoothness": "Evenness",
+        "worstPause": "Worst pause",
+        "dropOff": "Drop-off"
       }
     },
     "path": {
-      "heading": "Path to this endpoint",
-      "note": "This endpoint answers nothing we can send, so these figures belong to the deepest router that does answer on the way there. It is not the round-trip time to the server: how much further the server sits is unknown.",
+      "heading": "The route towards it",
+      "note": "This endpoint answers nothing we can send, so these figures belong to the deepest router that does answer on the way there. It is not the round trip to the server: how much further the server sits is unknown.",
+      "metric": {
+        "rtt": "Round trip to that router"
+      },
       "hop": "Last answering hop: {{ttl}} hops out",
       "hopUnknown": "No hop on the route is answering",
       "hopsProbed": "{{count}} hop watched",
@@ -212,6 +234,79 @@
       "notPermitted": "This account may not open a tracing session, so UDP endpoints and traffic counters are missing — TCP endpoints are still found. Adding your account to the local “Performance Log Users” group once, from an elevated prompt, restores them. The app never does this for you.",
       "stopped": "The tracing session stopped — something else on this machine took it over. UDP endpoints and traffic counters are missing until it is back; the app is retrying every second.",
       "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
+    }
+  },
+  "help": {
+    "title": "What the numbers mean",
+    "intro": "Everything here is measured on this machine and stays on it. Nothing on this page is fetched from anywhere — it ships with the app, so it reads the same whether or not you can reach the internet.",
+    "explain": "What {{metric}} means",
+    "learnMore": "Learn more",
+    "topic": {
+      "ping": {
+        "title": "Why this is not the ping your game shows",
+        "short": "Your game times its own packets. This app cannot read them, so it shows two different, honest numbers instead.",
+        "body": "Your game shows a number it measures itself: it sends a packet only its own server can answer, in its own language, and times the reply inside the game. Nothing outside the game can reproduce that. Reading it would mean speaking the game's protocol, capturing packets with a driver, or reading the game's memory — and all three are refused here. Two of them are exactly what anti-cheat systems are built to detect, and none of them is safe for you. So this app measures two things it can measure honestly, and never merges them into one number: the round trip to the deepest router that answers on the way to the server, and the pattern of the traffic your game is actually exchanging. Neither is the round trip to the server, and the app never claims otherwise. Their disagreement is what makes them useful: a clean route with ragged arrivals points at the server, and a ragged route with even arrivals usually means a router is deprioritising our probes rather than that anything is wrong with your game."
+      },
+      "response": {
+        "title": "Response",
+        "short": "How long a probe we send takes to come back. Blank means nothing we can send is answered — which is normal for a game server.",
+        "body": "The app sends its own small probe and times the reply. This is a real round trip over the route your application is using, and it is the most direct figure on the page — where it exists. A great many servers, game match servers especially, answer nothing at all: nothing listens on a game port but the game. That is not a fault and not an outage, and the app leaves this blank rather than filling it with the nearest available number."
+      },
+      "stability": {
+        "title": "Steadiness",
+        "short": "How much the response varies between probes. A steady 80 ms usually plays better than a 40 ms that jumps.",
+        "body": "Two connections with the same average response can feel completely different. What you notice while playing is not the average but the variation: a connection that answers in 40 ms and then 90 ms and then 45 ms makes a game stutter, while a steady 80 ms feels smooth. This figure is that variation, measured over the recent window. Lower is better, and a large number beside a small average is worth more attention than a large average on its own."
+      },
+      "loss": {
+        "title": "Lost replies",
+        "short": "The share of our probes that never came back. Blank where the endpoint does not answer probes at all.",
+        "body": "The share of the probes this app sent that produced no reply, over the recent window. It describes our probes on the route they took — not necessarily your game's own packets, which travel as their own traffic. Where nothing answers our probes at all, this stays blank instead of reading as 100 %: a server that ignores what we send is not a server that is dropping your game's traffic, and reporting one as the other would be the exact mistake this app exists to avoid."
+      },
+      "route": {
+        "title": "The route towards it",
+        "short": "The round trip to the last router that answers on the way to the server — not to the server itself.",
+        "body": "When an endpoint answers nothing, the app measures the deepest router on the way to it that does answer, and watches that router continuously. This usually reaches the edge of the datacentre the server sits in, so it covers almost the whole path — but not the last step, and how long that step takes is unknown. That is why it is never shown as the round trip to the server. What it is good for: it tells you whether the part of the path you can do something about is healthy, and where it stops if it is not — inside your own network, inside your provider, or somewhere beyond."
+      },
+      "updates": {
+        "title": "Updates from the server",
+        "short": "How many times a second the server sends your game something. Steady is what matters, not high.",
+        "body": "Counted from the traffic itself: how often data arrives from this endpoint, with the packets of a single update counted once. Most games settle at a fixed rate. The useful reading is not the number but its steadiness — a rate that drops while your own sending continues means the server or the path towards you has stopped keeping up."
+      },
+      "smoothness": {
+        "title": "Evenness",
+        "short": "How evenly the server's updates arrive. This is what you feel as stutter.",
+        "body": "Updates that arrive every 50 ms feel smooth; the same number of updates arriving in bursts does not. This figure is how much the gaps between arrivals vary, and it is the closest thing on this page to what you actually feel while playing. It cannot separate a network that delayed a packet from a server that skipped a tick — both look identical from here — which is why it is shown beside the route rather than instead of it. When the route is clean and this is ragged, the server is the better explanation."
+      },
+      "worstPause": {
+        "title": "Worst pause",
+        "short": "The longest gap between two updates in the window — the single worst hitch.",
+        "body": "The longest the traffic went quiet between two arrivals during the window. An average hides exactly the moment you noticed, so this reports the worst one instead. A worst pause several times the usual gap is a hitch you would have felt, even if every average on the page looks reasonable."
+      },
+      "dropOff": {
+        "title": "Drop-off",
+        "short": "How far the incoming traffic has fallen below what this endpoint was recently doing. Deliberately not called loss.",
+        "body": "This compares what is arriving now with what this same endpoint was sending a short while ago, while what you send holds steady. It is not packet loss, and it is careful not to claim to be: only the far end knows what it sent, so a packet that never arrived is invisible from here. What can be said is that noticeably less is coming back than this connection itself established as normal — which is a real finding, and a different one from a measured loss figure."
+      },
+      "freeze": {
+        "title": "Freeze",
+        "short": "Your game is still sending and nothing has come back for this long.",
+        "body": "A one-way outage, seen without sending a single probe: your application is still sending to this endpoint and nothing has arrived back for the stated time. It appears only while your own traffic continues, because a silence of yours says nothing about theirs. This is the strongest evidence on the page that something is actually wrong right now, and it is the one figure here a player recognises immediately."
+      },
+      "traffic": {
+        "title": "Data exchanged",
+        "short": "How many bytes crossed this connection recently. A count over a stated window, not a speed.",
+        "body": "How much data the operating system counted crossing this connection in the recent window. It is a count rather than a rate, because the window it covers is approximate and dividing would invent a precision the measurement does not have. Its main use is telling apart the connection your game plays over — which carries a great deal — from a launcher or a telemetry host, which barely carry anything."
+      },
+      "probeKind": {
+        "title": "How it is being measured",
+        "short": "Which kind of probe produced the numbers. Different kinds measure slightly different things.",
+        "body": "The app tries the cheapest honest probe first and falls back when it is refused. An echo is the plainest round trip. A connection attempt measures a round trip plus the far end deciding to accept it. A handshake probe measures the round trip end to end through a tunnel, where the two cheaper kinds would measure only as far as the tunnel and report a falsely good number. \"Filtering confirmed\" means a kind was proven blocked — a later kind succeeded where it failed — which is knowledge, unlike silence. \"Through a tunnel\" means something on your network redirects this address, so the figure covers the whole tunnelled path rather than a round trip to the server."
+      },
+      "egress": {
+        "title": "Which adapter it leaves by",
+        "short": "The network adapter this application's traffic uses — Wi-Fi, Ethernet, a VPN or an accelerator.",
+        "body": "The app binds its probes to the same local address your application's own traffic leaves from, so they follow the same route through any VPN or accelerator. Naming the adapter is what lets you check a before-and-after comparison: turn the VPN on, and this should change. Where the probe cannot be made to follow — another monitored application reaches the same endpoint by a different route, or the address was already being measured for something else — the row says so plainly rather than quietly measuring the wrong path."
+      }
     }
   },
   "verdict": {

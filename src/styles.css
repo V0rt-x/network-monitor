@@ -1046,3 +1046,154 @@ details.nm-endpointgroup > summary {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------------------------------------------------------------- explaining itself */
+
+/* The ⓘ beside a figure. A disclosure rather than a hover-only tooltip, because what is
+   inside it — the way to the rest of the explanation — has to be reachable by keyboard. */
+.nm-help {
+  position: relative;
+  display: inline-flex;
+  margin-left: 0.3rem;
+}
+
+.nm-help__mark {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid var(--nm-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--nm-muted);
+  font-size: 0.62rem;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.nm-help__mark:hover,
+.nm-help__mark:focus-visible {
+  color: var(--nm-text);
+  border-color: var(--nm-text);
+}
+
+.nm-help__panel {
+  position: absolute;
+  z-index: 20;
+  top: 1.4rem;
+  left: 0;
+  width: min(22rem, 60vw);
+  display: block;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--nm-border);
+  border-radius: 0.4rem;
+  background: var(--nm-surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--nm-text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.nm-help__text {
+  display: block;
+}
+
+.nm-help__more {
+  margin-top: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nm-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* One line until asked, because it is the same explanation every time — and the most
+   important one in the application. */
+.nm-whyping {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--nm-muted);
+}
+
+.nm-whyping > summary {
+  cursor: pointer;
+}
+
+.nm-whyping__points {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  line-height: 1.4;
+}
+
+/* Level two: everything that qualifies a number rather than being one. */
+.nm-endpoint__details {
+  grid-column: 1 / -1;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.nm-endpoint__details > summary {
+  color: var(--nm-muted);
+  cursor: pointer;
+}
+
+.nm-endpoint__detail-list {
+  margin: 0.5rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.4rem 1rem;
+}
+
+.nm-endpoint__detail-list dt {
+  color: var(--nm-muted);
+}
+
+.nm-endpoint__detail-list dd {
+  margin: 0;
+}
+
+.nm-help-page {
+  max-width: 46rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nm-help-page__title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.nm-help-page__intro {
+  margin: 0;
+  color: var(--nm-muted);
+}
+
+.nm-help-page__section {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--nm-border);
+  border-radius: 0.5rem;
+  background: var(--nm-surface);
+}
+
+.nm-help-page__section--opened {
+  border-color: var(--nm-accent);
+}
+
+.nm-help-page__heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.nm-help-page__body {
+  margin: 0;
+  line-height: 1.5;
+}

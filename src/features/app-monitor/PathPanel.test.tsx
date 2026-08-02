@@ -17,14 +17,15 @@ const path = (overrides: Partial<PathView> = {}): PathView => ({
 });
 
 describe('PathPanel', () => {
-  it('says which hop the figures belong to, and never calls them the server', () => {
+  it('leads with one number, and never calls it the server', () => {
     render(<PathPanel path={path()} />);
 
-    expect(screen.getByText(/12 hops out/)).toBeInTheDocument();
-    expect(screen.getByText(/3 hops watched/)).toBeInTheDocument();
-    // The whole point: the number is presented as a router's, with the gap stated.
+    // The whole point: the number is presented as a router's, with the gap stated. The hop
+    // count and where the route stops are a level down, in the row's own expander — they
+    // qualify the figure rather than being what a player reads.
+    expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
     expect(screen.getByText(/deepest router that does answer on the way/)).toBeInTheDocument();
-    expect(screen.getByText(/not the round-trip time to the server/i)).toBeInTheDocument();
+    expect(screen.getByText(/not the round trip to the server/i)).toBeInTheDocument();
   });
 
   it('states where the route stops', () => {
@@ -49,13 +50,7 @@ describe('PathPanel', () => {
     );
 
     expect(screen.getByText('The route stopped answering')).toBeInTheDocument();
-    expect(screen.getByText(/No hop on the route is answering/)).toBeInTheDocument();
     expect(screen.queryByText('0 ms')).not.toBeInTheDocument();
     expect(screen.queryByText('0 %')).not.toBeInTheDocument();
-  });
-
-  it('counts a single watched hop in the singular', () => {
-    render(<PathPanel path={path({ hopsProbed: 1 })} />);
-    expect(screen.getByText(/1 hop watched/)).toBeInTheDocument();
   });
 });

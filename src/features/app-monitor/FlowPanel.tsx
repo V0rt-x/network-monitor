@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatBytes, formatMs, formatPct, formatRate } from '../../shared/format';
+import { formatMs, formatPct, formatRate } from '../../shared/format';
 import type { FlowView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 
 interface FlowPanelProps {
   readonly flow: FlowView;
@@ -31,7 +32,13 @@ interface FlowPanelProps {
  * The shortfall figure is deliberately not called loss. Only the far end knows what it
  * sent, so a datagram that never arrived is invisible from here; what can be said is that
  * less is coming back than this endpoint's own recent past established, while what we send
- * holds steady.
+ * holds steady. It keeps that careful name in every language.
+ *
+ * **Reworded, not thinned.** All five figures stay; each is named for the thing the player
+ * experiences — how often the server speaks, how evenly it arrives, the worst pause, how far
+ * the return traffic has fallen off, and a freeze. The byte rate and the span they are taken
+ * over moved down a level, to the row's own expander, because they qualify the figures rather
+ * than being ones a player reads.
  */
 export const FlowPanel = ({ flow }: FlowPanelProps) => {
   const { t, i18n } = useTranslation();
@@ -42,48 +49,50 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
     <section className="nm-flow">
       <header className="nm-panel__header">
         <h4 className="nm-panel__title">{t('apps.passive.heading')}</h4>
+        {/* Kept prominent rather than demoted: a freeze is the one thing here a player
+            recognises immediately, and it is the strongest evidence the panel can show. */}
         {flow.stallMs !== null && (
           <span className="nm-health nm-health--bad">
             {t('apps.passive.stall', { ms: Math.round(flow.stallMs) })}
+            <MetricHelp topic="freeze" />
           </span>
         )}
       </header>
 
       <p className="nm-panel__note">{t('apps.passive.note')}</p>
 
-      <p className="nm-panel__where">
-        {updates === null
-          ? t('apps.passive.updatesUnknown')
-          : t('apps.passive.updates', { rate: formatRate(updates, locale) })}
-        {/* The span is what keeps a rate honest — it says what period the figure is a rate
-            over — so when it is absent the clause goes rather than a guess taking its
-            place. */}
-        {flow.spanSecs !== null && (
-          <>
-            {' · '}
-            {t('apps.passive.span', { seconds: Math.round(flow.spanSecs) })}
-          </>
-        )}
-      </p>
-
       <dl className="nm-endpoint__metrics">
         <div>
-          <dt>{t('apps.passive.metric.arrivalJitter')}</dt>
+          <dt>
+            {t('apps.passive.metric.updates')}
+            <MetricHelp topic="updates" />
+          </dt>
+          <dd>
+            {updates === null
+              ? t('apps.passive.updatesUnknown')
+              : t('apps.passive.updatesPerSec', { rate: formatRate(updates, locale) })}
+          </dd>
+        </div>
+        <div>
+          <dt>
+            {t('apps.passive.metric.smoothness')}
+            <MetricHelp topic="smoothness" />
+          </dt>
           <dd>{formatMs(flow.arrivalJitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('apps.passive.metric.arrivalWorst')}</dt>
+          <dt>
+            {t('apps.passive.metric.worstPause')}
+            <MetricHelp topic="worstPause" />
+          </dt>
           <dd>{formatMs(flow.arrivalMaxMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('apps.passive.metric.shortfall')}</dt>
+          <dt>
+            {t('apps.passive.metric.dropOff')}
+            <MetricHelp topic="dropOff" />
+          </dt>
           <dd>{formatPct(flow.receiveShortfallPct, locale)}</dd>
-        </div>
-        <div>
-          <dt>{t('apps.passive.metric.incoming')}</dt>
-          <dd>
-            {t('apps.passive.perSecond', { bytes: formatBytes(flow.receivedBytesPerSec, locale) })}
-          </dd>
         </div>
       </dl>
     </section>

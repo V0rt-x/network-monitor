@@ -4,9 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { formatBytes, formatMs, formatPct } from '../../shared/format';
 import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
+import { MetricHelp } from '../help/MetricHelp';
 import { FlowPanel } from './FlowPanel';
 import { livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
+import { WhyNotYourPing } from './WhyNotYourPing';
 
 /**
  * How the application's own traffic leaves the machine.
@@ -42,36 +44,39 @@ interface EndpointRowProps {
 }
 
 /**
- * One endpoint of one application: its own verdict, its own numbers, its own caveats.
+ * One endpoint of one application, at the depth the reader asked for.
  *
- * Nothing here is rolled up to the application. Within one game some endpoints stay clean
- * while others lose packets or go unreachable — a login service on a CDN, voice on one
- * provider, the match server on another — and a single colour for the application would
- * either report a working game as broken or hide the failure the user came to find.
+ * **Two levels, not two products.** The same data from Rust either way; what changes is how
+ * much of it is on screen before anyone asks. The page used to state everything it knew at
+ * once — probe kind, proven filtering, both egress addresses and their adapters, the window a
+ * rate is taken over — and the result was that the numbers that matter were indistinguishable
+ * from the caveats attached to them.
  *
- * The caveats are not decoration either. A figure produced by a TLS hello is not the same
- * quantity as an ICMP round trip; a figure measured through a local tunnel is not a round
- * trip to the server at all; an endpoint whose probe egresses somewhere other than the
- * application's own flow is not measuring the route the user is asking about. Each is
- * stated beside the number rather than folded into it.
+ * *Level one*, always visible: what it is, one word of state, and three figures — response,
+ * stability, loss. For an endpoint that answers nothing those three are dashes, and what
+ * stands in for them is the route beside its own traffic: two quantities that are never
+ * merged, because their disagreement is the diagnosis.
  *
- * The route caveat covers two cases that look the same to the user and are: another
- * monitored application reaching the endpoint by a different interface, and an address a
- * baseline was already probing, whose binding was chosen before this application asked.
- * Either way the single probe cannot be promised to follow this application's route.
+ * *Level two* is this row's expander, and there is deliberately **no setting**. A mode is a
+ * second product to keep consistent and one a user forgets they are in; an expander is a
+ * question asked and answered in place. What lives there is everything that qualifies a
+ * number rather than being one: which probe produced it, whether filtering was proven, which
+ * adapter the traffic and the probe leave by, what span a rate covers, how many bytes came
+ * back, and how far the route reached.
  *
- * An endpoint that answers nothing at all — a game's match server, normally — carries two
- * further panels, side by side and never merged: the route to it, and its own traffic. They
- * sit below the endpoint's figures and never replace them. The dashes stay dashes, because
- * nothing measured the server; the route panel names the router its numbers belong to, and
- * the flow panel measures the data the application is actually exchanging. Their
- * disagreement is the diagnosis — a clean route beside ragged arrivals is the server's
- * problem — and a single combined "ping" would destroy it.
+ * **An egress conflict does not move.** It is a warning, not a detail: the figure describes a
+ * different route from the one the application is taking, and a user who never opens the
+ * expander must still be told.
  *
- * **The row is the keyboard path to the chart.** Selecting it raises this endpoint's line
- * and dims the others — the same thing hovering a line does, reachable without a mouse. The
- * colour swatch is what ties the two together; it names a line and says nothing about
- * health, which the badge beside it states in words.
+ * *Level three* is the ⓘ on every figure — one or two plain sentences in place, and a way to
+ * the bundled help. The audience is a player who knows their game stutters and does not know
+ * what jitter is, and a measurement tool that cannot explain itself is asking to be trusted
+ * on faith.
+ *
+ * **The row is also the keyboard path to the chart.** Selecting it raises this endpoint's
+ * line and dims the others — the same thing hovering a line does. The colour swatch ties the
+ * two together; it names a line and says nothing about health, which the badge states in
+ * words.
  */
 export const EndpointRow = ({
   endpoint,
@@ -89,6 +94,12 @@ export const EndpointRow = ({
   const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
     .filter(Boolean)
     .join(' ');
+
+  // Nothing our probes can send reaches this endpoint. That is the normal state of a game's
+  // match server rather than a fault, and it is the case the whole product exists for — so
+  // the row says in as many words why the figure it shows is not the one the game shows.
+  const answersNothing =
+    endpoint.rttMs === null && (endpoint.path !== null || endpoint.flow !== null);
 
   return (
     <li
@@ -128,19 +139,9 @@ export const EndpointRow = ({
         <span className={`nm-health ${healthModifier(endpoint.health)}`}>
           {t(healthKey(endpoint.health))}
         </span>
-        {endpoint.probeKind !== null && (
-          <span className="nm-badge">{t(probeKindKey(endpoint.probeKind))}</span>
-        )}
-        {endpoint.liveness === 'idle' && (
-          <span className="nm-badge">{t(livenessKey(endpoint.liveness))}</span>
-        )}
-        {endpoint.probing === 'demoted' && (
-          <span className="nm-badge">{t(probingKey(endpoint.probing))}</span>
-        )}
-        {endpoint.tunnelled && <span className="nm-badge">{t('dashboard.badge.tunnelled')}</span>}
-        {endpoint.filteringConfirmed && (
-          <span className="nm-badge">{t('dashboard.badge.filteringConfirmed')}</span>
-        )}
+        {/* A warning, never a detail: the figure describes a different route from the one
+            this application is taking, and a reader who never opens the expander must still
+            be told. */}
         {endpoint.egressConflict && (
           <span className="nm-badge nm-badge--warn">{t('apps.badge.egressConflict')}</span>
         )}
@@ -149,44 +150,33 @@ export const EndpointRow = ({
         )}
       </div>
 
+      {/* Level one: three figures and nothing else. Named for what the player experiences
+          rather than for the quantity an engineer would name. */}
       <dl className="nm-endpoint__metrics">
         <div>
-          <dt>{t('dashboard.metric.rtt')}</dt>
+          <dt>
+            {t('apps.metric.response')}
+            <MetricHelp topic="response" />
+          </dt>
           <dd>{formatMs(endpoint.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.jitter')}</dt>
+          <dt>
+            {t('apps.metric.stability')}
+            <MetricHelp topic="stability" />
+          </dt>
           <dd>{formatMs(endpoint.jitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.loss')}</dt>
+          <dt>
+            {t('apps.metric.loss')}
+            <MetricHelp topic="loss" />
+          </dt>
           <dd>{formatPct(endpoint.lossPct, locale)}</dd>
         </div>
-        <div>
-          <dt>{t('apps.metric.traffic', { seconds: trafficWindowSecs })}</dt>
-          <dd>{formatBytes(endpoint.recentBytes, locale)}</dd>
-        </div>
-        {/* The one genuine round trip to the endpoint that cost no packet: the operating
-            system's own estimate for the application's connection. It sits beside the
-            probes' figure rather than replacing it, and carries its age, because it arrives
-            every few tens of seconds at best and would otherwise read as live. */}
-        {endpoint.passiveRtt !== null && (
-          <div>
-            <dt>{t('apps.metric.stackRtt')}</dt>
-            <dd>
-              {formatMs(endpoint.passiveRtt.rttMs, locale)}
-              {endpoint.passiveRtt.ageSecs !== null && (
-                <span className="nm-endpoint__age">
-                  {' '}
-                  {t('apps.metric.stackRttAge', {
-                    seconds: Math.round(endpoint.passiveRtt.ageSecs),
-                  })}
-                </span>
-              )}
-            </dd>
-          </div>
-        )}
       </dl>
+
+      {answersNothing && <WhyNotYourPing />}
 
       {/* Two columns, never one. The route is a round trip to a router short of the
           endpoint; the flow is the arrival pattern of the traffic itself. Merging them
@@ -201,24 +191,113 @@ export const EndpointRow = ({
         </div>
       )}
 
-      <p className="nm-endpoint__egress">
-        {egressLine(endpoint, t)}
-        {/* Only where the probe does not follow the application. Naming the same route
-            twice on every row would bury the one case this disclosure exists for. */}
-        {endpoint.probeEgress !== null && (
-          <>
-            {' '}
-            <span className="nm-endpoint__egress-probe">
-              {endpoint.probeEgressInterface === null
-                ? t('apps.egress.probe', { address: endpoint.probeEgress })
-                : t('apps.egress.probeNamed', {
-                    address: endpoint.probeEgress,
-                    interface: endpoint.probeEgressInterface,
-                  })}
-            </span>
-          </>
-        )}
-      </p>
+      <details className="nm-endpoint__details">
+        <summary>{t('apps.details.summary')}</summary>
+        <dl className="nm-endpoint__detail-list">
+          <div>
+            <dt>
+              {t('apps.details.probeKind')}
+              <MetricHelp topic="probeKind" />
+            </dt>
+            <dd>
+              {endpoint.probeKind === null
+                ? t('apps.details.probeKindNone')
+                : t(probeKindKey(endpoint.probeKind))}
+              {endpoint.tunnelled && ` · ${t('dashboard.badge.tunnelled')}`}
+              {endpoint.filteringConfirmed && ` · ${t('dashboard.badge.filteringConfirmed')}`}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('apps.details.use')}</dt>
+            <dd>
+              {t(livenessKey(endpoint.liveness))} · {t(probingKey(endpoint.probing))}
+            </dd>
+          </div>
+          <div>
+            <dt>
+              {t('apps.metric.traffic', { seconds: trafficWindowSecs })}
+              <MetricHelp topic="traffic" />
+            </dt>
+            <dd>{formatBytes(endpoint.recentBytes, locale)}</dd>
+          </div>
+          {/* The one genuine round trip to the endpoint that cost no packet: the operating
+              system's own estimate for the application's connection. It carries its age,
+              because it arrives every few tens of seconds at best and would otherwise read
+              as live. */}
+          {endpoint.passiveRtt !== null && (
+            <div>
+              <dt>{t('apps.metric.stackRtt')}</dt>
+              <dd>
+                {formatMs(endpoint.passiveRtt.rttMs, locale)}{' '}
+                {/* The age is not decoration: this arrives every few tens of seconds at
+                    best, so a figure without it would read as current when it is not. */}
+                {endpoint.passiveRtt.ageSecs !== null && (
+                  <span className="nm-endpoint__age">
+                    {t('apps.metric.stackRttAge', {
+                      seconds: Math.round(endpoint.passiveRtt.ageSecs),
+                    })}
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
+          {endpoint.flow !== null && (
+            <div>
+              <dt>{t('apps.details.incoming')}</dt>
+              <dd>
+                {t('apps.passive.perSecond', {
+                  bytes: formatBytes(endpoint.flow.receivedBytesPerSec, locale),
+                })}
+                {/* The span is what keeps a rate honest — it says what period the figure is
+                    a rate over — so when it is absent the clause goes rather than a guess
+                    taking its place. */}
+                {endpoint.flow.spanSecs !== null && (
+                  <> · {t('apps.passive.span', { seconds: Math.round(endpoint.flow.spanSecs) })}</>
+                )}
+              </dd>
+            </div>
+          )}
+          {endpoint.path !== null && (
+            <div>
+              <dt>
+                {t('apps.details.route')}
+                <MetricHelp topic="route" />
+              </dt>
+              <dd>
+                {endpoint.path.hopTtl === null
+                  ? t('apps.path.hopUnknown')
+                  : t('apps.path.hop', { ttl: endpoint.path.hopTtl })}
+                {' · '}
+                {t('apps.path.hopsProbed', { count: endpoint.path.hopsProbed })}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt>
+              {t('apps.details.egress')}
+              <MetricHelp topic="egress" />
+            </dt>
+            <dd>
+              {egressLine(endpoint, t)}
+              {/* Only where the probe does not follow the application. Naming the same route
+                  twice on every row would bury the one case this disclosure exists for. */}
+              {endpoint.probeEgress !== null && (
+                <>
+                  {' '}
+                  <span className="nm-endpoint__egress-probe">
+                    {endpoint.probeEgressInterface === null
+                      ? t('apps.egress.probe', { address: endpoint.probeEgress })
+                      : t('apps.egress.probeNamed', {
+                          address: endpoint.probeEgress,
+                          interface: endpoint.probeEgressInterface,
+                        })}
+                  </span>
+                </>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </details>
     </li>
   );
 };

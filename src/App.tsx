@@ -3,45 +3,53 @@ import { useTranslation } from 'react-i18next';
 
 import { AppMonitorPage } from './features/app-monitor/AppMonitorPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
+import { HelpProvider } from './features/help/HelpProvider';
+import { HelpPage } from './features/help/HelpPage';
+import type { HelpTopic } from './features/help/topics';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
 import { StatusPage } from './features/status-page/StatusPage';
 import { hideToTray, quitApp } from './shared/ipc';
 
 /** The pages the app ships. A router would be a dependency for one switch. */
-type Page = 'dashboard' | 'apps' | 'status' | 'settings';
+type Page = 'dashboard' | 'apps' | 'status' | 'help' | 'settings';
 
 /** Literal keys, so a rename in `common.json` is a compile error rather than a blank tab. */
 const PAGES = [
   { id: 'dashboard', labelKey: 'nav.dashboard' },
   { id: 'apps', labelKey: 'nav.apps' },
   { id: 'status', labelKey: 'nav.status' },
+  { id: 'help', labelKey: 'nav.help' },
   { id: 'settings', labelKey: 'nav.settings' },
 ] as const satisfies readonly { readonly id: Page; readonly labelKey: string }[];
-
-/**
- * Which page is mounted.
- *
- * Only one at a time, deliberately: an unmounted page holds no chart and receives no
- * events, so the hidden ones cost nothing to keep in the app.
- */
-const pageFor = (page: Page) => {
-  switch (page) {
-    case 'dashboard':
-      return <DashboardPage />;
-    case 'apps':
-      return <AppMonitorPage />;
-    case 'status':
-      return <StatusPage />;
-    case 'settings':
-      return <SettingsPage />;
-  }
-};
 
 export const App = () => {
   const { t } = useTranslation();
   const [page, setPage] = useState<Page>('dashboard');
+  // Which section the help opens at, when the reader arrived from a metric's own ⓘ.
+  const [topic, setTopic] = useState<HelpTopic | null>(null);
   useTrayLabels();
+
+  /**
+   * Which page is mounted.
+   *
+   * Only one at a time, deliberately: an unmounted page holds no chart and receives no
+   * events, so the hidden ones cost nothing to keep in the app.
+   */
+  const pageFor = (current: Page) => {
+    switch (current) {
+      case 'dashboard':
+        return <DashboardPage />;
+      case 'apps':
+        return <AppMonitorPage />;
+      case 'status':
+        return <StatusPage />;
+      case 'help':
+        return <HelpPage topic={topic} />;
+      case 'settings':
+        return <SettingsPage />;
+    }
+  };
 
   return (
     <div className="nm-app">
@@ -59,6 +67,9 @@ export const App = () => {
               className={page === entry.id ? 'nm-nav__tab nm-nav__tab--active' : 'nm-nav__tab'}
               aria-current={page === entry.id ? 'page' : undefined}
               onClick={() => {
+                // Reached from the tab rather than from a metric, so it opens at the top:
+                // whatever section was last asked for is not what this click meant.
+                if (entry.id === 'help') setTopic(null);
                 setPage(entry.id);
               }}
             >
@@ -91,7 +102,16 @@ export const App = () => {
         </div>
       </header>
 
-      <main className="nm-app__body">{pageFor(page)}</main>
+      <main className="nm-app__body">
+        <HelpProvider
+          openHelp={(entry) => {
+            setTopic(entry);
+            setPage('help');
+          }}
+        >
+          {pageFor(page)}
+        </HelpProvider>
+      </main>
     </div>
   );
 };
