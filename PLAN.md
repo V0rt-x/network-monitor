@@ -1737,7 +1737,7 @@ dash.
       and two in the page, one per word. `spanOf` is a tested pure function of its own, so a
       long session reads `8 h 12 min` rather than the `492 min` the chart axis learned about
       the hard way, and every unit stays an i18next key.
-- [ ] **8. More services on the status page, starting with Ubisoft.** *Eighth: pure data, no
+- [x] **8. More services on the status page, starting with Ubisoft.** *Eighth: pure data, no
       code, and it can land at any time — it is late only because it competes with nothing.*
       Eleven services ship today. Missing and named by the user: **Ubisoft Connect**. Others
       worth the same check: Rockstar, Wargaming, Roblox, HoYoverse, Nintendo, and on the
@@ -1753,6 +1753,21 @@ dash.
         exact failure the bundled SDR hostnames caused in Phase 2.
       – Adding a service must stay a data change; if any candidate needs code, it does not ship
         here.
+      — nine services added, all nine of the candidates named: **Ubisoft Connect** (two front
+      doors — the launcher's service and the account API, which is exactly the storefront-
+      versus-gateway distinction the schema asks for), Rockstar, Wargaming, Roblox, HoYoverse,
+      Nintendo, Akamai, Fastly and Azure. Twenty services and twenty-three endpoints now, which
+      at the shipped cadence is **0.51 probes/s** against a cap of 32 — the test that bounds
+      this asserts under 1.
+      **Every host was connected to from this machine before it was committed**, with the
+      probe kind the app will use, over four passes. Two are worth recording rather than
+      hiding: `www.fastly.com` and `api.akamai.com` each timed out on a first attempt.
+      `api.akamai.com` never answered at all and was **dropped** — a front door that does not
+      answer is a permanently red card about a service that is up, which is the failure the
+      guessed SDR hostnames caused in Phase 2 — while `www.fastly.com` answered on every
+      later pass and ships. `Azure` is `management.azure.com`, the ARM endpoint, rather than
+      the marketing site, which is a CDN and would measure the CDN.
+      Data only: no code changed except a stale comment naming the old endpoint count.
 - [ ] **9. Sweep for the words item 1 replaced.** *Last, and it is bookkeeping rather than a
       feature.* Once the vocabulary changes, the old names survive in the help text, the
       tooltips, the tray labels, the chart legend and the Russian locale that Phase 7 is about

@@ -64,6 +64,51 @@
       "endpoints": [{ "id": "web", "address": "www.playstation.com", "port": 443 }]
     },
     {
+      "id": "ubisoft",
+      "label": "Ubisoft Connect",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [
+        { "id": "connect", "address": "connect.ubisoft.com", "port": 443 },
+        { "id": "accounts", "address": "public-ubiservices.ubi.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "rockstar",
+      "label": "Rockstar Games",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.rockstargames.com", "port": 443 }]
+    },
+    {
+      "id": "wargaming",
+      "label": "Wargaming",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "wargaming.net", "port": 443 }]
+    },
+    {
+      "id": "roblox",
+      "label": "Roblox",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.roblox.com", "port": 443 }]
+    },
+    {
+      "id": "hoyoverse",
+      "label": "HoYoverse",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.hoyoverse.com", "port": 443 }]
+    },
+    {
+      "id": "nintendo",
+      "label": "Nintendo",
+      "group": "gamingPlatform",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.nintendo.com", "port": 443 }]
+    },
+    {
       "id": "aws",
       "label": "Amazon Web Services",
       "group": "infrastructure",
@@ -83,6 +128,27 @@
       "group": "infrastructure",
       "probeKind": "tcpConnect",
       "endpoints": [{ "id": "web", "address": "cloudflare.com", "port": 443 }]
+    },
+    {
+      "id": "akamai",
+      "label": "Akamai",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.akamai.com", "port": 443 }]
+    },
+    {
+      "id": "fastly",
+      "label": "Fastly",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.fastly.com", "port": 443 }]
+    },
+    {
+      "id": "azure",
+      "label": "Microsoft Azure",
+      "group": "infrastructure",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "management", "address": "management.azure.com", "port": 443 }]
     }
   ]
 }

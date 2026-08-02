@@ -39,8 +39,10 @@ use crate::Error;
 /// Deliberately far slower than anything else the engine probes. A status page is a
 /// background question — "is the platform up" changes on the scale of minutes, not of a
 /// packet — and this list is the one part of the product that is probed whether or not the
-/// user is doing anything, so it must cost close to nothing: thirteen endpoints at this
-/// cadence is under a third of a probe a second against the product's cap of thirty-two.
+/// user is doing anything, so it must cost close to nothing: the bundled list's endpoints at
+/// this cadence come to about half a probe a second against the product's cap of thirty-two.
+/// A test asserts the whole list stays under one, which is what bounds how many services can
+/// be added at all.
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(45);
 
 /// How many checks are retained per endpoint.
