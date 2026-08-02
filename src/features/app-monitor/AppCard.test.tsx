@@ -105,7 +105,7 @@ const app = ({
     endpointsTotal: 1,
   },
   pool: null,
-  chartAgeSecs: [-2, -1, 0],
+  chartElapsedSecs: [0, 3, 6],
   groups: groupsOf(endpoints),
   ...overrides,
 });

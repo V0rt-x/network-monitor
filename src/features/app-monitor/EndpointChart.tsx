@@ -3,11 +3,17 @@ import { useTranslation } from 'react-i18next';
 import uPlot from 'uplot';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries, formatAxisMs } from './chartSeries';
+import { alignSeries, formatAxisElapsed, formatAxisMs } from './chartSeries';
 
 interface EndpointChartProps {
-  /** Seconds before now for each slot — negative, ascending, shared by every line. */
-  readonly ageSecs: readonly (number | null)[];
+  /**
+   * Seconds since monitoring began for each slot — ascending, shared by every line.
+   *
+   * The whole ladder arrives from the first moment, even before there is anything to draw in
+   * most of it. That is what fixes the width of the axis, so a fresh application's line grows
+   * rightwards into it instead of being stretched across it.
+   */
+  readonly elapsedSecs: readonly (number | null)[];
   readonly lines: readonly ChartLine[];
   /** The endpoint whose lines are raised, and whose siblings are dimmed. */
   readonly highlighted: string | null;
@@ -61,7 +67,7 @@ const HOVER_PROXIMITY = 24;
  * while the window is hidden, so a chart of sixteen series costs no canvas work in the tray.
  */
 export const EndpointChart = ({
-  ageSecs,
+  elapsedSecs,
   lines,
   highlighted,
   onHover,
@@ -79,8 +85,8 @@ export const EndpointChart = ({
   currentLines.current = lines;
   const currentHighlight = useRef<string | null>(highlighted);
   currentHighlight.current = highlighted;
-  const currentAges = useRef<readonly (number | null)[]>(ageSecs);
-  currentAges.current = ageSecs;
+  const currentElapsed = useRef<readonly (number | null)[]>(elapsedSecs);
+  currentElapsed.current = elapsedSecs;
   const notifyHover = useRef(onHover);
   notifyHover.current = onHover;
   const notifySelect = useRef(onSelect);
@@ -139,7 +145,15 @@ export const EndpointChart = ({
             },
           },
           axes: [
-            { stroke: '#94a3b8', grid: { stroke: '#1e3a5f' }, ticks: { stroke: '#1e3a5f' } },
+            {
+              stroke: '#94a3b8',
+              grid: { stroke: '#1e3a5f' },
+              ticks: { stroke: '#1e3a5f' },
+              // Time since monitoring began, as minutes and seconds. Not an age: the axis is
+              // anchored at the start, which is what lets the drawing grow from the left.
+              values: (_chart, splits) =>
+                (splits as unknown as (number | null)[]).map((value) => formatAxisElapsed(value)),
+            },
             {
               stroke: '#94a3b8',
               grid: { stroke: '#1e3a5f' },
@@ -175,7 +189,7 @@ export const EndpointChart = ({
         },
         // Built with the data it will draw, not with empty arrays. A logarithmic scale has
         // no range to compute from nothing, and uPlot decides its scales at construction.
-        alignSeries(currentAges.current, drawn) as unknown as uPlot.AlignedData,
+        alignSeries(currentElapsed.current, drawn) as unknown as uPlot.AlignedData,
         element,
       );
     } catch (error) {
@@ -197,10 +211,10 @@ export const EndpointChart = ({
   useEffect(() => {
     const chart = plot.current;
     if (!chart) return;
-    const data = alignSeries(ageSecs, lines);
+    const data = alignSeries(elapsedSecs, lines);
     if ((data[0]?.length ?? 0) === 0) return;
     chart.setData(data as unknown as uPlot.AlignedData);
-  }, [ageSecs, lines]);
+  }, [elapsedSecs, lines]);
 
   // A redraw rather than a rebuild: the data has not changed, only which line is raised.
   useEffect(() => {

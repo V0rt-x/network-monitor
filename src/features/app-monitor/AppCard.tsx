@@ -137,7 +137,7 @@ export const AppCard = ({
       {lines.length > 0 && (
         <>
           <EndpointChart
-            ageSecs={app.chartAgeSecs}
+            elapsedSecs={app.chartElapsedSecs}
             lines={lines}
             highlighted={highlighted}
             onHover={setHovered}

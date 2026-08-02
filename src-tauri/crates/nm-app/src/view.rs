@@ -892,7 +892,7 @@ pub struct EndpointView {
     /// Round-trip time in each slot of the application's chart, or `null` for a slot with
     /// no answer in it.
     ///
-    /// Aligned to [`AppView::chart_age_secs`], which every endpoint of the application
+    /// Aligned to [`AppView::chart_elapsed_secs`], which every endpoint of the application
     /// shares — that shared axis is what makes "which of these is the odd one out" a
     /// question the chart can answer. Gaps stay gaps: nothing is drawn across a `null`.
     pub chart_rtt_ms: Vec<Option<f64>>,
@@ -1113,12 +1113,19 @@ pub struct AppView {
     /// this machine has never seen — the ordinary case for most games, and one the page must
     /// state, because an absent pool can neither report an outage nor rule one out.
     pub pool: Option<PoolView>,
-    /// Seconds before now for each slot of the chart, negative and ascending.
+    /// Seconds since monitoring began for each slot of the chart, ascending.
     ///
     /// One axis for the whole application, which is the point: a list of sparklines answers
     /// "how is this endpoint" and the question the user actually has is "which of these is
     /// the odd one out". Every endpoint's `chartRttMs` and `chartPathMs` are aligned to it.
-    pub chart_age_secs: Vec<f64>,
+    ///
+    /// Elapsed time rather than an age, and anchored where monitoring began. A fresh
+    /// application therefore draws a short line at the *left* edge and grows rightwards into
+    /// a fixed axis, instead of a short line pinned to the right with empty space behind it
+    /// that walks the whole picture leftwards on every emission — which is what made a line
+    /// something the reader had to chase with the pointer. The ladder advances a whole slot
+    /// at a time, so the picture steps once every few seconds rather than drifting.
+    pub chart_elapsed_secs: Vec<f64>,
     /// Its endpoints, grouped by transport — the match traffic first — and worst first
     /// within each group.
     ///
@@ -1137,7 +1144,7 @@ impl AppView {
         id: u32,
         name: String,
         processes: Vec<AppProcessView>,
-        chart_age_secs: Vec<f64>,
+        chart_elapsed_secs: Vec<f64>,
         interfaces: &InterfaceNames,
         reports: &[EndpointReport],
         pool: Option<(usize, usize, PoolReading)>,
@@ -1182,7 +1189,7 @@ impl AppView {
             counts: counts.into(),
             diagnosis: diagnosis.into(),
             pool: pool.map(|(seeded, learned, reading)| PoolView::of(seeded, learned, &reading)),
-            chart_age_secs,
+            chart_elapsed_secs,
             groups: vec![
                 EndpointGroupView::of(TransportView::Udp, udp),
                 EndpointGroupView::of(TransportView::Tcp, tcp),

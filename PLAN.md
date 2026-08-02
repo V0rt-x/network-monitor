@@ -1204,7 +1204,7 @@ game stutters and does not know what jitter is. The depth stays reachable for wh
 because a measurement tool that cannot explain itself is asking to be trusted on faith, and this
 audience has no reason to extend that.
 
-- [ ] **1. UDP first: that is where the match is played.** The endpoint list is one flat list
+- [x] **1. UDP first: that is where the match is played.** The endpoint list is one flat list
       ordered by severity alone (`nm_app::view::severity`), with transport as a badge on the
       row. During a game the endpoints that matter are the UDP flows, and today they sit
       wherever their health happens to put them, between a launcher's TCP connection, a CDN
@@ -1225,7 +1225,21 @@ audience has no reason to extend that.
         unexplained empty "match traffic" reads as a game that plays over nothing.
       – Probe-budget ranking is untouched: recent bytes then recency, in `nm_core::endpoint`,
         which already finds the match server on its own. This item is presentation only.
-- [ ] **2. Names for the games, not file names.** `assets/apps/presets.json` labels six
+      — `AppView.groups` replaces the flat endpoint list: two groups, always both, the match
+      traffic first. The grouping is Rust's, like the severity ordering it now applies
+      *inside* each group, and each group carries its own `HealthCountsView` plus
+      `needsAttention` — whether anything in it is worse than `Ok`. That last one is sent
+      rather than derived in TypeScript for the usual reason: what a user must not miss is a
+      judgement, and the supporting group may only start folded when it is false.
+      **Both groups travel even when empty**, which is the honest-caveat half of the item: an
+      absent match-traffic group would read as a game that plays over nothing, so the page
+      states either "nothing of this kind has been seen yet" or "this machine cannot discover
+      it, and here is why" depending on the flow status it is given.
+      The chart draws every endpoint regardless — "which of these is the odd one out" is a
+      question about all of them — and takes the grouping as emphasis only: match traffic at
+      full weight, supporting connections lighter and thinner. Colour still identifies and
+      never states.
+- [x] **2. Names for the games, not file names.** `assets/apps/presets.json` labels six
       applications; everything else shows an executable name, so the titles the user named —
       World of Tanks, Forza Horizon, Deadlock — appear as `WorldOfTanks.exe` and the picker
       reads like a task manager.
@@ -1244,7 +1258,29 @@ audience has no reason to extend that.
       – Labels stay proper nouns, shown as written and never translated. The picker shows the
         label with the executable name beside it: a grouping the user cannot inspect is one
         they cannot correct.
-- [ ] **3. The chart grows from the left instead of sliding under the cursor.**
+      — `presets.json` gained a second list, `labels`, with its own validation: one executable
+      each, never one a grouping entry claims, ids unique across both. The shared-executable
+      test keeps applying to grouping alone, which is exactly the split the item asked for —
+      `steam.exe` may now be *named* and still may never be *grouped*.
+      **The five titles were read off real installations on this machine**, not recalled;
+      all five are on a Steam library here, which is also what makes the Phase 6.5 acceptance
+      pass runnable at all.
+      **Then the scale problem, raised by the user: five titles is not a games library and
+      hand-checking does not scale.** There is a ready-made reference — Discord publishes the
+      index it uses to recognise a running game — so `assets/apps/labels.json` now holds 9 314
+      generated names, consulted only *after* the curated lists so a curated entry always
+      wins. `scripts/build-app-labels.mjs` produces it, and **the application never runs it**:
+      the script reaches the network, the output is committed and compiled in, and a release
+      is the only thing that changes it — the rule the target lists already follow. No licence
+      is stated for that endpoint and `assets/apps/README.md` says so rather than assuming it
+      away.
+      The filter is harsh because a confident wrong name is worse than a file name: dropped
+      are 408 names claimed by more than one title, generic names and runtimes, and everything
+      with fewer than four characters before the extension — the index really does claim
+      `at.exe`, which has shipped with Windows since NT. A catalogue entry can only ever
+      supply a *name*, never a grouping, so its worst failure is a wrong label rather than
+      another program's traffic in a game's endpoint list.
+- [x] **3. The chart grows from the left instead of sliding under the cursor.**
       `nm_core::series::Grid` ends at `now`, so a fresh application draws a short line pinned to
       the right edge with empty space behind it, and every emission walks the whole picture one
       second to the left — which is what makes a line something the user has to *catch* with
@@ -1258,6 +1294,19 @@ audience has no reason to extend that.
         still while the pointer is inside the chart and catch up when it leaves.
       – The axis then wants labelling as elapsed time from the start rather than as negative
         ages, and the note under the chart has to agree with it.
+      — `Grid` is now anchored: it takes the instant monitoring began and places samples in
+      slots counted in whole steps from *there*, so `AppView.chartElapsedSecs` runs `0, 3, 6,
+      …` and the axis is labelled `0:00`, `0:03`. Both halves of the fix fall out of that one
+      change. The whole ladder is emitted from the first moment, which fixes the width of the
+      axis so a fresh application's line **grows into it from the left** rather than being
+      stretched across it or pinned to the right; and because slot boundaries are whole steps
+      from the anchor, the picture **steps once every three seconds** instead of drifting on
+      every emission. A test pins that the axis does not move part-way through a slot and does
+      move when the boundary is crossed — which is the property the pointer needs. The
+      second, harder fallback the item allowed (freezing the axis while the pointer is inside)
+      was not needed.
+      Each application is anchored separately, and stopping and restarting one starts a new
+      chart — the old session's axis says nothing about the new one.
 - [ ] **4. The vocabulary: what a player reads first, and what waits for whoever asks.** The
       page states everything it knows at once — probe kind, proven filtering, both egress
       addresses and their adapters, the window a rate is taken over, five separate passive

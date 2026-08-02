@@ -55,8 +55,10 @@ fn monitor() -> (AppMonitor, TargetRegistry, Instant) {
         Duration::from_secs(60),
     )
     .unwrap();
-    monitor.monitor(APP).unwrap();
-    (monitor, TargetRegistry::new(), Instant::now())
+    // The moment monitoring began, which is where the chart's axis is anchored.
+    let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    (monitor, TargetRegistry::new(), now)
 }
 
 fn udp(last: u8) -> EndpointKey {
@@ -153,7 +155,7 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
             pid: PID,
             name: "game.exe".to_owned(),
         }],
-        monitor.chart_ages_secs(),
+        monitor.chart_elapsed_secs(APP, now),
         &adapters(),
         &monitor.endpoints(APP, now),
         None,
@@ -468,12 +470,19 @@ fn every_endpoint_is_drawn_against_the_same_axis() {
 
     let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
-    let slots = view.chart_age_secs.len();
+    let slots = view.chart_elapsed_secs.len();
     assert!(slots > 1);
     assert_eq!(
-        view.chart_age_secs.last().copied(),
+        view.chart_elapsed_secs.first().copied(),
         Some(0.0),
-        "the axis ends at now, so a slow endpoint trails off to the left"
+        "the axis begins where monitoring did, so a fresh application draws from the left \
+         edge rather than being pinned to the right with empty space behind it"
+    );
+    assert!(
+        view.chart_elapsed_secs
+            .windows(2)
+            .all(|pair| pair[1] > pair[0]),
+        "and it ascends"
     );
     for endpoint in &flat(&view) {
         assert_eq!(endpoint.chart_rtt_ms.len(), slots);

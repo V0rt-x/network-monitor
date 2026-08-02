@@ -47,6 +47,26 @@ export const formatAxisMs = (value: number | null | undefined): string => {
 };
 
 /**
+ * A tick label on the chart's time axis.
+ *
+ * The axis runs from where monitoring began, so the values are elapsed seconds rather than
+ * ages: `0:00` is the moment the user started watching this application, and the drawing
+ * grows rightwards from it. Minutes and seconds because two minutes of history read as
+ * `1:30` far more readily than as `90`.
+ *
+ * A blanked split arrives as `null`, exactly as on the round-trip axis, and treating one as a
+ * number throws in the middle of a draw — which leaves an empty canvas and no error anywhere.
+ */
+export const formatAxisElapsed = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '';
+  if (!Number.isFinite(value)) return '';
+  const total = Math.max(0, Math.round(value));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
+};
+
+/**
  * The smallest round trip the chart's logarithmic axis can place, in milliseconds.
  *
  * A logarithmic scale has no zero, so a measurement of zero — which needs a round trip
@@ -70,14 +90,14 @@ export const LOG_FLOOR_MS = 0.01;
  * which is how an outage stays a break in the line rather than a straight segment through it.
  */
 export const alignSeries = (
-  ageSecs: readonly (number | null)[],
+  elapsedSecs: readonly (number | null)[],
   lines: readonly ChartLine[],
 ): (number | null)[][] => {
   const xs: number[] = [];
   const ys: (number | null)[][] = lines.map(() => []);
-  ageSecs.forEach((age, slot) => {
-    if (age === null) return;
-    xs.push(age);
+  elapsedSecs.forEach((elapsed, slot) => {
+    if (elapsed === null) return;
+    xs.push(elapsed);
     lines.forEach((line, index) => {
       const value = line.values[slot] ?? null;
       ys[index]?.push(value === null ? null : Math.max(value, LOG_FLOOR_MS));

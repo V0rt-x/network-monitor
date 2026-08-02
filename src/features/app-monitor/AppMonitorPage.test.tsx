@@ -39,7 +39,7 @@ const ENDPOINTS: AppEndpoints = {
         endpointsTotal: 2,
       },
       pool: null,
-      chartAgeSecs: [],
+      chartElapsedSecs: [],
       groups: [
         {
           transport: 'udp',

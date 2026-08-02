@@ -294,8 +294,9 @@ async fn session(
     let mut pending: VecDeque<ProbeCommand> = VecDeque::new();
     // Applications the user chose before this session started — a settings change, most
     // likely — are picked up again rather than quietly forgotten.
+    let session_start = Instant::now();
     for id in applications.iter().map(Application::id).collect::<Vec<_>>() {
-        let _ = apps.monitor(id);
+        let _ = apps.monitor(id, session_start);
     }
     for application in applications.iter() {
         let changes = track_pool(&mut pools, application, store, &mut registry);
@@ -337,7 +338,7 @@ async fn session(
                     // started since the last sweep must not be refused as "not running".
                     if let Some(snapshot) = snapshot_processes().await {
                         if let Some(id) = applications.adopt(pid, &snapshot) {
-                            if apps.monitor(id).is_err() {
+                            if apps.monitor(id, Instant::now()).is_err() {
                                 applications.forget(id);
                             } else if let Some(application) =
                                 applications.iter().find(|entry| entry.id() == id)
@@ -745,7 +746,7 @@ fn emit_apps(
                 application.id().get(),
                 application.label().to_owned(),
                 processes,
-                apps.chart_ages_secs(),
+                apps.chart_elapsed_secs(application.id(), now),
                 interfaces,
                 &reports,
                 pool,

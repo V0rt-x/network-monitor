@@ -48,8 +48,10 @@ fn monitor() -> AppMonitor {
 /// between every feature that probes.
 fn watching() -> (AppMonitor, TargetRegistry, Instant) {
     let mut monitor = monitor();
-    monitor.monitor(APP).unwrap();
-    (monitor, TargetRegistry::new(), Instant::now())
+    // The moment monitoring began, which is where the chart's axis is anchored.
+    let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    (monitor, TargetRegistry::new(), now)
 }
 
 fn socket(last: u8, port: u16) -> SocketAddr {
@@ -167,9 +169,9 @@ fn demotion_stretches_the_interval_instead_of_dropping_the_endpoint() {
 fn one_address_two_applications_is_probed_once() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
 
     monitor
         .observe(APP, udp(1), Some(local(9)), None, now)
@@ -190,9 +192,9 @@ fn one_address_two_applications_is_probed_once() {
 fn one_application_letting_go_does_not_stop_the_others_measurement() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
     monitor.sweep(&mut registry, now);
@@ -210,9 +212,9 @@ fn one_application_letting_go_does_not_stop_the_others_measurement() {
 fn the_last_application_letting_go_releases_the_target() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
@@ -230,9 +232,9 @@ fn the_last_application_letting_go_releases_the_target() {
 fn a_shared_target_is_probed_at_the_shortest_interval_anyone_wants() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let start = Instant::now();
+    monitor.monitor(APP, start).unwrap();
+    monitor.monitor(OTHER, start).unwrap();
 
     // One application keeps using the endpoint; the other has gone quiet on it.
     monitor.observe(APP, udp(1), None, None, start).unwrap();
@@ -255,9 +257,9 @@ fn a_shared_target_slows_down_once_every_user_has_lost_interest() {
     // so it could only ever shrink and a shared endpoint could never be demoted at all.
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let start = Instant::now();
+    monitor.monitor(APP, start).unwrap();
+    monitor.monitor(OTHER, start).unwrap();
 
     monitor.observe(APP, udp(1), None, None, start).unwrap();
     monitor.observe(OTHER, udp(1), None, None, start).unwrap();
@@ -280,9 +282,9 @@ fn different_egress_routes_to_one_endpoint_are_disclosed() {
     // represent both routes, so the disagreement is recorded rather than averaged.
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
 
     monitor
         .observe(APP, udp(1), Some(local(9)), None, now)
@@ -405,9 +407,9 @@ fn a_disclosure_is_withdrawn_once_the_other_application_stops() {
     // A warning that outlives its cause is a warning nobody reads.
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
     monitor
         .observe(APP, udp(1), Some(local(9)), None, now)
         .unwrap();
@@ -438,10 +440,11 @@ fn an_unmonitored_application_is_refused() {
 #[test]
 fn the_application_cap_is_enforced() {
     let mut monitor = monitor();
+    let now = Instant::now();
     for raw in 0..5 {
-        monitor.monitor(AppId::new(raw)).unwrap();
+        monitor.monitor(AppId::new(raw), now).unwrap();
     }
-    assert!(monitor.monitor(AppId::new(99)).is_err());
+    assert!(monitor.monitor(AppId::new(99), now).is_err());
     assert_eq!(monitor.app_count(), 5);
 }
 
@@ -449,9 +452,9 @@ fn the_application_cap_is_enforced() {
 fn a_measurement_reaches_every_application_using_the_target() {
     let mut monitor = monitor();
     let mut registry = TargetRegistry::new();
-    monitor.monitor(APP).unwrap();
-    monitor.monitor(OTHER).unwrap();
     let now = Instant::now();
+    monitor.monitor(APP, now).unwrap();
+    monitor.monitor(OTHER, now).unwrap();
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     monitor.observe(OTHER, udp(1), None, None, now).unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
@@ -837,7 +840,10 @@ fn a_silent_endpoint_is_on_the_chart_by_its_path_and_not_by_a_round_trip() {
         report.chart_path_ms.iter().any(Option::is_some),
         "and the route to it is what puts it on the chart at all"
     );
-    assert_eq!(report.chart_path_ms.len(), monitor.chart_ages_secs().len());
+    assert_eq!(
+        report.chart_path_ms.len(),
+        monitor.chart_elapsed_secs(APP, now).len()
+    );
 }
 
 #[test]

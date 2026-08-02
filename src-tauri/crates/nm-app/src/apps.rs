@@ -269,6 +269,12 @@ pub struct AppMonitor {
     spent_hops: Vec<TargetId>,
     /// Reused by every sweep so the steady state allocates nothing for expiry.
     gone: Vec<(AppId, EndpointKey)>,
+    /// When each application's chart begins.
+    ///
+    /// The axis is anchored where monitoring started rather than at the present, so a fresh
+    /// application's line grows rightwards from the left edge instead of being pinned to the
+    /// right with empty space behind it.
+    started: BTreeMap<AppId, Instant>,
     /// The one time axis every endpoint of an application is drawn against.
     ///
     /// Sixteen endpoints probed a second apart do not share sample times, so a chart with
@@ -303,6 +309,7 @@ impl AppMonitor {
             hops: HashMap::new(),
             spent_hops: Vec::new(),
             gone: Vec::new(),
+            started: BTreeMap::new(),
             grid: Grid::new(CHART_STEP, SERIES_POINTS)?,
         })
     }
@@ -316,12 +323,28 @@ impl AppMonitor {
 
     /// Starts monitoring an application.
     ///
+    /// `now` is remembered as the moment its chart begins. The axis is anchored there rather
+    /// than at the present, which is what lets the drawing grow rightwards from the left
+    /// edge instead of appearing pinned to the right with empty space behind it.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Core`] wrapping [`nm_core::Error::TooManyApps`] at the cap.
-    pub fn monitor(&mut self, app: AppId) -> Result<(), Error> {
+    pub fn monitor(&mut self, app: AppId, now: Instant) -> Result<(), Error> {
         self.tracker.monitor(app)?;
+        // Re-monitoring keeps the original moment: an application the user never stopped
+        // watching must not have its chart restart under it.
+        self.started.entry(app).or_insert(now);
         Ok(())
+    }
+
+    /// When an application's chart begins, or `now` for one nothing recorded.
+    ///
+    /// The fallback cannot happen through [`AppMonitor::monitor`]; it exists so that a
+    /// caller asking about an application that was never started gets an empty chart rather
+    /// than a panic or an axis anchored at the epoch.
+    fn started_at(&self, app: AppId, now: Instant) -> Instant {
+        self.started.get(&app).copied().unwrap_or(now)
     }
 
     /// Whether an application is being monitored.
@@ -342,6 +365,9 @@ impl AppMonitor {
         for key in self.tracker.forget(app) {
             self.release(registry, app, key, &mut changes);
         }
+        // Choosing it again starts a new chart, which is what the user asked for by stopping
+        // and starting: the axis of the old session says nothing about the new one.
+        self.started.remove(&app);
         changes
     }
 
@@ -970,6 +996,7 @@ impl AppMonitor {
     /// Every endpoint of an application, with its measurements, in a stable order.
     #[must_use]
     pub fn endpoints(&self, app: AppId, now: Instant) -> Vec<EndpointReport> {
+        let started = self.started_at(app, now);
         self.tracker
             .endpoints(app)
             .filter_map(|tracked| {
@@ -982,7 +1009,7 @@ impl AppMonitor {
                     .as_ref()
                     .and_then(EdgeReading::reported_hop)
                     .and_then(|hop| edge?.history(hop.address))
-                    .map(|history| self.grid.place(history, now));
+                    .map(|history| self.grid.place(history, started, now));
                 // What the probe engine was actually told to bind to, which is not always
                 // what this application asked for — see `EndpointReport::probe_source`.
                 let probe_source = entry
@@ -996,6 +1023,7 @@ impl AppMonitor {
                     path,
                     path_series,
                     &self.grid,
+                    started,
                     now,
                     self.window,
                     &self.thresholds,
@@ -1004,13 +1032,15 @@ impl AppMonitor {
             .collect()
     }
 
-    /// Seconds before now for each slot of the chart every endpoint is drawn on.
+    /// Seconds since monitoring began for each slot of the chart every endpoint is drawn on.
     ///
     /// One axis for the whole application: the endpoints share it, which is what makes
-    /// "which of these is the odd one out" a question the chart can answer.
+    /// "which of these is the odd one out" a question the chart can answer. Elapsed time
+    /// rather than an age, and anchored where monitoring began, so the drawing grows
+    /// rightwards into a fixed axis instead of sliding leftwards under the reader.
     #[must_use]
-    pub fn chart_ages_secs(&self) -> Vec<f64> {
-        self.grid.ages_secs()
+    pub fn chart_elapsed_secs(&self, app: AppId, now: Instant) -> Vec<f64> {
+        self.grid.elapsed_secs(self.started_at(app, now), now)
     }
 
     /// How many endpoints an application has, probed or demoted.
@@ -1151,6 +1181,7 @@ impl EndpointReport {
         path: Option<EdgeReading>,
         path_series: Option<Vec<Option<f64>>>,
         grid: &Grid,
+        started: Instant,
         now: Instant,
         window: Duration,
         thresholds: &HealthThresholds,
@@ -1174,7 +1205,7 @@ impl EndpointReport {
 
         Self {
             key: tracked.key(),
-            chart_rtt_ms: grid.place(&entry.history, now),
+            chart_rtt_ms: grid.place(&entry.history, started, now),
             chart_path_ms: path_series.unwrap_or_else(|| vec![None; grid.points()]),
             liveness: tracked.liveness(),
             probing: tracked.probing(),

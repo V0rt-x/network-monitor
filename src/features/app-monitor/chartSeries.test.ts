@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries, formatAxisMs, LOG_FLOOR_MS } from './chartSeries';
+import { alignSeries, formatAxisElapsed, formatAxisMs, LOG_FLOOR_MS } from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
@@ -100,5 +100,24 @@ describe('formatAxisMs', () => {
   it('keeps a decimal below a millisecond, where rounding would print zero', () => {
     expect(formatAxisMs(0.4)).toBe('0.4');
     expect(formatAxisMs(0.05)).toBe('0.1');
+  });
+});
+
+describe('formatAxisElapsed', () => {
+  it('labels a blanked tick with nothing rather than throwing', () => {
+    // The same hazard as the round-trip axis, and the same consequence: a formatter that
+    // throws leaves an empty canvas and no error anywhere.
+    expect(formatAxisElapsed(null)).toBe('');
+    expect(formatAxisElapsed(undefined)).toBe('');
+    expect(formatAxisElapsed(Number.NaN)).toBe('');
+  });
+
+  it('reads as time since monitoring began, not as an age', () => {
+    // The axis is anchored where the user started watching, which is what lets the drawing
+    // grow rightwards from the left edge instead of sliding under the pointer.
+    expect(formatAxisElapsed(0)).toBe('0:00');
+    expect(formatAxisElapsed(9)).toBe('0:09');
+    expect(formatAxisElapsed(90)).toBe('1:30');
+    expect(formatAxisElapsed(117)).toBe('1:57');
   });
 });
