@@ -1,4 +1,4 @@
-//! Deciding what an address *is*, before deciding how to measure it.
+//! Deciding what an endpoint *is*, before deciding how to measure it.
 //!
 //! An endpoint discovered from the OS connection table is not automatically something
 //! worth probing. The reality check (`docs/measurement-reality-check.md`) found the case
@@ -10,13 +10,59 @@
 //! fake-bad one, because it would tell the user their network is fine.
 //!
 //! So classification happens first, and it decides which probe kinds may be believed.
+//!
+//! # An address can be innocent and the route into it not
+//!
+//! A synthetic address is only the version of the problem that is visible in the address.
+//! Running the app against a local tunnel client found the other version, and it is the
+//! commoner of the two: **the address is perfectly ordinary and the first hop is a tunnel**.
+//! A TUN client on this machine takes traffic by installing routes rather than by rewriting
+//! DNS, so every name resolves to the real public address of the real service and nothing
+//! about the address gives the tunnel away. What lies is unchanged: the tunnel's own stack
+//! completes the TCP handshake and answers the echo request, without a packet leaving the
+//! machine. Measured on a developer machine running one, every service on the status page
+//! reported between one and two milliseconds, worldwide, and the page was green.
+//!
+//! A class therefore describes an endpoint rather than only an address: what the address is,
+//! and what the route into it turned out to start with. [`AddressPolicy::classify`] answers
+//! the first from the address alone, because that is all an address can say;
+//! [`AddressClass::through`] folds in the second once the platform has looked the route up.
+//! Both arrive at the same place, and it is the same place for the same reason.
 
 use std::net::IpAddr;
 
 use crate::cidr::IpCidr;
 use crate::Error;
 
-/// What an address is, as far as measurement is concerned.
+/// Where the route into an endpoint begins.
+///
+/// Produced by the platform's route lookup and folded into a class by
+/// [`AddressClass::through`]. Kept apart from the platform's own richer answer — which
+/// carries the adapter's name and index — because the decision needs only this much, and
+/// keeping it this small is what lets the rule be tested on any operating system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum Egress {
+    /// The route leaves by an ordinary adapter. Probes mean what they say.
+    Direct,
+    /// The route leaves by a tunnel running on this machine.
+    ///
+    /// Everything the tunnel's own stack can answer by itself, it does.
+    LocalTunnel,
+    /// The route could not be looked up.
+    ///
+    /// The honest default, and deliberately **not** treated as either of the others. Read
+    /// as a tunnel it would refuse the cheap probe kinds everywhere the lookup is missing —
+    /// which today is every platform but Windows — and the product would measure nothing
+    /// on two of its three targets. Read as direct it would believe a tunnel this build
+    /// happened not to recognise. So it decides nothing, and the measurement itself is left
+    /// to catch a lie: see [`crate::forgery`], which needs no route table and proves what
+    /// this can only infer.
+    #[default]
+    Unknown,
+}
+
+/// What an endpoint is, as far as measurement is concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AddressClass {
@@ -28,6 +74,19 @@ pub enum AddressClass {
     /// probe that exchanges data end to end — a TLS handshake, an HTTP request — travels
     /// the real path.
     TunnelSentinel,
+    /// An ordinary public address whose route starts at a tunnel on this machine.
+    ///
+    /// The address is real, resolves normally and belongs to the service it names. The
+    /// route is what makes the cheap probes worthless: a TUN client answers the handshake
+    /// and the echo itself, so both report the tunnel and neither reaches the service.
+    ///
+    /// Held apart from [`TunnelSentinel`](Self::TunnelSentinel) rather than folded into it
+    /// even though the two are measured identically, because they are not the same finding
+    /// and the user is owed the difference. A sentinel means the *name* was answered with a
+    /// stand-in; this means the name was answered truthfully and the *packets* are being
+    /// taken. One is a DNS fact, the other a routing fact, and a real machine has both at
+    /// once — the tunnel that motivated this classifies some endpoints each way.
+    TunnelledEgress,
     /// A private address: a LAN peer, the user's own router.
     ///
     /// Measurable, but it says nothing about reaching the internet.
@@ -48,7 +107,7 @@ pub enum AddressClass {
 impl AddressClass {
     /// Whether a round-trip time measured by ICMP or a bare TCP connect can be trusted.
     ///
-    /// False for a tunnel sentinel, which is the whole point of this module.
+    /// False for both tunnelled classes, which is the whole point of this module.
     #[must_use]
     pub const fn trusts_transport_rtt(self) -> bool {
         matches!(
@@ -60,7 +119,37 @@ impl AddressClass {
     /// Whether probing this address tells us anything about reaching the internet.
     #[must_use]
     pub const fn worth_probing(self) -> bool {
-        matches!(self, Self::Routable | Self::TunnelSentinel)
+        matches!(
+            self,
+            Self::Routable | Self::TunnelSentinel | Self::TunnelledEgress
+        )
+    }
+
+    /// Whether a tunnel on this machine stands between the probe and the endpoint.
+    ///
+    /// The question the UI asks, and the reason the two tunnelled classes are one predicate
+    /// here and two variants above: what a badge says is "there is a tunnel in the way",
+    /// while which *kind* of tunnelling was detected is a level-two detail.
+    #[must_use]
+    pub const fn is_behind_a_tunnel(self) -> bool {
+        matches!(self, Self::TunnelSentinel | Self::TunnelledEgress)
+    }
+
+    /// The class this endpoint has once the route into it is known.
+    ///
+    /// Only an otherwise ordinary address changes: a tunnel in the path is what turns a
+    /// routable address into one whose cheap probes lie. Everything else is already a
+    /// stronger or an unrelated statement —
+    /// [`TunnelSentinel`](Self::TunnelSentinel) already says a tunnel is remapping it, and
+    /// a private or unusable address is not measured whatever adapter it would leave by.
+    ///
+    /// [`Egress::Unknown`] changes nothing, deliberately. See its own documentation.
+    #[must_use]
+    pub const fn through(self, egress: Egress) -> Self {
+        match (self, egress) {
+            (Self::Routable, Egress::LocalTunnel) => Self::TunnelledEgress,
+            _ => self,
+        }
     }
 }
 
@@ -288,14 +377,100 @@ mod tests {
     }
 
     #[test]
-    fn transport_rtt_is_distrusted_only_for_tunnel_sentinels() {
+    fn transport_rtt_is_distrusted_for_every_way_of_being_tunnelled() {
         // The rule the whole module exists for.
         assert!(!AddressClass::TunnelSentinel.trusts_transport_rtt());
+        assert!(!AddressClass::TunnelledEgress.trusts_transport_rtt());
         assert!(AddressClass::Routable.trusts_transport_rtt());
         assert!(AddressClass::Private.trusts_transport_rtt());
         assert!(AddressClass::CarrierGrade.trusts_transport_rtt());
         assert!(AddressClass::Loopback.trusts_transport_rtt());
         assert!(!AddressClass::Unusable.trusts_transport_rtt());
+    }
+
+    #[test]
+    fn an_ordinary_address_behind_a_local_tunnel_stops_trusting_the_cheap_probes() {
+        // The finding that added this: a TUN client takes traffic by installing routes, so
+        // the address is real and resolves normally while the handshake never leaves the
+        // machine. Measured at 1-2 ms to every service on earth, and green.
+        let direct = AddressClass::Routable;
+        assert_eq!(
+            direct.through(Egress::LocalTunnel),
+            AddressClass::TunnelledEgress
+        );
+        assert!(!direct.through(Egress::LocalTunnel).trusts_transport_rtt());
+        assert!(direct.through(Egress::LocalTunnel).worth_probing());
+    }
+
+    #[test]
+    fn a_route_that_leaves_by_an_ordinary_adapter_changes_nothing() {
+        assert_eq!(
+            AddressClass::Routable.through(Egress::Direct),
+            AddressClass::Routable
+        );
+    }
+
+    #[test]
+    fn an_unknown_route_decides_nothing_either_way() {
+        // Read as a tunnel it would refuse the cheap kinds on every platform without a
+        // route backend, which today is two of the three. Read as direct it would believe
+        // a tunnel this build did not recognise. It does neither; the TTL proof is what
+        // catches the second case, and it needs no route table.
+        for class in [
+            AddressClass::Routable,
+            AddressClass::TunnelSentinel,
+            AddressClass::Private,
+            AddressClass::Loopback,
+            AddressClass::Unusable,
+        ] {
+            assert_eq!(class.through(Egress::Unknown), class, "{class:?}");
+        }
+        assert_eq!(Egress::default(), Egress::Unknown);
+    }
+
+    #[test]
+    fn a_sentinel_stays_a_sentinel_whatever_adapter_it_leaves_by() {
+        // It is already the stronger statement, and its route is the tunnel by definition.
+        for egress in [Egress::Direct, Egress::LocalTunnel, Egress::Unknown] {
+            assert_eq!(
+                AddressClass::TunnelSentinel.through(egress),
+                AddressClass::TunnelSentinel,
+                "{egress:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_address_not_worth_measuring_is_not_rescued_or_ruined_by_its_route() {
+        // A loopback or private address is not probed whatever adapter it would leave by,
+        // and a tunnel in the path must not turn one into something that is.
+        for class in [
+            AddressClass::Private,
+            AddressClass::CarrierGrade,
+            AddressClass::Loopback,
+            AddressClass::Unusable,
+        ] {
+            assert_eq!(class.through(Egress::LocalTunnel), class, "{class:?}");
+            assert!(!class.through(Egress::LocalTunnel).worth_probing());
+        }
+    }
+
+    #[test]
+    fn both_kinds_of_tunnelling_answer_the_question_a_badge_asks() {
+        // One predicate for the UI, two variants underneath: a sentinel means the *name*
+        // was answered with a stand-in, a tunnelled egress means the name was answered
+        // truthfully and the *packets* are being taken.
+        assert!(AddressClass::TunnelSentinel.is_behind_a_tunnel());
+        assert!(AddressClass::TunnelledEgress.is_behind_a_tunnel());
+        for class in [
+            AddressClass::Routable,
+            AddressClass::Private,
+            AddressClass::CarrierGrade,
+            AddressClass::Loopback,
+            AddressClass::Unusable,
+        ] {
+            assert!(!class.is_behind_a_tunnel(), "{class:?}");
+        }
     }
 
     #[test]

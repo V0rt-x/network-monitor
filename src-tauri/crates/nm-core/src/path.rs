@@ -164,7 +164,13 @@ pub fn classify(trace: &PathTrace, policy: &AddressPolicy) -> PathEnd {
         AddressClass::CarrierGrade => {
             return PathEnd::InsideTheAccessNetwork { last_hop: last.ttl }
         }
-        AddressClass::Routable | AddressClass::TunnelSentinel | AddressClass::Unusable => {}
+        // A hop that is neither the user's own network nor their provider's access network.
+        // `TunnelledEgress` cannot arise here — a hop's address is classified on its own,
+        // never folded with a route lookup — but it belongs on this side if it ever does.
+        AddressClass::Routable
+        | AddressClass::TunnelSentinel
+        | AddressClass::TunnelledEgress
+        | AddressClass::Unusable => {}
     }
 
     long_haul_hop(trace).map_or(

@@ -42,6 +42,7 @@ pub mod diagnosis;
 pub mod edge;
 pub mod endpoint;
 pub mod flow;
+pub mod forgery;
 pub mod health;
 pub mod history;
 pub mod path;
