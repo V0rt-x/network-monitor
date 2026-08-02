@@ -55,6 +55,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   path: null,
   flow: null,
   passiveRtt: null,
+  warmupSecsRemaining: null,
   chartRttMs: [24, null, 25],
   chartPathMs: [null, null, null],
   ...overrides,
@@ -105,6 +106,7 @@ const app = ({
     endpointsTotal: 1,
   },
   pool: null,
+  warmupSecsRemaining: null,
   chartElapsedSecs: [0, 3, 6],
   groups: groupsOf(endpoints),
   ...overrides,
@@ -429,6 +431,42 @@ describe('AppCard', () => {
     expect(screen.getByText('Data exchanged (30 s)')).toBeVisible();
   });
 
+  it('says the first seconds are a warm-up rather than showing them as findings', () => {
+    // The samples right after an application is picked are the least informative it will
+    // ever have. Rust decides when that is over; the page states the time left rather than
+    // showing three dashes that read like a failure.
+    render(
+      <AppCard
+        app={app({
+          warmupSecsRemaining: 42,
+          endpoints: [endpoint({ warmupSecsRemaining: 42, jitterMs: null, lossPct: null })],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Measuring this application for the first time/)).toBeInTheDocument();
+    expect(screen.getByText('Warming up · 42 s')).toBeInTheDocument();
+  });
+
+  it('shows nothing about a warm-up once it is over', () => {
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/Warming up/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Measuring this application/)).not.toBeInTheDocument();
+  });
+
   it('gives every figure on the closed row an explanation reachable without a mouse', async () => {
     render(
       <AppCard
@@ -645,7 +683,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Nothing discovered yet for this application')).toBeInTheDocument();
+    expect(screen.getByText(/Nothing discovered yet for this application/)).toBeInTheDocument();
   });
 
   it('lets the user stop following the application', async () => {

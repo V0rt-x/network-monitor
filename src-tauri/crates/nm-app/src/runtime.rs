@@ -747,6 +747,7 @@ fn emit_apps(
                 application.label().to_owned(),
                 processes,
                 apps.chart_elapsed_secs(application.id(), now),
+                apps.warmup_remaining(application.id(), now),
                 interfaces,
                 &reports,
                 pool,

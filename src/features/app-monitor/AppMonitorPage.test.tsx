@@ -39,6 +39,7 @@ const ENDPOINTS: AppEndpoints = {
         endpointsTotal: 2,
       },
       pool: null,
+      warmupSecsRemaining: null,
       chartElapsedSecs: [],
       groups: [
         {
@@ -76,6 +77,7 @@ const ENDPOINTS: AppEndpoints = {
               path: null,
               flow: null,
               passiveRtt: null,
+              warmupSecsRemaining: null,
               chartRttMs: [],
               chartPathMs: [],
             },

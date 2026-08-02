@@ -157,6 +157,15 @@ export type AppView = {
 	 */
 	diagnosis: DiagnosisView,
 	/**
+	 *  Seconds of warm-up left before anything is concluded about this application, or
+	 *  `null` once there are none.
+	 * 
+	 *  The same rule as an endpoint's, one level up. The general network underneath it has
+	 *  been measured all along and is still reported — it is the application that has
+	 *  nothing to say yet, not the machine.
+	 */
+	warmupSecsRemaining: number | null,
+	/**
 	 *  What the game's own reference pool says, when it has one.
 	 * 
 	 *  `null` for a title whose operator publishes no reference address and whose servers
@@ -459,11 +468,26 @@ export type EndpointView = {
 	probeKind: ProbeKindView | null,
 	/**  Whether a probe kind has been *proven* filtered here. */
 	filteringConfirmed: boolean,
+	/**
+	 *  Seconds of warm-up left before the derived figures mean anything, or `null` once
+	 *  there are none.
+	 * 
+	 *  The first seconds after an endpoint is discovered are the least informative it will
+	 *  ever have: no window is full, the fallback chain is still trying probe kinds, ranking
+	 *  has not run, and the passive figures need several updates before they say anything.
+	 *  The page states that it is warming up rather than presenting all of it as
+	 *  measurement.
+	 * 
+	 *  **It never hides an answer.** The health state, a proven filtering, an endpoint alive
+	 *  by its own traffic and a stall all arrive at full speed, because arriving fast is the
+	 *  point of them. Only figures that are still noisy wait.
+	 */
+	warmupSecsRemaining: number | null,
 	/**  Mean round-trip time over the window, in milliseconds. */
 	rttMs: number | null,
-	/**  Jitter over the window, in milliseconds. */
+	/**  Jitter over the window, in milliseconds. Withheld during warm-up. */
 	jitterMs: number | null,
-	/**  Packet loss over the window, as a percentage. */
+	/**  Packet loss over the window, as a percentage. Withheld during warm-up. */
 	lossPct: number | null,
 	/**
 	 *  The route to it, measured continuously, when nothing about the endpoint itself can be.

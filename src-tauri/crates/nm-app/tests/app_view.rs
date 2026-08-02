@@ -113,6 +113,23 @@ fn fill(monitor: &mut AppMonitor, id: TargetId, now: Instant, outcome: ProbeOutc
     }
 }
 
+/// The health window these tests give the monitor, which is also the warm-up.
+const WINDOW: Duration = Duration::from_secs(60);
+
+/// Fills an endpoint's history across a whole window, one sample a second.
+///
+/// What it buys is a *past* the warm-up rule is satisfied by: the derived figures are
+/// withheld until the window behind them is real, so a test about what loss means has to
+/// reach that point rather than assert a dash that warm-up would have produced anyway.
+fn soak(monitor: &mut AppMonitor, id: TargetId, now: Instant, outcome: ProbeOutcome) {
+    for step in 0..=WINDOW.as_secs() {
+        monitor.record(
+            id,
+            ProbeSample::new(now + Duration::from_secs(step), outcome),
+        );
+    }
+}
+
 /// Names the one adapter these tests pretend the machine has.
 ///
 /// Invented, like every address here: `192.0.2.0/24` is the documentation range and
@@ -147,7 +164,21 @@ fn flat(view: &AppView) -> Vec<EndpointView> {
         .collect()
 }
 
+/// The page as it looks once the warm-up is over.
+///
+/// Most of these tests are about what a *measurement* renders as, and during warm-up the
+/// derived figures are deliberately withheld — so they ask for the view at a moment past it.
+/// The tests that are about the warm-up itself use [`warming`].
 fn view(monitor: &AppMonitor, now: Instant) -> AppView {
+    view_at(monitor, now, None)
+}
+
+/// The page as it looks while the application is still warming up.
+fn warming(monitor: &AppMonitor, now: Instant) -> AppView {
+    view_at(monitor, now, monitor.warmup_remaining(APP, now))
+}
+
+fn view_at(monitor: &AppMonitor, now: Instant, warmup: Option<Duration>) -> AppView {
     AppView::of(
         APP_ID,
         "game.exe".to_owned(),
@@ -156,6 +187,7 @@ fn view(monitor: &AppMonitor, now: Instant) -> AppView {
             name: "game.exe".to_owned(),
         }],
         monitor.chart_elapsed_secs(APP, now),
+        warmup,
         &adapters(),
         &monitor.endpoints(APP, now),
         None,
@@ -331,12 +363,18 @@ fn a_game_server_carrying_traffic_is_never_called_unreachable() {
         .observe(APP, udp(1), None, Some(traffic(630_000)), now)
         .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
-    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+    // Across a whole window, so the dash below is the rule about what probes describe and
+    // not the warm-up withholding a figure it would have shown a minute later.
+    soak(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&monitor, now + WINDOW);
     let endpoints = flat(&view);
     let endpoint = &endpoints[0];
 
+    assert_eq!(
+        endpoint.warmup_secs_remaining, None,
+        "the window has filled"
+    );
     assert_eq!(endpoint.health, HealthView::CarryingTraffic);
     assert_eq!(view.counts.carrying_traffic, 1);
     assert_eq!(view.counts.unreachable, 0);
@@ -789,6 +827,157 @@ fn an_endpoint_that_answers_for_itself_has_no_path_line() {
         "an endpoint that answers needs nothing standing in for it"
     );
     assert!(endpoints[0].chart_rtt_ms.iter().any(Option::is_some));
+}
+
+// ------------------------------------------- the first seconds are not findings
+
+#[test]
+fn a_new_endpoint_warms_up_instead_of_reporting_its_first_few_samples() {
+    // The least informative samples the session will ever have: no window is full, the
+    // fallback chain is still trying kinds, ranking has not run. The page used to present
+    // all of it as measurement.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(9_000)),
+    );
+
+    let early = now + Duration::from_secs(u64::from(ENOUGH));
+    let endpoints = flat(&view(&monitor, early));
+    let endpoint = &endpoints[0];
+
+    let remaining = endpoint
+        .warmup_secs_remaining
+        .expect("the window is nowhere near full");
+    assert!(
+        remaining > 0.0 && remaining <= WINDOW.as_secs_f64(),
+        "the time left is stated rather than implied: {remaining}"
+    );
+    assert_eq!(
+        endpoint.jitter_ms, None,
+        "variation over a handful of samples is noise, not a finding"
+    );
+    assert_eq!(
+        endpoint.loss_pct, None,
+        "a percentage whose denominator is a handful is not a percentage"
+    );
+    assert!(
+        endpoint.rtt_ms.is_some(),
+        "a round trip survives: one reply is one real measurement of the route"
+    );
+}
+
+#[test]
+fn the_warm_up_ends() {
+    // Not an indefinite spinner. Once the window behind the figures is real, they appear.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    soak(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(9_000)),
+    );
+
+    let endpoints = flat(&view(&monitor, now + WINDOW));
+    assert_eq!(endpoints[0].warmup_secs_remaining, None);
+    assert!(endpoints[0].jitter_ms.is_some());
+    assert!(endpoints[0].loss_pct.is_some());
+}
+
+#[test]
+fn a_warm_up_never_hides_something_already_certain() {
+    // Filtering proven, nothing getting through, alive by its own traffic: those are
+    // answers, and arriving fast is the point of them. Warm-up suppresses figures that are
+    // still noisy, never states that are known.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor
+        .observe(APP, udp(1), None, Some(traffic(630_000)), now)
+        .unwrap();
+    monitor
+        .observe(APP, udp(2), None, Some(traffic(0)), now)
+        .unwrap();
+    let ids = registered_by_ip(&mut monitor, &mut registry, now);
+    fill(
+        &mut monitor,
+        ids[&udp(1).address.ip()],
+        now,
+        ProbeOutcome::Timeout,
+    );
+    fill(
+        &mut monitor,
+        ids[&udp(2).address.ip()],
+        now,
+        ProbeOutcome::Timeout,
+    );
+    monitor.note_probe_state(
+        ids[&udp(1).address.ip()],
+        Some(ProbeKind::TlsHello),
+        true,
+        true,
+    );
+
+    let early = now + Duration::from_secs(u64::from(ENOUGH));
+    let endpoints = flat(&view(&monitor, early));
+
+    assert!(
+        endpoints
+            .iter()
+            .all(|endpoint| endpoint.warmup_secs_remaining.is_some()),
+        "both are still warming up"
+    );
+    let alive = endpoints
+        .iter()
+        .find(|endpoint| endpoint.address.contains("1.1.1.1"))
+        .expect("the endpoint carrying traffic");
+    assert_eq!(alive.health, HealthView::CarryingTraffic);
+    assert!(alive.filtering_confirmed, "proven filtering is knowledge");
+
+    let dead = endpoints
+        .iter()
+        .find(|endpoint| endpoint.address.contains("1.1.1.2"))
+        .expect("the silent endpoint");
+    assert_eq!(
+        dead.health,
+        HealthView::Unreachable,
+        "nothing gets through, and that is an answer rather than a noisy figure"
+    );
+}
+
+#[test]
+fn nothing_is_blamed_on_an_application_that_has_only_just_been_chosen() {
+    // The verdict banner waits with the rest. What does not wait is the network underneath
+    // it: the baselines have been measured since the session began, and an application being
+    // new says nothing about them.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
+
+    let early = now + Duration::from_secs(u64::from(ENOUGH));
+    let warming = warming(&monitor, early);
+    let settled = view(&monitor, early);
+
+    assert!(warming.warmup_secs_remaining.is_some());
+    assert_eq!(
+        warming.diagnosis.endpoints_affected, 0,
+        "no endpoint of this application is being spoken for yet"
+    );
+    assert_ne!(
+        warming.diagnosis.verdict,
+        nm_app::VerdictView::RouteToThisApplication,
+        "an application nobody has watched for a full window is not the culprit"
+    );
+    assert_eq!(
+        settled.diagnosis.verdict,
+        nm_app::VerdictView::RouteToThisApplication,
+        "and once the window is real, the same evidence does reach that verdict"
+    );
 }
 
 // ------------------------------------------------- the match traffic comes first

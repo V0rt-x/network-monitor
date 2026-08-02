@@ -125,6 +125,15 @@ export const AppCard = ({
         </button>
       </header>
 
+      {/* The first window after an application is chosen says nothing about it — but the
+          network underneath it has been measured all along, so the banner still reports
+          that. Rust decides both, by simply not offering this application as evidence yet. */}
+      {app.warmupSecsRemaining !== null && (
+        <p className="nm-appcard__warmup nm-state--pending">
+          {t('apps.warmup.application', { seconds: Math.ceil(app.warmupSecsRemaining) })}
+        </p>
+      )}
+
       <VerdictBanner diagnosis={app.diagnosis} subject={app.name} />
       <PoolPanel pool={app.pool} />
 

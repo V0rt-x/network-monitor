@@ -117,6 +117,35 @@ The app must run *alongside* a competitive game without affecting FPS or ping.
 - The app must run without administrator privileges. Any feature that would require
   elevation must be optional and clearly justified — ask the user (the human) first.
 
+### Two levels of depth — how every figure is presented (standing rule)
+
+Established in Phase 6.5 item 4 and **binding on every new feature from then on**. The
+audience is a player who knows their game stutters and does not know what jitter is; the
+depth stays reachable for whoever wants it, because a measurement tool that cannot explain
+itself is asking to be trusted on faith, and this audience has no reason to extend that.
+
+- **Level one — the default.** What the thing is, one word of state, and at most three
+  figures. Nothing else. A figure here is named for what the user *experiences* ("response",
+  "steadiness", "worst pause"), never for the quantity an engineer would name.
+- **Level two — an expander in place, and there is no setting.** A mode is a second product
+  to keep consistent and one a user forgets they are in. Everything that *qualifies* a number
+  rather than being one goes here: how it was measured, what window or span it covers, which
+  interface it used, proven-versus-assumed distinctions, counts and hop distances.
+- **Level three — an ⓘ on every figure**, with one or two plain sentences shown on hover
+  *and* on focus, and a "Learn more" into the bundled help. **A new metric is not done until
+  it has a help topic**: the ⓘ and the help page read from one list, so a tooltip can never
+  point at a section that does not exist.
+- **A warning is never demoted.** Anything the user must act on, or that says the figure
+  describes something other than what they think — an egress conflict, a freeze, a proven
+  block — stays at level one whatever its length.
+- **Absent stays absent at every level.** A figure whose precondition failed is blank with a
+  reason, never zero, and never the nearest available number.
+- Help is **bundled, never a website**: an external link is a network request this product
+  promised not to make on the user's behalf, and it is useless to a filtered user. No link
+  ships; one that ever does must open in the system browser as an explicit act.
+- Every string of all three levels is an i18next key, help text included, so a new locale
+  stays purely additive.
+
 ### Privacy & trust (audience lives under surveillance)
 
 - **Zero telemetry. Zero crash reporting. Zero phone-home.** The app makes only the
@@ -218,6 +247,9 @@ npm run test                    # vitest run
 that, run the wrapper. If any gate fails, fix it; never bypass with `--no-verify`,
 `#[ignore]`, `eslint-disable`, or loosened configs.)
 
+- **A new user-visible figure is not done until it obeys the two-level rule above** and has
+  its ⓘ topic and help section. A test asserting what the *closed* level shows is part of it:
+  the default view is exactly the thing that grows back one field at a time.
 - Testing is not optional. Every feature lands with tests: metric math (jitter, loss,
   percentiles) gets exhaustive unit tests incl. edge cases (empty windows, monotonic
   time going weird, timeouts); platform traits are mocked (`mockall`) so `nm-probes` and

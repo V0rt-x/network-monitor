@@ -1374,7 +1374,11 @@ audience has no reason to extend that.
       "Why this is not the ping your game shows" sits on any row whose own round trip is a
       dash while a route or its traffic speaks for it — which is what a match server looks
       like, and without naming any endpoint as one.
-- [ ] **5. A warm-up window, so the first seconds are not read as findings.** The samples right
+      **This item is now a standing rule rather than a one-off**, at the user's instruction:
+      the three levels, the "no setting", the never-demoted warning and the "a new metric
+      ships with its help topic" requirement are written into `CLAUDE.md` and apply to every
+      feature built from here on, including everything in Phases 7 and 8+.
+- [x] **5. A warm-up window, so the first seconds are not read as findings.** The samples right
       after an application is picked are the least informative it will ever have: no window is
       full, jitter is computed over a handful of samples, the fallback chain is still trying
       kinds, ranking has not run yet, and the flow figures need eight updates before they say
@@ -1391,6 +1395,20 @@ audience has no reason to extend that.
         known.
       – And it must end. Nothing discovered is a state of its own — "no endpoints yet, and here
         is what that means" — not an indefinite spinner.
+      — the warm-up is the health window, as the item asked, and it is computed in Rust from
+      the endpoint's own first sighting and from the moment the application was chosen.
+      Withheld while it runs: steadiness, lost replies, and the traffic drop-off — each of
+      them a figure whose *denominator* is still a handful. **The round trip is not
+      withheld**: one reply is one real measurement of the route, and the mean of a few is
+      the mean of a few.
+      **The verdict banner waits by not being given anything to conclude from.** During
+      warm-up the application is simply not offered as evidence — which is exactly what the
+      verdict engine's existing `None` already means — so the banner falls back to the
+      general network, which has been measured since the session began and is not less
+      certain for the application being new. Nothing needed a new rule.
+      A test pins that the same evidence produces "the route this application takes" once the
+      window is real and never during warm-up, and another pins that filtering proven,
+      nothing getting through, and alive-by-its-own-traffic all still arrive at full speed.
 - [ ] **6. The page must stop jumping.** Four separate causes, and they need separate fixes:
       rows re-sort as health flickers between states; a row changes height when an optional
       panel or field appears (path, flow, the stack round trip); endpoints appear and disappear

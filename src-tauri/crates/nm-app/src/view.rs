@@ -13,6 +13,8 @@
 //!   `switch`, so a new variant is a TypeScript compile error rather than a missing string
 //!   at runtime.
 
+use std::time::Duration;
+
 use nm_core::diagnosis::{AppEvidence, BaselineEvidence, Diagnosis, Evidence, Verdict};
 use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
@@ -863,11 +865,24 @@ pub struct EndpointView {
     pub probe_kind: Option<ProbeKindView>,
     /// Whether a probe kind has been *proven* filtered here.
     pub filtering_confirmed: bool,
+    /// Seconds of warm-up left before the derived figures mean anything, or `null` once
+    /// there are none.
+    ///
+    /// The first seconds after an endpoint is discovered are the least informative it will
+    /// ever have: no window is full, the fallback chain is still trying probe kinds, ranking
+    /// has not run, and the passive figures need several updates before they say anything.
+    /// The page states that it is warming up rather than presenting all of it as
+    /// measurement.
+    ///
+    /// **It never hides an answer.** The health state, a proven filtering, an endpoint alive
+    /// by its own traffic and a stall all arrive at full speed, because arriving fast is the
+    /// point of them. Only figures that are still noisy wait.
+    pub warmup_secs_remaining: Option<f64>,
     /// Mean round-trip time over the window, in milliseconds.
     pub rtt_ms: Option<f64>,
-    /// Jitter over the window, in milliseconds.
+    /// Jitter over the window, in milliseconds. Withheld during warm-up.
     pub jitter_ms: Option<f64>,
-    /// Packet loss over the window, as a percentage.
+    /// Packet loss over the window, as a percentage. Withheld during warm-up.
     pub loss_pct: Option<f64>,
     /// The route to it, measured continuously, when nothing about the endpoint itself can be.
     ///
@@ -947,17 +962,27 @@ impl EndpointView {
             measurable: report.measurable,
             probe_kind: report.probe_kind.map(ProbeKindView::from),
             filtering_confirmed: report.filtering_confirmed,
+            warmup_secs_remaining: report
+                .warmup_remaining
+                .map(|remaining| remaining.as_secs_f64()),
+            // A round trip survives warm-up: one reply is one real measurement of the route,
+            // and the mean of a few is the mean of a few. What waits is what a short window
+            // makes *unrepresentative* — the variation between samples, and a percentage
+            // whose denominator is still a handful.
             rtt_ms: report.stats.rtt.map(|rtt| rtt.mean_ms),
-            jitter_ms: report.stats.rtt.and_then(|rtt| rtt.jitter_ms),
+            jitter_ms: report
+                .warmup_remaining
+                .is_none()
+                .then(|| report.stats.rtt.and_then(|rtt| rtt.jitter_ms))
+                .flatten(),
             // Withheld where the probes say nothing about the endpoint. A match server
             // refuses every probe kind, so its window is 100 % loss — of ours, at a port the
             // game never plays over. Printing that beside "carrying traffic" would report a
             // working server as dropping everything.
-            loss_pct: report
-                .health
-                .probes_describe_the_endpoint()
-                .then_some(report.stats.loss_pct)
-                .flatten(),
+            loss_pct: (report.health.probes_describe_the_endpoint()
+                && report.warmup_remaining.is_none())
+            .then_some(report.stats.loss_pct)
+            .flatten(),
             path: report.path.as_ref().map(PathView::from),
             flow: report.flow.as_ref().map(FlowView::from),
             passive_rtt: report.passive_rtt.as_ref().map(PassiveRttView::from),
@@ -1107,6 +1132,13 @@ pub struct AppView {
     /// much of the application it is about, because partial failure inside one application
     /// is the normal case under filtering rather than an edge one.
     pub diagnosis: DiagnosisView,
+    /// Seconds of warm-up left before anything is concluded about this application, or
+    /// `null` once there are none.
+    ///
+    /// The same rule as an endpoint's, one level up. The general network underneath it has
+    /// been measured all along and is still reported — it is the application that has
+    /// nothing to say yet, not the machine.
+    pub warmup_secs_remaining: Option<f64>,
     /// What the game's own reference pool says, when it has one.
     ///
     /// `null` for a title whose operator publishes no reference address and whose servers
@@ -1145,6 +1177,7 @@ impl AppView {
         name: String,
         processes: Vec<AppProcessView>,
         chart_elapsed_secs: Vec<f64>,
+        warmup_remaining: Option<Duration>,
         interfaces: &InterfaceNames,
         reports: &[EndpointReport],
         pool: Option<(usize, usize, PoolReading)>,
@@ -1156,10 +1189,15 @@ impl AppView {
         }
 
         let (domestic, foreign) = baselines;
+        // While the application is warming up its endpoints are simply not offered as
+        // evidence. That is exactly what the verdict engine's `None` already means — "there
+        // is no application to speak about" — so the banner falls back to what *is* settled:
+        // the general network, measured since the session began. Nothing is invented and
+        // nothing certain is hidden; the application is only not blamed yet.
         let diagnosis = nm_core::diagnosis::diagnose(&Evidence {
             domestic,
             foreign,
-            app: Some(AppEvidence {
+            app: warmup_remaining.is_none().then_some(AppEvidence {
                 endpoints: counts,
                 pool: pool.map(|(_, _, reading)| reading),
             }),
@@ -1188,6 +1226,7 @@ impl AppView {
             processes,
             counts: counts.into(),
             diagnosis: diagnosis.into(),
+            warmup_secs_remaining: warmup_remaining.map(|remaining| remaining.as_secs_f64()),
             pool: pool.map(|(seeded, learned, reading)| PoolView::of(seeded, learned, &reading)),
             chart_elapsed_secs,
             groups: vec![

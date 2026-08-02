@@ -98,7 +98,11 @@
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
     "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
-    "noEndpoints": "Nothing discovered yet for this application",
+    "noEndpoints": "Nothing discovered yet for this application. Nothing is wrong: it has not opened a connection since you started watching, and the moment it does it will appear here.",
+    "warmup": {
+      "badge": "Warming up · {{seconds}} s",
+      "application": "Measuring this application for the first time. For the next {{seconds}} s the figures behind steadiness and lost replies are still filling, so they are left blank rather than shown as findings. Anything already certain — nothing getting through, a blocked probe, a freeze — is shown at once."
+    },
     "window": "Figures cover the last {{seconds}} s",
     "pid": "PID {{pid}}",
     "start": "Monitor",

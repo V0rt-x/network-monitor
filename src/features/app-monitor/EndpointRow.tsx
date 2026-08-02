@@ -139,6 +139,14 @@ export const EndpointRow = ({
         <span className={`nm-health ${healthModifier(endpoint.health)}`}>
           {t(healthKey(endpoint.health))}
         </span>
+        {/* Said out loud, with the time left, rather than shown as three dashes that read
+            like a failure. Rust decides when it is over — it is the same "absent knowledge
+            stays absent" rule that already withholds a figure whose precondition failed. */}
+        {endpoint.warmupSecsRemaining !== null && (
+          <span className="nm-badge">
+            {t('apps.warmup.badge', { seconds: Math.ceil(endpoint.warmupSecsRemaining) })}
+          </span>
+        )}
         {/* A warning, never a detail: the figure describes a different route from the one
             this application is taking, and a reader who never opens the expander must still
             be told. */}

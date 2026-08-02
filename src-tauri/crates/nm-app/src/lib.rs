@@ -54,7 +54,7 @@ pub use view::{
     AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
     CheckMarkView, CheckView, EndpointGroupView, EndpointView, FlowStatusView, FlowView, GroupView,
     HealthCountsView, HealthView, LivenessView, PassiveRttView, ProbeKindView, ProbingView,
-    ServiceEndpointView, ServiceView, TargetView, TransportView, SERIES_POINTS,
+    ServiceEndpointView, ServiceView, TargetView, TransportView, VerdictView, SERIES_POINTS,
 };
 
 use std::path::PathBuf;

@@ -1043,6 +1043,22 @@ impl AppMonitor {
         self.grid.elapsed_secs(self.started_at(app, now), now)
     }
 
+    /// How much of the application's own warm-up is left, or [`None`] once it is over.
+    ///
+    /// The same rule as an endpoint's, one level up: for the first window after the user
+    /// chose an application, nothing about *that application* is concluded. The general
+    /// network underneath it has been measured all along and is reported as usual — it is
+    /// the application that has nothing to say yet, not the machine.
+    ///
+    /// And it ends. "Nothing discovered, and here is what that means" is a state of its own,
+    /// not an indefinite wait.
+    #[must_use]
+    pub fn warmup_remaining(&self, app: AppId, now: Instant) -> Option<Duration> {
+        self.window
+            .checked_sub(now.saturating_duration_since(self.started_at(app, now)))
+            .filter(|remaining| !remaining.is_zero())
+    }
+
     /// How many endpoints an application has, probed or demoted.
     #[must_use]
     pub fn endpoint_count(&self, app: AppId) -> usize {
@@ -1135,6 +1151,18 @@ pub struct EndpointReport {
     /// tunnelled endpoint (where it would measure the tunnel), and wherever the operating
     /// system has published nothing.
     pub passive_rtt: Option<PassiveRttReading>,
+    /// How much of the window behind the derived figures has yet to fill.
+    ///
+    /// [`None`] once it has. While it is [`Some`], jitter, loss and the traffic drop-off are
+    /// withheld — not because they cannot be computed, but because what they would be
+    /// computed over is a handful of samples, the fallback chain is still trying probe kinds,
+    /// and ranking has not run. Presenting that as measurement invites the user to act on
+    /// the least informative numbers the session will ever have.
+    ///
+    /// **It never hides an answer.** Filtering proven, unreachable, alive by its own traffic,
+    /// a stall: those are knowledge, and arriving fast is the point of them. Warm-up
+    /// suppresses figures that are still noisy, never states that are known.
+    pub warmup_remaining: Option<Duration>,
     /// Its statistics over the health window.
     pub stats: WindowStats,
     /// The verdict those statistics imply.
@@ -1203,6 +1231,27 @@ impl EndpointReport {
             entry.measurable && !entry.walking_path,
         );
 
+        // The samples just after an endpoint is discovered are the least informative it will
+        // ever have: no window is full, the fallback chain is still trying kinds, ranking has
+        // not run, and the flow figures need several updates before they say anything. The
+        // page used to present all of it as measurement.
+        let warmup_remaining = window
+            .checked_sub(now.saturating_duration_since(tracked.first_seen()))
+            .filter(|remaining| !remaining.is_zero());
+        let warming = warmup_remaining.is_some();
+
+        let mut flow = matches!(tracked.liveness(), Liveness::Active)
+            .then(|| entry.flow.reading())
+            .flatten();
+        if warming {
+            if let Some(reading) = flow.as_mut() {
+                // The drop-off compares the present against this endpoint's own recent past.
+                // Before there is a past to compare against, it is arithmetic rather than a
+                // finding. A stall is untouched: it is an answer, not a noisy figure.
+                reading.receive_shortfall_pct = None;
+            }
+        }
+
         Self {
             key: tracked.key(),
             chart_rtt_ms: grid.place(&entry.history, started, now),
@@ -1222,9 +1271,7 @@ impl EndpointReport {
             // live on the operating system's event clock, which cannot be compared with
             // ours, so this history has no way of knowing it has gone stale — an idle
             // endpoint would go on showing the arrival pattern of a match that ended.
-            flow: matches!(tracked.liveness(), Liveness::Active)
-                .then(|| entry.flow.reading())
-                .flatten(),
+            flow,
             passive_rtt: entry.passive_rtt.map(|sample| PassiveRttReading {
                 rtt_ms: sample.rtt.as_secs_f64() * 1_000.0,
                 min_rtt_ms: sample.min_rtt.as_secs_f64() * 1_000.0,
@@ -1234,6 +1281,7 @@ impl EndpointReport {
                 age: now.saturating_duration_since(sample.at),
             }),
             health,
+            warmup_remaining,
             stats,
         }
     }
