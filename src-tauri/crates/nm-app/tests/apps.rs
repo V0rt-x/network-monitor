@@ -507,6 +507,35 @@ fn an_unmeasurable_endpoint_says_so_rather_than_vanishing() {
 }
 
 #[test]
+fn never_and_not_yet_are_different_answers_about_the_probe_figures() {
+    // The page changes shape on this, so the difference has to be decided here rather than
+    // inferred from three absent numbers. While a probe kind is still being tried a figure
+    // is coming and the row waits for it in place; once every kind aimed at the endpoint has
+    // been ruled out none will ever arrive, and the row stops holding space for three dashes
+    // that would read as a broken tool. A game's match server lives permanently in the second
+    // state, and it is the most important row on the page.
+    let (mut monitor, mut registry, now) = watching();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let registered = registrations(&monitor.sweep(&mut registry, now));
+
+    monitor.note_probe_state(registered[0], Some(ProbeKind::IcmpEcho), false, true);
+    assert!(
+        monitor.endpoints(APP, now)[0].probes_measure_it,
+        "a chain still working through kinds has a figure coming"
+    );
+
+    // Every kind ruled out, the route left to walk: the route is a measurement of a router
+    // short of the endpoint, and it is never the endpoint's own round trip.
+    monitor.note_probe_state(registered[0], None, true, true);
+    assert!(!monitor.endpoints(APP, now)[0].probes_measure_it);
+
+    // And the tunnelled endpoint that exhausts even the TLS hello, where not even a route
+    // walk would be honest. Different reason, same consequence for the three figures.
+    monitor.note_unmeasurable(registered[0]);
+    assert!(!monitor.endpoints(APP, now)[0].probes_measure_it);
+}
+
+#[test]
 fn endpoints_of_one_application_hold_independent_states() {
     // The rule Phase 4 exists to honour: an application is a distribution, never one
     // colour. A blocked voice server must not make a working game server look broken.

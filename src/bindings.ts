@@ -464,6 +464,27 @@ export type EndpointView = {
 	tunnelled: boolean,
 	/**  Whether any probe kind can still measure it honestly. */
 	measurable: boolean,
+	/**
+	 *  Whether the three probe figures below apply to this endpoint at all.
+	 * 
+	 *  **The row changes shape on this, and the distinction is *not yet* against *never*.**
+	 *  While the fallback chain is still trying kinds this is `true` and `rttMs`, `jitterMs`
+	 *  and `lossPct` are merely absent — a figure is coming, and a dash is the honest way to
+	 *  wait for it. Once every kind aimed at the endpoint has been ruled out it is `false`,
+	 *  and no probe will ever fill them in: the page then renders no round trip, no jitter
+	 *  and no loss rather than three dashes that read as a broken tool. That is the
+	 *  permanent and normal state of a game's match server, and what stands in their place —
+	 *  the route and the traffic itself — is already on the card.
+	 * 
+	 *  **This is not a relaxation of "absent stays absent".** That rule forbids replacing a
+	 *  missing figure with a nearby number, and nothing is substituted here; it does not
+	 *  require printing a dash forever for a quantity that will never exist.
+	 * 
+	 *  A figure that *does* exist is never hidden by it. Where the window still holds a real
+	 *  sample from a kind since ruled out, this stays `true` until that sample ages out, so
+	 *  the row only changes shape once there is nothing left to show.
+	 */
+	probesMeasureIt: boolean,
 	/**  Which kind is measuring it now. */
 	probeKind: ProbeKindView | null,
 	/**  Whether a probe kind has been *proven* filtered here. */

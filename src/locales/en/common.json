@@ -98,6 +98,7 @@
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
     "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
+    "noProbeFigures": "Nothing this app can send is answered here, so there is no ping, jitter or loss to show for it.",
     "noEndpoints": "Nothing discovered yet for this application. Nothing is wrong: it has not opened a connection since you started watching, and the moment it does it will appear here.",
     "warmup": {
       "badge": "Warming up · {{seconds}} s",

@@ -1527,7 +1527,7 @@ dash.
       `smoothness`→`arrivalJitter`) and every ⓘ sentence rewritten around the new names, because
       the ⓘ and the help page read from one list and a missed rename is a tooltip pointing at a
       section that no longer exists.
-- [ ] **2. An endpoint nothing can probe shows no ping, jitter or loss at all.** *Second,
+- [x] **2. An endpoint nothing can probe shows no ping, jitter or loss at all.** *Second,
       because it is the same complaint as item 1 aimed at the most important row on the page:
       the match server, which is what the whole product exists to watch.* A UDP endpoint that
       answers no probe kind currently renders three dashes where the three headline figures
@@ -1546,6 +1546,22 @@ dash.
       – The reason stays reachable: the expander says which kinds were tried and what the
         endpoint answered, as it does now.
       – The chart is unaffected — a silent endpoint is already drawn as its dashed route line.
+      — `EndpointView.probesMeasureIt`, decided in Rust from the fallback chain and nothing
+      else. It was already being computed — `measurable && !walking_path` is the predicate that
+      decides whether "not measured yet" is still the honest word for a silent endpoint — so
+      the same fact now answers both questions instead of being derived twice.
+      **`measurable` alone would have been the wrong field**, and quietly so: a match server
+      being path-walked is still *measurable*, because a route walk is a measurement of
+      something. What the row needed was the narrower question — is a probe kind aimed at the
+      endpoint itself still in play — which is false for a match server and for the tunnelled
+      endpoint that exhausts even the TLS hello.
+      **A figure that exists is never hidden to change shape.** Where the window still holds a
+      real sample from a kind since ruled out, the block stays until it ages out; the row
+      changes shape once, when there is nothing left to shape, rather than dropping a
+      measurement the user could still read.
+      Two tests pin the two halves in Rust — a chain still trying kinds against one that has
+      run out — and two more in the page: the match-server row has no *Ping (RTT)* and says in
+      one line why, and a row whose figures have not arrived yet keeps its three dashes.
 - [ ] **3. The status page must explain its own numbers and its cells.** *Third, because it is
       the same defect as 1 and 2 on a page the user could not read at all: they asked what the
       figures and the coloured cells mean, which is a page failing at its one job.*

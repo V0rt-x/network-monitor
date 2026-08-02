@@ -102,11 +102,12 @@ export const EndpointRow = ({
     .filter(Boolean)
     .join(' ');
 
-  // Nothing our probes can send reaches this endpoint. That is the normal state of a game's
-  // match server rather than a fault, and it is the case the whole product exists for — so
-  // the row says in as many words why the figure it shows is not the one the game shows.
+  // Nothing our probes can send reaches this endpoint, and nothing ever will. That is the
+  // normal state of a game's match server rather than a fault, and it is the case the whole
+  // product exists for — so where something else does speak for the endpoint, the row says in
+  // as many words why what it shows is not the number the game shows.
   const answersNothing =
-    endpoint.rttMs === null && (endpoint.path !== null || endpoint.flow !== null);
+    !endpoint.probesMeasureIt && (endpoint.path !== null || endpoint.flow !== null);
 
   return (
     <li
@@ -167,30 +168,44 @@ export const EndpointRow = ({
 
       {/* Level one: three figures and nothing else, under the names the rest of the
           networking world uses. The plain-language sentence is the ⓘ's job, not the
-          label's — a renamed quantity teaches the reader a vocabulary nobody else speaks. */}
-      <dl className="nm-endpoint__metrics">
-        <div>
-          <dt>
-            {t('apps.metric.rtt')}
-            <MetricHelp topic="rtt" />
-          </dt>
-          <dd>{formatMs(endpoint.rttMs, locale)}</dd>
-        </div>
-        <div>
-          <dt>
-            {t('apps.metric.jitter')}
-            <MetricHelp topic="jitter" />
-          </dt>
-          <dd>{formatMs(endpoint.jitterMs, locale)}</dd>
-        </div>
-        <div>
-          <dt>
-            {t('apps.metric.loss')}
-            <MetricHelp topic="loss" />
-          </dt>
-          <dd>{formatPct(endpoint.lossPct, locale)}</dd>
-        </div>
-      </dl>
+          label's — a renamed quantity teaches the reader a vocabulary nobody else speaks.
+
+          Absent entirely where no probe will ever fill them in. Rust draws the line between
+          *not yet* and *never*: a chain still trying kinds keeps its dashes, because a
+          figure is coming, while a match server would carry three of them for the whole
+          match — and three dashes where the headline figures belong read as a broken tool
+          rather than as an honest absence. What is known about it is on the card already. */}
+      {endpoint.probesMeasureIt && (
+        <dl className="nm-endpoint__metrics">
+          <div>
+            <dt>
+              {t('apps.metric.rtt')}
+              <MetricHelp topic="rtt" />
+            </dt>
+            <dd>{formatMs(endpoint.rttMs, locale)}</dd>
+          </div>
+          <div>
+            <dt>
+              {t('apps.metric.jitter')}
+              <MetricHelp topic="jitter" />
+            </dt>
+            <dd>{formatMs(endpoint.jitterMs, locale)}</dd>
+          </div>
+          <div>
+            <dt>
+              {t('apps.metric.loss')}
+              <MetricHelp topic="loss" />
+            </dt>
+            <dd>{formatPct(endpoint.lossPct, locale)}</dd>
+          </div>
+        </dl>
+      )}
+      {/* Never silently: a row whose figures are gone says why, in one line, at the level
+          the reader is already on. Which kinds were tried and what the endpoint answered
+          stay in the expander, where they qualify the absence rather than announce it. */}
+      {!endpoint.probesMeasureIt && (
+        <p className="nm-endpoint__nothing">{t('apps.noProbeFigures')}</p>
+      )}
 
       {answersNothing && <WhyNotYourPing />}
 

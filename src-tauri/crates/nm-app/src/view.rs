@@ -861,6 +861,25 @@ pub struct EndpointView {
     pub tunnelled: bool,
     /// Whether any probe kind can still measure it honestly.
     pub measurable: bool,
+    /// Whether the three probe figures below apply to this endpoint at all.
+    ///
+    /// **The row changes shape on this, and the distinction is *not yet* against *never*.**
+    /// While the fallback chain is still trying kinds this is `true` and `rttMs`, `jitterMs`
+    /// and `lossPct` are merely absent — a figure is coming, and a dash is the honest way to
+    /// wait for it. Once every kind aimed at the endpoint has been ruled out it is `false`,
+    /// and no probe will ever fill them in: the page then renders no round trip, no jitter
+    /// and no loss rather than three dashes that read as a broken tool. That is the
+    /// permanent and normal state of a game's match server, and what stands in their place —
+    /// the route and the traffic itself — is already on the card.
+    ///
+    /// **This is not a relaxation of "absent stays absent".** That rule forbids replacing a
+    /// missing figure with a nearby number, and nothing is substituted here; it does not
+    /// require printing a dash forever for a quantity that will never exist.
+    ///
+    /// A figure that *does* exist is never hidden by it. Where the window still holds a real
+    /// sample from a kind since ruled out, this stays `true` until that sample ages out, so
+    /// the row only changes shape once there is nothing left to show.
+    pub probes_measure_it: bool,
     /// Which kind is measuring it now.
     pub probe_kind: Option<ProbeKindView>,
     /// Whether a probe kind has been *proven* filtered here.
@@ -937,6 +956,24 @@ impl EndpointView {
         let probe_egress = report
             .probe_source
             .filter(|probe| Some(*probe) != report.source);
+        // A round trip survives warm-up: one reply is one real measurement of the route, and
+        // the mean of a few is the mean of a few. What waits is what a short window makes
+        // *unrepresentative* — the variation between samples, and a percentage whose
+        // denominator is still a handful.
+        let rtt_ms = report.stats.rtt.map(|rtt| rtt.mean_ms);
+        let jitter_ms = report
+            .warmup_remaining
+            .is_none()
+            .then(|| report.stats.rtt.and_then(|rtt| rtt.jitter_ms))
+            .flatten();
+        // Withheld where the probes say nothing about the endpoint. A match server refuses
+        // every probe kind, so its window is 100 % loss — of ours, at a port the game never
+        // plays over. Printing that beside "carrying traffic" would report a working server
+        // as dropping everything.
+        let loss_pct = (report.health.probes_describe_the_endpoint()
+            && report.warmup_remaining.is_none())
+        .then_some(report.stats.loss_pct)
+        .flatten();
         Self {
             key: format!("{}/{}", transport_slug(transport), report.key.address),
             address: report.key.address.to_string(),
@@ -960,29 +997,21 @@ impl EndpointView {
             egress_conflict: report.egress_conflict,
             tunnelled: report.tunnelled,
             measurable: report.measurable,
+            // Never against not yet. Rust holds the chain's answer; a figure that survives
+            // from a kind since ruled out keeps the block on screen until it ages out, so
+            // the row never hides a real measurement in order to change shape.
+            probes_measure_it: report.probes_measure_it
+                || rtt_ms.is_some()
+                || jitter_ms.is_some()
+                || loss_pct.is_some(),
             probe_kind: report.probe_kind.map(ProbeKindView::from),
             filtering_confirmed: report.filtering_confirmed,
             warmup_secs_remaining: report
                 .warmup_remaining
                 .map(|remaining| remaining.as_secs_f64()),
-            // A round trip survives warm-up: one reply is one real measurement of the route,
-            // and the mean of a few is the mean of a few. What waits is what a short window
-            // makes *unrepresentative* — the variation between samples, and a percentage
-            // whose denominator is still a handful.
-            rtt_ms: report.stats.rtt.map(|rtt| rtt.mean_ms),
-            jitter_ms: report
-                .warmup_remaining
-                .is_none()
-                .then(|| report.stats.rtt.and_then(|rtt| rtt.jitter_ms))
-                .flatten(),
-            // Withheld where the probes say nothing about the endpoint. A match server
-            // refuses every probe kind, so its window is 100 % loss — of ours, at a port the
-            // game never plays over. Printing that beside "carrying traffic" would report a
-            // working server as dropping everything.
-            loss_pct: (report.health.probes_describe_the_endpoint()
-                && report.warmup_remaining.is_none())
-            .then_some(report.stats.loss_pct)
-            .flatten(),
+            rtt_ms,
+            jitter_ms,
+            loss_pct,
             path: report.path.as_ref().map(PathView::from),
             flow: report.flow.as_ref().map(FlowView::from),
             passive_rtt: report.passive_rtt.as_ref().map(PassiveRttView::from),

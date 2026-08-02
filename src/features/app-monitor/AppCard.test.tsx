@@ -47,6 +47,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   egressConflict: false,
   tunnelled: false,
   measurable: true,
+  probesMeasureIt: true,
   probeKind: 'icmpEcho',
   filteringConfirmed: false,
   rttMs: 24,
@@ -312,9 +313,9 @@ describe('AppCard', () => {
   });
 
   it('keeps the path figure beside a silent endpoint rather than standing in for it', () => {
-    // A match server answers nothing, so its own round-trip time stays a dash. The route to
-    // it is a different quantity, measured against a different machine, and the two must
-    // never merge into one number called "ping".
+    // A match server answers nothing, so it has no round-trip time of its own at all. The
+    // route to it is a different quantity, measured against a different machine, and the two
+    // must never merge into one number called "ping".
     render(
       <AppCard
         app={app({
@@ -322,6 +323,7 @@ describe('AppCard', () => {
             endpoint({
               health: 'carryingTraffic',
               probeKind: null,
+              probesMeasureIt: false,
               rttMs: null,
               jitterMs: null,
               lossPct: null,
@@ -346,12 +348,49 @@ describe('AppCard', () => {
 
     expect(screen.getByText('The route towards it')).toBeInTheDocument();
     expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
-    // Three dashes for the endpoint itself — ping, jitter and loss — beside
-    // the route's three figures.
-    expect(screen.getAllByText('—')).toHaveLength(3);
+    // No dashes at all where the endpoint's own figures would have been: they are gone,
+    // not blank. Three dashes are what the most important row on the page used to show,
+    // and three dashes read as a broken tool rather than as an honest absence.
+    expect(screen.queryByText('Ping (RTT)')).not.toBeInTheDocument();
+    // One jitter on the card, and it belongs to the route — the endpoint's own is gone
+    // rather than blank.
+    expect(screen.getAllByText('Jitter')).toHaveLength(1);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+    expect(screen.getByText(/no ping, jitter or loss to show/)).toBeInTheDocument();
     // And the row says in as many words why this is not the number the game shows. It is
     // the most important string in the application, and this is the row it belongs on.
     expect(screen.getByText('Why this is not the ping your game shows')).toBeInTheDocument();
+  });
+
+  it('keeps the dashes of an endpoint whose figures have not arrived yet', () => {
+    // The other half of the same rule, and the one a later refactor flattens: *never* and
+    // *not yet* are different answers. A chain still working through probe kinds has a
+    // figure coming, so the row waits for it in place rather than changing shape and
+    // changing back a second later.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              health: 'unknown',
+              probeKind: 'icmpEcho',
+              probesMeasureIt: true,
+              rttMs: null,
+              jitterMs: null,
+              lossPct: null,
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Ping (RTT)')).toBeVisible();
+    expect(screen.getAllByText('—')).toHaveLength(3);
+    expect(screen.queryByText(/no ping, jitter or loss to show/)).not.toBeInTheDocument();
   });
 
   it('states what an endpoint could not be measured with rather than showing a bare number', () => {

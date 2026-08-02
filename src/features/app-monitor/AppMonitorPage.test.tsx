@@ -69,6 +69,7 @@ const ENDPOINTS: AppEndpoints = {
               egressConflict: false,
               tunnelled: false,
               measurable: true,
+              probesMeasureIt: true,
               probeKind: 'icmpEcho',
               filteringConfirmed: false,
               rttMs: null,

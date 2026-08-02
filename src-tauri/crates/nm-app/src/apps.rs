@@ -1143,6 +1143,21 @@ pub struct EndpointReport {
     pub tunnelled: bool,
     /// Whether anything can honestly measure it at all.
     pub measurable: bool,
+    /// Whether our own probes still say anything about the endpoint itself.
+    ///
+    /// **The difference between *not yet* and *never*, and the page changes shape on it.**
+    /// While the fallback chain is working through kinds this is true and the round trip,
+    /// jitter and loss are merely absent — a figure is coming. Once every kind aimed at the
+    /// endpoint has been ruled out it is false, and no future probe will ever fill those
+    /// three in: that is the permanent and *normal* state of a game's match server, because
+    /// nothing listens on a game port but the game. What is left to say about it is said by
+    /// the route and by the traffic itself, both of which are elsewhere in this report.
+    ///
+    /// It is false for the tunnelled endpoint that exhausts even the TLS hello, where not
+    /// even a route walk is honest, and it is false while the route is being walked, where
+    /// the route is a measurement of something else. Both cases have the same consequence
+    /// for the three figures: they will not exist.
+    pub probes_measure_it: bool,
     /// The probe kind its figure came from.
     pub probe_kind: Option<ProbeKind>,
     /// Whether a probe kind has been *proven* filtered here.
@@ -1256,10 +1271,15 @@ impl EndpointReport {
         // say anything more about the endpoint, so "not measured yet" has stopped being the
         // honest word for it — the traffic crossing it is the answer.
         let carrying = tracked.recent_bytes().is_some_and(|bytes| bytes > 0);
+        // The same fact answers two questions, so it is decided once. Whether "not measured
+        // yet" is still the honest word for a silent endpoint, and whether the page should
+        // print a round trip, a jitter and a loss for it at all: both turn on whether a
+        // probe kind aimed at the endpoint itself is still in play.
+        let probes_measure_it = entry.measurable && !entry.walking_path;
         let health = nm_core::health::with_passive_evidence(
             thresholds.health_of(&stats),
             carrying,
-            entry.measurable && !entry.walking_path,
+            probes_measure_it,
         );
 
         // What the badge says changes at once; what the *ordering* uses waits for the change
@@ -1305,6 +1325,7 @@ impl EndpointReport {
             egress_conflict: entry.egress_conflict,
             tunnelled: entry.tunnelled,
             measurable: entry.measurable,
+            probes_measure_it,
             probe_kind: entry.probe_kind,
             filtering_confirmed: entry.filtering_confirmed,
             path,
