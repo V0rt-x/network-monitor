@@ -6,7 +6,7 @@
 //! with synthetic addresses out of a reserved range and remaps them to the real
 //! destination when the connection is made. Probing such an address with ICMP measures
 //! nothing, and a TCP connect to it returns in well under a millisecond because the
-//! tunnel completes the handshake locally вЂ” a fake-*good* number, which is worse than a
+//! tunnel completes the handshake locally — a fake-*good* number, which is worse than a
 //! fake-bad one, because it would tell the user their network is fine.
 //!
 //! So classification happens first, and it decides which probe kinds may be believed.
@@ -25,7 +25,7 @@ pub enum AddressClass {
     /// A synthetic address a local tunnel will remap when the connection is made.
     ///
     /// ICMP measures nothing and a TCP connect reports the tunnel's own latency. Only a
-    /// probe that exchanges data end to end вЂ” a TLS handshake, an HTTP request вЂ” travels
+    /// probe that exchanges data end to end — a TLS handshake, an HTTP request — travels
     /// the real path.
     TunnelSentinel,
     /// A private address: a LAN peer, the user's own router.
@@ -65,7 +65,7 @@ impl AddressClass {
 }
 
 /// sing-box's default fake-IP range for IPv4, and the range RFC 2544 reserves for
-/// benchmarking вЂ” which is why a tunnel can safely borrow it: no real service lives here.
+/// benchmarking — which is why a tunnel can safely borrow it: no real service lives here.
 const DEFAULT_SENTINEL_V4: &str = "198.18.0.0/15";
 
 /// sing-box's default fake-IP range for IPv6.
@@ -170,7 +170,7 @@ impl Default for AddressPolicy {
     /// The defaults, matching an unmodified sing-box installation.
     ///
     /// Falls back to an empty range list if a built-in constant fails to parse, which
-    /// cannot happen вЂ” the constants are covered by a test вЂ” but must not be a panic in
+    /// cannot happen — the constants are covered by a test — but must not be a panic in
     /// library code either.
     fn default() -> Self {
         Self::with_sentinels([DEFAULT_SENTINEL_V4, DEFAULT_SENTINEL_V6]).unwrap_or(Self {
