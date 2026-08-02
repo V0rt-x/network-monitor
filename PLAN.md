@@ -1850,15 +1850,22 @@ anything from this phase was seen rather than asserted:
 - The other UDP endpoint was mid-chain — dashes for ping and jitter beside a measured 100 %
   loss — which is the *not yet* half of item 2 appearing on its own, unprompted.
 
-**Two things it also turned up, neither of them 6.6's work, both worth a look before Phase 7:**
+It also confirmed two rules of 6.5 that had never been watched happening: a newly discovered
+endpoint carried *Warming up · 22 s* with a round trip shown and its jitter and loss withheld
+— item 5's exact rule, arriving on its own — and the endpoints kept their places while the
+figures under them changed.
 
-- **The reference pool reads oddly.** "Answering —" beside "Ping, median 122" and "0 published,
-  32 learned", with "8 not counted". A median exists while the share answering does not, which
-  is either right for a reason worth writing down or a gap in `nm_core::pool`.
+**One thing worth a look before Phase 7, and one that looked wrong and was not:**
+
 - **The verdict may be over-firing.** *"The network is fine and this application's own
-  endpoints are not — the route it takes"* on endpoints sitting at 190–210 ms, which for
+  endpoints are not — the route it takes"* on endpoints sitting at 190–234 ms, which for
   transatlantic AWS is ordinary rather than degraded. Worth checking whether the degraded
-  threshold is absolute where it should be relative to the group.
+  threshold is absolute where it should be relative to what the rest of the group sees.
+- **The reference pool was not broken.** It first read "Answering —" beside "Ping, median 122",
+  which looked like a gap; ten minutes later it read "Answering 100" and *OK*. The share
+  answering needs a minimum before it will report and the median does not, so the two are
+  absent and present at different moments — which is "absent knowledge stays absent" working,
+  not a bug. Recorded because the first reading was flagged as a suspect and was wrong.
 
 Still **not** verified: the merged Network page and the picker were not opened — driving the
 window would have taken focus from a running game — so items 5 and 6 have been seen only in
