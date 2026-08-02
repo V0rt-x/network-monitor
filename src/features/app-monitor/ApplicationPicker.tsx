@@ -136,6 +136,13 @@ export const ApplicationPicker = ({
           return (
             <li key={application.key} className="nm-picker__entry">
               <span className="nm-picker__name">{application.label}</span>
+              {/* The file name beside the proper noun, whenever the bundled list supplied
+                  one. A name is a claim about which program this is, and a user who cannot
+                  see what it was matched against cannot tell a right name on the wrong
+                  program from a right one. */}
+              {application.label !== application.executable && (
+                <span className="nm-picker__executable">{application.executable}</span>
+              )}
               <span className="nm-picker__pid">
                 {application.pids.length === 1
                   ? t('apps.pid', { pid: application.seedPid })

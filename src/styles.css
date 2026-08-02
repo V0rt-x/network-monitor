@@ -467,6 +467,7 @@ body {
   white-space: nowrap;
 }
 
+.nm-picker__executable,
 .nm-picker__pid,
 .nm-picker__more {
   color: var(--nm-muted);

@@ -208,6 +208,7 @@ pub fn list_applications() -> ApplicationListView {
         .map(|candidate| ApplicationChoiceView {
             key: candidate.key,
             label: candidate.label,
+            executable: candidate.executable,
             seed_pid: candidate.seed.get(),
             pids: candidate.processes.iter().map(|pid| pid.get()).collect(),
         })

@@ -1202,8 +1202,14 @@ pub struct ApplicationChoiceView {
     /// Stable key for this offer, unique in the listing. A React key, and stable across
     /// refreshes so a list the user is clicking in does not reshuffle.
     pub key: String,
-    /// What to call it: the preset's name, or the executable's file name.
+    /// What to call it: the bundled name for it, or the executable's file name.
     pub label: String,
+    /// The executable the offer was formed from.
+    ///
+    /// Shown beside the label wherever the two differ. A name from the bundled list is a
+    /// claim about which program this is, and a user who cannot see what it was matched
+    /// against cannot tell a right name on the wrong program from a right one.
+    pub executable: String,
     /// The process monitoring would be seeded from.
     ///
     /// Crosses the boundary because that is what `monitor_app` takes; it is never shown as

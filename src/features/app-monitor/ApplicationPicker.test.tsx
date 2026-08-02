@@ -17,11 +17,18 @@ const listing = (overrides: Partial<ApplicationListView> = {}): ApplicationListV
     {
       key: 'discord',
       label: 'Discord',
+      executable: 'Discord.exe',
       seedPid: 100,
       pids: [100, 101, 102, 103, 104, 105],
     },
-    { key: 'game.exe', label: 'game.exe', seedPid: 200, pids: [200] },
-    { key: 'svchost.exe', label: 'svchost.exe', seedPid: 300, pids: [300, 301] },
+    { key: 'game.exe', label: 'game.exe', executable: 'game.exe', seedPid: 200, pids: [200] },
+    {
+      key: 'svchost.exe',
+      label: 'svchost.exe',
+      executable: 'svchost.exe',
+      seedPid: 300,
+      pids: [300, 301],
+    },
   ],
   problem: null,
   ...overrides,
@@ -46,6 +53,17 @@ describe('ApplicationPicker', () => {
     fetchApplications.mockResolvedValue(listing());
   });
 
+  it('shows the executable beside a name that came from the bundled list', async () => {
+    // A name is a claim about which program this is. A user who cannot see what it was
+    // matched against cannot tell a right name on the wrong program from a right one — and
+    // where the label *is* the file name, repeating it would be noise.
+    render(picker());
+
+    expect(await screen.findByText('Discord')).toBeInTheDocument();
+    expect(screen.getByText('Discord.exe')).toBeInTheDocument();
+    expect(screen.getAllByText('game.exe')).toHaveLength(1);
+  });
+
   it('offers applications rather than a row per process', async () => {
     // The failure this exists to fix: six identical Discord.exe rows, and the user asked to
     // pick one arbitrarily when what they want is Discord.
@@ -53,7 +71,9 @@ describe('ApplicationPicker', () => {
 
     expect(await screen.findByText('Discord')).toBeInTheDocument();
     expect(screen.getByText('6 processes')).toBeInTheDocument();
-    expect(screen.queryByText('Discord.exe')).not.toBeInTheDocument();
+    // Once, beside the name — not six times, once per process, which is the list this
+    // replaced.
+    expect(screen.getAllByText('Discord.exe')).toHaveLength(1);
   });
 
   it('names the process identifier only where there is exactly one', async () => {

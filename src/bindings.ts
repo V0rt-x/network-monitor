@@ -197,8 +197,16 @@ export type ApplicationChoiceView = {
 	 *  refreshes so a list the user is clicking in does not reshuffle.
 	 */
 	key: string,
-	/**  What to call it: the preset's name, or the executable's file name. */
+	/**  What to call it: the bundled name for it, or the executable's file name. */
 	label: string,
+	/**
+	 *  The executable the offer was formed from.
+	 * 
+	 *  Shown beside the label wherever the two differ. A name from the bundled list is a
+	 *  claim about which program this is, and a user who cannot see what it was matched
+	 *  against cannot tell a right name on the wrong program from a right one.
+	 */
+	executable: string,
 	/**
 	 *  The process monitoring would be seeded from.
 	 * 

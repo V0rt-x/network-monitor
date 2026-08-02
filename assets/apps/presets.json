@@ -35,5 +35,57 @@
         "FortniteClient-Win64-Shipping_EAC_EOS.exe"
       ]
     }
+  ],
+  "labels": [
+    {
+      "id": "deadlock",
+      "label": "Deadlock",
+      "executable": "deadlock.exe"
+    },
+    {
+      "id": "world-of-tanks",
+      "label": "World of Tanks",
+      "executable": "WorldOfTanks.exe"
+    },
+    {
+      "id": "forza-horizon-4",
+      "label": "Forza Horizon 4",
+      "executable": "ForzaHorizon4.exe"
+    },
+    {
+      "id": "steam",
+      "label": "Steam",
+      "executable": "steam.exe"
+    },
+    {
+      "id": "epic-games-launcher",
+      "label": "Epic Games Launcher",
+      "executable": "EpicGamesLauncher.exe"
+    },
+    {
+      "id": "ea-app",
+      "label": "EA app",
+      "executable": "EADesktop.exe"
+    },
+    {
+      "id": "battle-net",
+      "label": "Battle.net",
+      "executable": "Battle.net.exe"
+    },
+    {
+      "id": "wargaming-game-center",
+      "label": "Wargaming Game Center",
+      "executable": "wgc.exe"
+    },
+    {
+      "id": "google-chrome",
+      "label": "Google Chrome",
+      "executable": "chrome.exe"
+    },
+    {
+      "id": "microsoft-edge",
+      "label": "Microsoft Edge",
+      "executable": "msedge.exe"
+    }
   ]
 }

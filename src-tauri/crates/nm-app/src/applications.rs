@@ -283,6 +283,12 @@ pub struct Candidate {
     pub key: String,
     /// What to call it.
     pub label: String,
+    /// The executable the offer was formed from.
+    ///
+    /// Shown beside the label whenever the two differ, because a grouping the user cannot
+    /// inspect is one they cannot correct — and a proper noun that turns out to name the
+    /// wrong program is worse than a file name that names the right one.
+    pub executable: String,
     /// The process to form the application around, if the user chooses it.
     pub seed: Pid,
     /// The processes it is offered as, in identifier order.
@@ -311,10 +317,15 @@ pub fn candidates(presets: &PresetList, snapshot: &[ProcessInfo]) -> Vec<Candida
         if process.name.is_empty() {
             continue;
         }
-        let (key, label) = match presets.matching(&process.name) {
-            Some(preset) => (preset.id.clone(), preset.label.clone()),
-            None => (process.name.to_lowercase(), process.name.clone()),
-        };
+        // The key is the *grouping* — a preset, or the executable name. The label is only a
+        // name, so an executable that has one is still grouped exactly as it was.
+        let key = presets
+            .matching(&process.name)
+            .map_or_else(|| process.name.to_lowercase(), |preset| preset.id.clone());
+        let label = presets
+            .label_of(&process.name)
+            .unwrap_or(&process.name)
+            .to_owned();
 
         if let Some(candidate) = index.get(&key).and_then(|at| found.get_mut(*at)) {
             candidate.processes.push(process.pid);
@@ -324,6 +335,7 @@ pub fn candidates(presets: &PresetList, snapshot: &[ProcessInfo]) -> Vec<Candida
         found.push(Candidate {
             key,
             label,
+            executable: process.name.clone(),
             seed: process.pid,
             processes: vec![process.pid],
         });
@@ -419,17 +431,24 @@ impl Applications {
 
         let id = AppId::new(self.next);
         self.next = self.next.saturating_add(1);
+        // Grouping and naming are separate questions of the same file: a preset decides
+        // which executables belong together, a label decides only what to call one.
+        let label = self
+            .presets
+            .label_of(&process.name)
+            .unwrap_or(&process.name)
+            .to_owned();
         let application = match self.presets.matching(&process.name) {
             Some(preset) => Application {
                 id,
-                label: preset.label.clone(),
+                label,
                 preset: Some(preset.id.clone()),
                 names: preset.executables.clone(),
                 members: Vec::new(),
             },
             None => Application {
                 id,
-                label: process.name.clone(),
+                label,
                 preset: None,
                 names: vec![process.name.clone()],
                 members: Vec::new(),
