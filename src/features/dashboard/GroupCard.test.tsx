@@ -51,6 +51,22 @@ describe('GroupCard', () => {
     expect(screen.getAllByText('OK').length).toBeGreaterThan(0);
   });
 
+  it('names its figures the way the rest of the app does, and explains each of them', () => {
+    // The last figures on the merged Network page that could not explain themselves, sitting
+    // directly above service cards that could. A group's are medians and say so — one member
+    // on a bad path must not speak for the rest.
+    render(<GroupCard group={group()} />);
+
+    expect(screen.getByText('Ping, median')).toBeVisible();
+    expect(screen.getByText('Jitter, median')).toBeVisible();
+    expect(screen.getByText('Ping (RTT)')).toBeVisible();
+    for (const figure of ['Ping, median', 'Jitter', 'Loss', 'Ping (RTT)']) {
+      expect(
+        screen.getAllByRole('button', { name: `What ${figure} means` }).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
   it('shows the distribution rather than collapsing a mixed group to one colour', () => {
     // The requirement CLAUDE.md spells out: "3 clean, 1 unreachable" is actionable; a
     // single amber dot is not.

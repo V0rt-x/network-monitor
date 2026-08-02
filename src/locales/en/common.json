@@ -84,10 +84,10 @@
       "notMeasurable": "Cannot be measured"
     },
     "metric": {
-      "rtt": "RTT",
-      "rttMedian": "RTT (median)",
+      "rtt": "Ping (RTT)",
+      "rttMedian": "Ping, median",
       "jitter": "Jitter",
-      "jitterMedian": "Jitter (median)",
+      "jitterMedian": "Jitter, median",
       "loss": "Loss"
     }
   },
@@ -292,7 +292,7 @@
       "updates": {
         "title": "Updates from the server",
         "short": "How many times a second the server sends your game something. Steady is what matters, not high.",
-        "body": "Counted from the traffic itself: how often data arrives from this endpoint, with the packets of a single update counted once. Most games settle at a fixed rate. The useful reading is not the number but its steadiness — a rate that drops while your own sending continues means the server or the path towards you has stopped keeping up."
+        "body": "Counted from the traffic itself: how often data arrives from this endpoint, with the packets of a single update counted once. Most games settle at a fixed rate. The useful reading is not the number itself but whether it holds: a rate that drops while your own sending continues means the server or the path towards you has stopped keeping up."
       },
       "arrivalJitter": {
         "title": "Arrival jitter",
@@ -359,10 +359,10 @@
         "short": "One cell is one check of that service, oldest on the left. Colour is never the only signal — every cell carries its word.",
         "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. A cell is a fact rather than a verdict: it says what that single check produced — answered, answered slowly, no answer, refused, or the probe was filtered — and keeping those apart is the point, because a single colour on the card cannot. Pointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
       },
-      "serviceRtt": {
+      "medianRtt": {
         "title": "Ping, median",
-        "short": "The middle round trip across the endpoints of this service, so one slow front door does not speak for all of them.",
-        "body": "A service can publish several front doors — a storefront, an account gateway, a content network. This figure is the median across the ones that answered, not the average: with an average, a single endpoint on a bad path drags the headline away from what the others are actually doing, and the finding on this page is usually which half of a service is reachable rather than what the arithmetic mean is. The distribution beside it says how the endpoints disagree, and each of them carries its own figures below."
+        "short": "The middle round trip across the members of a group, so one slow member does not speak for all of them.",
+        "body": "Wherever several things are measured together — the members of a baseline, the front doors of one service — the headline is the median across the ones that answered, not the average. With an average a single member on a bad path drags the figure away from what the others are actually doing, and the finding here is almost always which of them is reachable rather than what the arithmetic mean is. The distribution beside it says how the members disagree, and each of them carries its own figures below, so nothing is hidden by the roll-up."
       },
       "latestCheck": {
         "title": "Ping, last check",

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatMs, formatPct } from '../../shared/format';
 import type { TargetView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 import { healthKey, healthModifier, probeKindKey } from './labels';
 import { Sparkline } from './Sparkline';
 
@@ -52,17 +53,29 @@ export const TargetRow = ({ target }: TargetRowProps) => {
         )}
       </div>
 
+      {/* The same three quantities the applications page shows, under the same names and
+          with the same ⓘ. They were the one set of figures on the merged Network page that
+          could not explain itself — which the page beside them could. */}
       <dl className="nm-target__metrics">
         <div>
-          <dt>{t('dashboard.metric.rtt')}</dt>
+          <dt>
+            {t('dashboard.metric.rtt')}
+            <MetricHelp topic="rtt" />
+          </dt>
           <dd>{formatMs(target.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.jitter')}</dt>
+          <dt>
+            {t('dashboard.metric.jitter')}
+            <MetricHelp topic="jitter" />
+          </dt>
           <dd>{formatMs(target.jitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.loss')}</dt>
+          <dt>
+            {t('dashboard.metric.loss')}
+            <MetricHelp topic="loss" />
+          </dt>
           <dd>{formatPct(target.lossPct, locale)}</dd>
         </div>
       </dl>

@@ -1768,11 +1768,24 @@ dash.
       later pass and ships. `Azure` is `management.azure.com`, the ARM endpoint, rather than
       the marketing site, which is a CDN and would measure the CDN.
       Data only: no code changed except a stale comment naming the old endpoint count.
-- [ ] **9. Sweep for the words item 1 replaced.** *Last, and it is bookkeeping rather than a
+- [x] **9. Sweep for the words item 1 replaced.** *Last, and it is bookkeeping rather than a
       feature.* Once the vocabulary changes, the old names survive in the help text, the
       tooltips, the tray labels, the chart legend and the Russian locale that Phase 7 is about
       to create. One pass across `locales/en/common.json` and the help topics, so Phase 7's
       translator never has to translate a word the product no longer uses.
+      — the retired words are gone: *Response*, *Steadiness*, *Lost replies* and *Evenness*
+      appear nowhere, including as ordinary prose, where "steadiness" survived in one help
+      body and would have read as a reference to a label that no longer exists.
+      **The sweep turned up more than words, and the acceptance criterion is why.** It asks
+      that a reader can say what every figure *on the merged Network page* measures — and the
+      baselines were still `RTT` / `RTT (median)`, with no ⓘ at all, sitting directly above
+      service cards that had both. So they now read **Ping (RTT)**, **Ping, median** and
+      **Jitter, median**, and every one of them carries its explanation. That is the last
+      place in the product where two names existed for one quantity.
+      `serviceRtt` became `medianRtt` and its text was generalised with it: the same topic now
+      serves a service's front doors and a baseline's members, which are the same rule about
+      the same kind of roll-up, and a topic that spoke only of services would have been wrong
+      the moment the dashboard pointed at it.
 - **Accept**: a reader who has never used the app can say what every figure on the Applications
   page and on the merged Network page measures, using the words the rest of the networking
   world uses, without leaving level one to find out; a match server shows a route figure and
@@ -1783,6 +1796,29 @@ dash.
   real probe from this machine before it was committed. Tests: the surviving level-one text of
   the Applications page, the never-and-not-yet distinction of item 2, and that the word "ping"
   appears on no route figure.
+
+**Phase 6.6 status: all nine items are built and tested; nothing here has been seen running.**
+
+The three tests the criterion names all exist, and so do the ones the items asked for on their
+own account: the never-and-not-yet distinction in Rust and in the page, the route panel's whole
+text never matching "ping", the surviving level-one prose of the Applications page, the strip's
+legend and its keyboard readout, the picker's hidden count and its refusal to answer "no match"
+when the filter is why, both words for a connection's age, and every figure on the Network page
+having an explanation reachable without a mouse.
+
+Two things are **not** verified, and the split is the same one Phases 4, 5 and 6.5 recorded:
+
+- **No live session has been run against this build.** Item 8's hosts were connected to from
+  this machine before being committed — that check is done and its two surprises are written
+  down — but nothing else here has been exercised outside jsdom. In particular, whether the
+  merged Network page reads as one page rather than as two stacked ones is a claim about a
+  layout, and the picker's filter is only as good as what the bundled catalogue happens to
+  know about the games on a real machine.
+- **What the pages look like.** Unchanged from 6.5: jsdom has no canvas, and "a reader who has
+  never used the app can say what every figure measures" is not a property a test can assert.
+
+Both are settled by the same pass — the five-title verification at the end of Phase 7, which
+is now also the first time this page will be read by the person it was rewritten for.
 
 ## Phase 7 — Polish, persistence, packaging
 

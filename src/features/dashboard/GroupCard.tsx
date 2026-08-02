@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatCount, formatMs, formatPct } from '../../shared/format';
 import type { GroupView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 import { groupHintKey, groupKey, healthKey, healthModifier } from './labels';
 import { TargetRow } from './TargetRow';
 
@@ -49,17 +50,28 @@ export const GroupCard = ({ group }: GroupCardProps) => {
         </span>
       </header>
 
+      {/* Medians, and they say so: a group figure is not one measurement, and one member on
+          a bad path must not drag the headline away from what everyone else sees. */}
       <dl className="nm-group__metrics">
         <div>
-          <dt>{t('dashboard.metric.rttMedian')}</dt>
+          <dt>
+            {t('dashboard.metric.rttMedian')}
+            <MetricHelp topic="medianRtt" />
+          </dt>
           <dd>{formatMs(group.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.jitterMedian')}</dt>
+          <dt>
+            {t('dashboard.metric.jitterMedian')}
+            <MetricHelp topic="jitter" />
+          </dt>
           <dd>{formatMs(group.jitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('dashboard.metric.loss')}</dt>
+          <dt>
+            {t('dashboard.metric.loss')}
+            <MetricHelp topic="loss" />
+          </dt>
           <dd>{formatPct(group.lossPct, locale)}</dd>
         </div>
       </dl>

@@ -159,7 +159,7 @@ export const ServiceCard = ({ service, checkIntervalSecs, windowSecs }: ServiceC
       <p className="nm-service__meta">
         <span className="nm-service__rttlabel">
           {t('status.metric.median')}
-          <MetricHelp topic="serviceRtt" />
+          <MetricHelp topic="medianRtt" />
         </span>
         <span className="nm-service__rtt">
           {service.rttMs === null ? NO_VALUE : formatMs(service.rttMs, locale)}

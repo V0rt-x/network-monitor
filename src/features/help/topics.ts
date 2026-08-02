@@ -29,7 +29,7 @@ export const HELP_TOPICS = [
   // and still need topics of their own: what distinguishes them is *which* checks each one
   // folds in, and that is exactly what a reader averaging a strip by eye has got wrong.
   'checks',
-  'serviceRtt',
+  'medianRtt',
   'latestCheck',
   'meanRtt',
   // The prose the applications page used to carry. Each of these was a paragraph competing
