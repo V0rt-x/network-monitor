@@ -28,6 +28,16 @@ describe('PathPanel', () => {
     expect(screen.getByText(/not the round trip to the server/i)).toBeInTheDocument();
   });
 
+  it('never uses the word "ping" for a figure that is not one', () => {
+    // Elsewhere the measured round trip is labelled "Ping (RTT)", because that is the word the
+    // audience knows and there it is true. Here the server answered nothing at all, so how
+    // much further it sits is unknown — calling this a ping would be the exact claim Phase 5
+    // exists to prevent, and it would be made in the one word the reader trusts most.
+    const { container } = render(<PathPanel path={path()} />);
+
+    expect(container.textContent).not.toMatch(/ping/i);
+  });
+
   it('states where the route stops', () => {
     render(<PathPanel path={path({ position: 'insideTheAccessNetwork' })} />);
     expect(screen.getByText(/stops inside your provider/)).toBeInTheDocument();

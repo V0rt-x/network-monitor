@@ -31,12 +31,15 @@ describe('FlowPanel', () => {
     expect(screen.getByText('20.0 a second')).toBeInTheDocument();
   });
 
-  it('names each figure for what the player experiences', () => {
-    // Reworded, not thinned: all five stay, and each is named for the thing a player feels
-    // rather than for the quantity an engineer would name.
+  it('qualifies its jitter so it can never be read as the probe’s', () => {
+    // All five figures stay. The one with a standard network term behind it carries that
+    // term — but *arrival* jitter, because the probe's own jitter can be read on the same
+    // card and two figures called "jitter" would be worse than an invented word. The rest
+    // name quantities with no standard term to return to, so they stay experiential.
     render(<FlowPanel flow={flow({ receiveShortfallPct: 12 })} />);
 
-    expect(screen.getByText('Evenness')).toBeInTheDocument();
+    expect(screen.getByText('Arrival jitter')).toBeInTheDocument();
+    expect(screen.queryByText('Jitter')).not.toBeInTheDocument();
     expect(screen.getByText('Worst pause')).toBeInTheDocument();
     expect(screen.getByText('Drop-off')).toBeInTheDocument();
     expect(screen.getByText('119')).toBeInTheDocument();

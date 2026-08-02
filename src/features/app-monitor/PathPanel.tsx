@@ -17,10 +17,14 @@ interface PathPanelProps {
  * they stay dashes. What can be measured is the deepest router that does answer on the way
  * there, and that is what this shows.
  *
- * **The two are never merged into one number called "ping".** The distance from that router
- * to the server is unknown: the server answered at no time-to-live at all, so it may be one
- * hop beyond or ten. The panel therefore always says which hop the figures belong to and
- * where that hop sits, and the note above them says what they are not.
+ * **The two are never merged into one number called "ping", and this panel never uses the
+ * word at all.** The distance from that router to the server is unknown: the server answered
+ * at no time-to-live at all, so it may be one hop beyond or ten. Elsewhere on the page a
+ * measured round trip is labelled *Ping (RTT)*, because that is the word the audience knows
+ * and there it is true; here it would be a claim about a server we never reached, so the
+ * figure is named for what it is a round trip *to*. A test pins that the word never appears.
+ * The panel always says which hop the figures belong to and where that hop sits, and the note
+ * above them says what they are not.
  *
  * The verdict has a state the user has to be able to tell from a fault: routers rate-limit
  * echoes addressed to themselves while forwarding traffic perfectly, so a figure that moved
@@ -56,7 +60,7 @@ export const PathPanel = ({ path }: PathPanelProps) => {
           <dd>{formatMs(path.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('apps.metric.stability')}</dt>
+          <dt>{t('apps.metric.jitter')}</dt>
           <dd>{formatMs(path.jitterMs, locale)}</dd>
         </div>
         <div>

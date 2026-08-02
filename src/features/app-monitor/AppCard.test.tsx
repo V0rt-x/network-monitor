@@ -346,7 +346,7 @@ describe('AppCard', () => {
 
     expect(screen.getByText('The route towards it')).toBeInTheDocument();
     expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
-    // Three dashes for the endpoint itself — response, steadiness and lost replies — beside
+    // Three dashes for the endpoint itself — ping, jitter and loss — beside
     // the route's three figures.
     expect(screen.getAllByText('—')).toHaveLength(3);
     // And the row says in as many words why this is not the number the game shows. It is
@@ -399,7 +399,7 @@ describe('AppCard', () => {
       />,
     );
 
-    for (const shown of ['Response', 'Steadiness', 'Lost replies']) {
+    for (const shown of ['Ping (RTT)', 'Jitter', 'Loss']) {
       expect(screen.getByText(shown)).toBeVisible();
     }
     // Present in the document — the expander is a disclosure, not a second request to Rust —
@@ -478,12 +478,12 @@ describe('AppCard', () => {
       />,
     );
 
-    for (const metric of ['Response', 'Steadiness', 'Lost replies']) {
+    for (const metric of ['Ping (RTT)', 'Jitter', 'Loss']) {
       expect(screen.getByRole('button', { name: `What ${metric} means` })).toBeInTheDocument();
     }
     // Reached by keyboard, like everything else on this page. A real focus rather than a
     // synthetic event, because what is being asserted is that focus alone opens it.
-    const help = screen.getByRole('button', { name: 'What Response means' });
+    const help = screen.getByRole('button', { name: 'What Ping (RTT) means' });
     act(() => {
       help.focus();
     });
@@ -602,8 +602,8 @@ describe('AppCard', () => {
     expect(screen.getAllByText('Carrying traffic').length).toBeGreaterThan(0);
     expect(screen.queryByText('Unreachable')).not.toBeInTheDocument();
     // It claims nothing it did not measure.
-    const response = screen.getByText('Response').parentElement?.parentElement;
-    expect(response).toHaveTextContent('—');
+    const rtt = screen.getByText('Ping (RTT)').parentElement?.parentElement;
+    expect(rtt).toHaveTextContent('—');
     expect(
       screen.getByText('Data exchanged (30 s)').parentElement?.parentElement,
     ).toHaveTextContent('630 kB');

@@ -34,11 +34,14 @@ interface FlowPanelProps {
  * less is coming back than this endpoint's own recent past established, while what we send
  * holds steady. It keeps that careful name in every language.
  *
- * **Reworded, not thinned.** All five figures stay; each is named for the thing the player
- * experiences — how often the server speaks, how evenly it arrives, the worst pause, how far
- * the return traffic has fallen off, and a freeze. The byte rate and the span they are taken
- * over moved down a level, to the row's own expander, because they qualify the figures rather
- * than being ones a player reads.
+ * **Reworded, not thinned.** All five figures stay. The one with a standard network term
+ * behind it carries that term — the spread of arrivals is *arrival jitter*, and the qualifier
+ * is not decoration: the probe's own jitter can be read on the same card, and two figures
+ * called "jitter" would be a worse failure than an invented word. The rest name quantities
+ * that have no standard term to return to — how often the server speaks, the worst pause, how
+ * far the return traffic has fallen off, and a freeze — so they stay named for what the player
+ * experiences. The byte rate and the span they are taken over moved down a level, to the row's
+ * own expander, because they qualify the figures rather than being ones a player reads.
  */
 export const FlowPanel = ({ flow }: FlowPanelProps) => {
   const { t, i18n } = useTranslation();
@@ -75,8 +78,8 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
         </div>
         <div>
           <dt>
-            {t('apps.passive.metric.smoothness')}
-            <MetricHelp topic="smoothness" />
+            {t('apps.passive.metric.arrivalJitter')}
+            <MetricHelp topic="arrivalJitter" />
           </dt>
           <dd>{formatMs(flow.arrivalJitterMs, locale)}</dd>
         </div>

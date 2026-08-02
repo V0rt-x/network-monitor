@@ -163,9 +163,9 @@
       "egressConflict": "Probe may not follow this app's route"
     },
     "metric": {
-      "response": "Response",
-      "stability": "Steadiness",
-      "loss": "Lost replies",
+      "rtt": "Ping (RTT)",
+      "jitter": "Jitter",
+      "loss": "Loss",
       "traffic": "Data exchanged ({{seconds}} s)",
       "stackRtt": "Round trip measured by Windows",
       "stackRttAge": "· {{seconds}} s ago"
@@ -195,7 +195,7 @@
       "perSecond": "{{bytes}}/s",
       "metric": {
         "updates": "Updates from the server",
-        "smoothness": "Evenness",
+        "arrivalJitter": "Arrival jitter",
         "worstPause": "Worst pause",
         "dropOff": "Drop-off"
       }
@@ -251,20 +251,20 @@
         "short": "Your game times its own packets. This app cannot read them, so it shows two different, honest numbers instead.",
         "body": "Your game shows a number it measures itself: it sends a packet only its own server can answer, in its own language, and times the reply inside the game. Nothing outside the game can reproduce that. Reading it would mean speaking the game's protocol, capturing packets with a driver, or reading the game's memory — and all three are refused here. Two of them are exactly what anti-cheat systems are built to detect, and none of them is safe for you. So this app measures two things it can measure honestly, and never merges them into one number: the round trip to the deepest router that answers on the way to the server, and the pattern of the traffic your game is actually exchanging. Neither is the round trip to the server, and the app never claims otherwise. Their disagreement is what makes them useful: a clean route with ragged arrivals points at the server, and a ragged route with even arrivals usually means a router is deprioritising our probes rather than that anything is wrong with your game."
       },
-      "response": {
-        "title": "Response",
-        "short": "How long a probe we send takes to come back. Blank means nothing we can send is answered — which is normal for a game server.",
-        "body": "The app sends its own small probe and times the reply. This is a real round trip over the route your application is using, and it is the most direct figure on the page — where it exists. A great many servers, game match servers especially, answer nothing at all: nothing listens on a game port but the game. That is not a fault and not an outage, and the app leaves this blank rather than filling it with the nearest available number."
+      "rtt": {
+        "title": "Ping (RTT)",
+        "short": "The round trip of a probe we send to this endpoint: out and back, in milliseconds. The same quantity other tools call ping.",
+        "body": "The app sends its own small probe and times the reply. That is the round-trip time — RTT — and it is the same quantity every other network tool calls ping: a real round trip over the route your application is using, and the most direct figure on the page where it exists. It is not the number your game shows in its own corner: the game times its own packets to its own server, which nothing outside the game can reproduce. Where an endpoint answers nothing we can send — the normal state of a game's match server, because nothing listens on a game port but the game — this figure is not shown at all, and the route and the traffic figures stand in for it instead."
       },
-      "stability": {
-        "title": "Steadiness",
-        "short": "How much the response varies between probes. A steady 80 ms usually plays better than a 40 ms that jumps.",
-        "body": "Two connections with the same average response can feel completely different. What you notice while playing is not the average but the variation: a connection that answers in 40 ms and then 90 ms and then 45 ms makes a game stutter, while a steady 80 ms feels smooth. This figure is that variation, measured over the recent window. Lower is better, and a large number beside a small average is worth more attention than a large average on its own."
+      "jitter": {
+        "title": "Jitter",
+        "short": "How much the round trip varies between probes. A steady 80 ms usually plays better than a 40 ms that jumps.",
+        "body": "Two connections with the same average round trip can feel completely different. What you notice while playing is not the average but the variation: a connection that answers in 40 ms and then 90 ms and then 45 ms makes a game stutter, while a steady 80 ms feels smooth. Jitter is that variation, measured over the recent window. Lower is better, and a large jitter beside a small average is worth more attention than a large average on its own. Where the traffic itself is being watched you will see a second figure called arrival jitter: that one is measured from your game's own incoming data rather than from our probes, and the two are kept apart on purpose."
       },
       "loss": {
-        "title": "Lost replies",
+        "title": "Loss",
         "short": "The share of our probes that never came back. Blank where the endpoint does not answer probes at all.",
-        "body": "The share of the probes this app sent that produced no reply, over the recent window. It describes our probes on the route they took — not necessarily your game's own packets, which travel as their own traffic. Where nothing answers our probes at all, this stays blank instead of reading as 100 %: a server that ignores what we send is not a server that is dropping your game's traffic, and reporting one as the other would be the exact mistake this app exists to avoid."
+        "body": "The share of the probes this app sent that produced no reply, over the recent window — packet loss, measured on our own probes. It describes those probes on the route they took, not necessarily your game's own packets, which travel as their own traffic. Where nothing answers our probes at all, this stays blank instead of reading as 100 %: a server that ignores what we send is not a server that is dropping your game's traffic, and reporting one as the other would be the exact mistake this app exists to avoid."
       },
       "route": {
         "title": "The route towards it",
@@ -276,10 +276,10 @@
         "short": "How many times a second the server sends your game something. Steady is what matters, not high.",
         "body": "Counted from the traffic itself: how often data arrives from this endpoint, with the packets of a single update counted once. Most games settle at a fixed rate. The useful reading is not the number but its steadiness — a rate that drops while your own sending continues means the server or the path towards you has stopped keeping up."
       },
-      "smoothness": {
-        "title": "Evenness",
-        "short": "How evenly the server's updates arrive. This is what you feel as stutter.",
-        "body": "Updates that arrive every 50 ms feel smooth; the same number of updates arriving in bursts does not. This figure is how much the gaps between arrivals vary, and it is the closest thing on this page to what you actually feel while playing. It cannot separate a network that delayed a packet from a server that skipped a tick — both look identical from here — which is why it is shown beside the route rather than instead of it. When the route is clean and this is ragged, the server is the better explanation."
+      "arrivalJitter": {
+        "title": "Arrival jitter",
+        "short": "How evenly your game's own incoming data arrives. Jitter measured on the traffic itself, not on a probe — and this is what you feel as stutter.",
+        "body": "Updates that arrive every 50 ms feel smooth; the same number of updates arriving in bursts does not. Arrival jitter is how much the gaps between arrivals vary, and it is the closest thing on this page to what you actually feel while playing. It is called arrival jitter rather than jitter because it is a different measurement from the jitter beside the round trip: that one times replies to probes we sent, this one is taken from data your game is already receiving, without sending anything. It cannot separate a network that delayed a packet from a server that skipped a tick — both look identical from here — which is why it is shown beside the route rather than instead of it. When the route is clean and this is ragged, the server is the better explanation."
       },
       "worstPause": {
         "title": "Worst pause",
@@ -288,8 +288,8 @@
       },
       "dropOff": {
         "title": "Drop-off",
-        "short": "How far the incoming traffic has fallen below what this endpoint was recently doing. Deliberately not called loss.",
-        "body": "This compares what is arriving now with what this same endpoint was sending a short while ago, while what you send holds steady. It is not packet loss, and it is careful not to claim to be: only the far end knows what it sent, so a packet that never arrived is invisible from here. What can be said is that noticeably less is coming back than this connection itself established as normal — which is a real finding, and a different one from a measured loss figure."
+        "short": "How far the incoming traffic has fallen below what this endpoint was recently doing. Deliberately not called loss — it is a different measurement from the loss figure.",
+        "body": "This compares what is arriving now with what this same endpoint was sending a short while ago, while what you send holds steady. It is not packet loss, and it is careful not to claim to be — which is also why it does not share a name with the loss figure beside the round trip: that one counts probes we sent and can therefore say exactly how many came back, while only the far end knows what it sent here, so a packet that never arrived is invisible from this side. What can be said is that noticeably less is coming back than this connection itself established as normal — which is a real finding, and a different one from a measured loss figure."
       },
       "freeze": {
         "title": "Freeze",

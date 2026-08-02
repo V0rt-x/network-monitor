@@ -9,12 +9,16 @@
 export const HELP_TOPICS = [
   // First, and deliberately: without it the honest answer looks like a wrong one.
   'ping',
-  'response',
-  'stability',
+  // The figures carry the standard network terms, because the audience has met those words in
+  // every other tool they have used; the plain-language sentence lives here, in the ⓘ, rather
+  // than in a name invented for the reader. Where two figures on one card would otherwise both
+  // be "jitter", the passive one is qualified — `arrivalJitter` — never left ambiguous.
+  'rtt',
+  'jitter',
   'loss',
   'route',
   'updates',
-  'smoothness',
+  'arrivalJitter',
   'worstPause',
   'dropOff',
   'freeze',

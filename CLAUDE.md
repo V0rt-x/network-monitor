@@ -125,8 +125,17 @@ depth stays reachable for whoever wants it, because a measurement tool that cann
 itself is asking to be trusted on faith, and this audience has no reason to extend that.
 
 - **Level one — the default.** What the thing is, one word of state, and at most three
-  figures. Nothing else. A figure here is named for what the user *experiences* ("response",
-  "steadiness", "worst pause"), never for the quantity an engineer would name.
+  figures. Nothing else. **A figure here carries the standard network term** — RTT (or *ping*,
+  where it really is the round trip we measured), jitter, loss — because the audience has met
+  those words in every other tool they have used, and renaming a known quantity around the
+  reader teaches them a vocabulary nobody else speaks. **The ⓘ carries the plain-language
+  sentence**; that is what level three is for. Where a quantity has no standard term to return
+  to (the server's own update rate, the worst pause, a drop-off that is deliberately not loss)
+  it is named for what the user experiences, and a term that could be confused with another
+  figure on the same card is qualified rather than left ambiguous (*arrival jitter* beside a
+  probe's *jitter*).
+  *This reverses the rule Phase 6.5 shipped ("named for what the user experiences … never for
+  the quantity an engineer would name"), on the user's instruction after reading the page.*
 - **Level two — an expander in place, and there is no setting.** A mode is a second product
   to keep consistent and one a user forgets they are in. Everything that *qualifies* a number
   rather than being one goes here: how it was measured, what window or span it covers, which

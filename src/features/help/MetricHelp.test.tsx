@@ -8,7 +8,7 @@ import { MetricHelp } from './MetricHelp';
 
 describe('MetricHelp', () => {
   it('says nothing until it is asked', () => {
-    render(<MetricHelp topic="stability" />);
+    render(<MetricHelp topic="jitter" />);
 
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
@@ -17,7 +17,7 @@ describe('MetricHelp', () => {
   it('explains the metric in place, without a mouse', async () => {
     // The whole point of the level: a player who does not know what jitter is has to be able
     // to ask, and a keyboard user has to be able to ask the same way.
-    render(<MetricHelp topic="stability" />);
+    render(<MetricHelp topic="jitter" />);
 
     await userEvent.tab();
     expect(await screen.findByRole('note')).toHaveTextContent(/varies between probes/i);
@@ -42,7 +42,7 @@ describe('MetricHelp', () => {
     // reading. It simply does nothing.
     render(<MetricHelp topic="loss" />);
 
-    await userEvent.click(screen.getByRole('button', { name: /what lost replies means/i }));
+    await userEvent.click(screen.getByRole('button', { name: /what loss means/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Learn more' }));
 
     // Still standing, still explaining itself: the door simply led nowhere.

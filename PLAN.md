@@ -1463,6 +1463,219 @@ The live pass that would settle it is the item below, now at the end of Phase 7 
 phase's acceptance criterion is met in the parts tests can reach and open in the parts they
 cannot, exactly as Phases 4 and 6 recorded theirs.
 
+## Phase 6.6 — The words on the page (amendments from use, 2026-08-02)
+
+Stated by the user after running the Phase 6/6.5 build. Nine items, **ordered by priority
+here rather than as they were stated** — the ordering is mine and the reasoning is under each
+one. It runs before Phase 7 and after 6.5, because every item here is a correction to what
+6.5 shipped, and Phase 7's five-title verification pass should be run against the page as it
+will actually ship rather than against one that is about to be reworded.
+
+Nothing here changes what is measured. Two items *remove* things from the screen (2, 9) and
+one removes rows from a list (1); the rest are naming, explanation and page structure. As in
+6.5, **no figure is deleted** — a figure that leaves level one moves down a level, and the one
+case where a figure disappears entirely (item 9) is a figure that was never there, shown as a
+dash.
+
+- [x] **1. Common network vocabulary: ping, jitter, loss — and this reverses a standing rule.**
+      *First, because it is the largest comprehension change on the page, because every other
+      item here writes text that has to use these words, and because it contradicts a rule
+      written into `CLAUDE.md` and must not be discovered halfway through a later item.*
+      The row today reads *Response*, *Steadiness*, *Lost replies*. The user's instruction is to
+      go back to the names a player has seen in every other tool they have ever used — **RTT
+      (or "Ping", if it is the same quantity), jitter, loss** — and to explain the rarer ones
+      with the ⓘ that already exists, rather than to rename the quantity around the reader.
+      – **`CLAUDE.md` must be amended in the same commit.** Its two-level rule currently says a
+        level-one figure is "named for what the user *experiences* … never for the quantity an
+        engineer would name". That clause is what produced *Steadiness*, and the user has now
+        rejected it. The replacement rule: **level one carries the standard network term; the
+        ⓘ carries the plain-language sentence.** The rest of the two-level rule is untouched —
+        three figures, one word of state, everything that qualifies a number one level down.
+        A plan that quietly disagreed with `CLAUDE.md` would be worse than either rule.
+      – **"Ping" only where it *is* the round trip we measured.** The word is the one the
+        audience knows, and it is also the exact word Phase 5 exists to keep honest. So: the
+        probe figure may be called **Ping (RTT)** on an endpoint whose own round trip we
+        measured; the route figure is **never** called ping, keeps its "to a router on the way,
+        not to the server" wording, and the *Why this is not the ping your game shows* block
+        stays exactly where it is. A test pins that the route panel never renders the word.
+      – **The passive flow figures keep experiential names**, and that is not an exception to
+        the new rule but an application of it: *arrival jitter* is a standard term and gets it,
+        while "the server's update rate" and "worst pause" name quantities that have no
+        standard network term to return to. What must not happen is a second figure called
+        jitter with no way to tell it from the probe's — the flow panel's is labelled
+        **arrival jitter** wherever both can be read at once.
+      – Every renamed key gets its ⓘ sentence rewritten to match, and the help topic list moves
+        with it: the ⓘ and the help read from one list, so a rename that missed a topic is a
+        tooltip pointing at a section that no longer exists.
+      – Units belong to the figure, not the tooltip: `ms`, `%`, through `Intl` as now.
+      — the row now reads **Ping (RTT) · Jitter · Loss**, and `CLAUDE.md`'s level-one clause was
+      rewritten in the same commit, with the reversal recorded in it rather than silently
+      replaced: a plan and a contract that disagree are worse than either rule.
+      **The word "ping" earns its place by being true where it is used.** It sits on the probe
+      figure, which really is a round trip we measured, and the route panel is pinned by a test
+      that asserts the whole panel's text never matches it — not the label alone, since the word
+      could creep back in through a note or a hop line. The *Why this is not the ping your game
+      shows* block is untouched, and it now sits beside a figure the reader recognises rather
+      than beside an invented one, which makes it easier to read rather than harder.
+      **The flow panel's spread of arrivals is `arrival jitter`, never `jitter`.** Both jitters
+      can be read on one card, so the qualifier is the whole point; a test asserts the bare word
+      appears nowhere in that panel. `updates`, `worst pause` and `drop-off` keep experiential
+      names because no standard term exists to return to — and the drop-off's help now says in
+      as many words how it differs from the loss figure it sits near, which the rename made a
+      sharper question than it was.
+      Three help topics were renamed with the figures (`response`→`rtt`, `stability`→`jitter`,
+      `smoothness`→`arrivalJitter`) and every ⓘ sentence rewritten around the new names, because
+      the ⓘ and the help page read from one list and a missed rename is a tooltip pointing at a
+      section that no longer exists.
+- [ ] **2. An endpoint nothing can probe shows no ping, jitter or loss at all.** *Second,
+      because it is the same complaint as item 1 aimed at the most important row on the page:
+      the match server, which is what the whole product exists to watch.* A UDP endpoint that
+      answers no probe kind currently renders three dashes where the three headline figures
+      go, and three dashes read as a broken tool rather than as an honest absence.
+      – **Rust decides, and the row changes shape rather than emptying.** Where `measurable` is
+        false — no probe kind can honestly measure it, which for a game's match server is the
+        normal and permanent state — the row does not render the probe figures at all. What
+        takes their place is what *is* known: the route figure and the flow figures, which are
+        already computed and already on the card.
+      – **This is not a relaxation of "absent stays absent".** That rule forbids replacing a
+        missing figure with a nearby number; it does not require printing a dash forever for a
+        quantity that will never exist. The distinction is between *not yet* and *never*: an
+        endpoint still working through its fallback chain keeps its dashes, because a figure is
+        coming. A test pins both halves, since the difference between them is exactly the sort
+        of thing a later refactor flattens.
+      – The reason stays reachable: the expander says which kinds were tried and what the
+        endpoint answered, as it does now.
+      – The chart is unaffected — a silent endpoint is already drawn as its dashed route line.
+- [ ] **3. The status page must explain its own numbers and its cells.** *Third, because it is
+      the same defect as 1 and 2 on a page the user could not read at all: they asked what the
+      figures and the coloured cells mean, which is a page failing at its one job.*
+      Today a card shows *Latest*, *Mean*, *Loss* with no statement of what a check is, and a
+      strip of green and red cells with no legend, no time span and no per-cell reading.
+      – **The strip needs a legend and an axis.** One cell is one check; the strip covers the
+        last N checks, which at the shipped cadence is a stated number of minutes; oldest is
+        left. All three facts are on the page rather than in the source. Every cell already
+        carries its translated word (`answered` / `slow` / `lost` / `refused` / `filtered`) —
+        that stays, and gains the check's own time, reachable by keyboard as well as by hover.
+      – **The three figures get the same treatment as item 1**: standard names, an ⓘ each with
+        the plain sentence, and the window they cover stated. *Latest* is one check, not an
+        average, and a page that does not say so invites the reader to average them by eye.
+      – **Colour is never the only channel**, as now; the legend must read correctly for a
+        reader who sees neither green nor red.
+      – The existing caveat — that a card states what *this machine* can reach — is a warning
+        and stays at level one, per the standing rule.
+- [ ] **4. The Applications page carries too much prose.** *Fourth: it is a real complaint about
+      the busiest page in the product, and it is deliberately behind 1–3 because the text that
+      survives it should be written in the vocabulary those items settle.*
+      Level one is supposed to be a name, a word of state and three figures; the page also
+      holds a paragraph under the chart, a paragraph of picker hint, a pool note, a warm-up
+      explanation, two group hints and several multi-sentence banners.
+      – **Audit every block of running text on the page** and give each one exactly one
+        destination: an ⓘ tooltip, a section of the help page, the row's own expander, or
+        deletion where it repeats something the reader has already been told. The chart note is
+        the worst of them and is the test case: it is six sentences describing decisions
+        (log axis, three-second slots, slot maxima, gaps) that belong in the help.
+      – **Nothing that is a warning moves**, per the standing rule: the flow-status banner, the
+        egress conflict, an unobservable match-traffic group. Those are things the user must act
+        on, and they stay at full length at level one.
+      – What is left on the page after the audit should fit the standing rule's description
+        without needing an argument: if a paragraph has to be justified, it belongs a level
+        down. **A test asserts the surviving level-one text of the page**, in the same spirit as
+        6.5's closed-row test, because prose grows back one sentence at a time.
+      – The help page absorbs what moves, which means it gains sections rather than lines — see
+        item 5, which is renaming it anyway.
+- [ ] **5. Merge the dashboard and the service status page; rename the help page.** *Fifth: two
+      structural changes to navigation, taken together because they are one edit to the same
+      five tabs, and taken after the text items because merging two pages of text is cheaper
+      once that text is shorter.*
+      – **One page, "Network", holding what the dashboard and the status page hold today**: the
+        verdict banner, the domestic and foreign baselines, and the service cards. They answer
+        one question — *is it me, my country's border, or that service* — and answering it
+        currently means switching tabs and holding one page in your head while reading the
+        other. The verdict engine already reads the baselines; the status cards are the
+        evidence a reader checks it against.
+      – **The merge must not become a wall.** Baselines first with the verdict above them,
+        services below grouped as they are now (platforms, infrastructure). Nothing about a
+        card's or a baseline's own rules changes: `nm_core::status`'s reaction rule and
+        `nm_core::health`'s window rule stay separate, because they answer different questions
+        at different cadences, and that difference is stated on the page rather than smoothed
+        over.
+      – The nav becomes four tabs: **Network · Applications · Help · Settings**.
+      – **The help page is renamed.** "What the numbers mean" is a sentence, not a tab; it
+        becomes **Help**, with that sentence as the page's own subtitle, so nothing is lost and
+        the tab reads like a tab. Every ⓘ's "Learn more" keeps working — the topic list is one
+        list and the rename touches the label, not the anchors.
+- [ ] **6. The picker offers only applications the app can name.** *Sixth: a real ergonomic win
+      with a real risk, which is why it sits behind the items that cannot hide anything.*
+      The picker lists every running process grouped by executable name, so it reads like a
+      task manager — hundreds of rows, of which a handful are things anyone would watch.
+      – **Offer only candidates that resolve to a name**: a preset, a curated label, or the
+        bundled catalogue generated from Discord's detectable-games index (`assets/apps/
+        labels.json`, 9 314 entries — Phase 6.5 item 2). `PresetList::label_of` already answers
+        exactly this question, so the filter is one predicate in `applications::candidates`.
+      – **With an escape hatch, and it is not optional.** The catalogue is large but not
+        complete: a title too new for it, a regional client, or anything not in Discord's index
+        would become unwatchable, and "the app cannot see my game" is a worse failure than a
+        long list. So the filtered list is the default and a **"show everything running"**
+        toggle sits beside the search, off by default, with the count of what is hidden shown
+        rather than implied.
+      – **A name is not a claim.** A catalogue entry supplies a label and never a grouping —
+        the rule 6.5 established stands, and the filter must not become a second grouping rule
+        by the back door.
+      – Search still searches the executable name, so a user who knows the file name finds it
+        with the toggle off.
+- [ ] **7. Age in the connection's header, and the honest word for it.** *Seventh: new
+      information rather than a correction, and the user asked for it in exactly those terms —
+      "how long it has been established, or failing that how long we have been watching it".*
+      – **TCP has a real answer and it is already arriving.** The flow-metrics spike recorded
+        `ConnectionTimeMs` on event `1477`, the TCP summary the app already subscribes to for
+        passive round-trip time (`docs/flow-metrics-spike.md`). It is not parsed today. Parsing
+        it costs one more field on an event that is already decoded, past the local-port gate
+        that already protects the data-minimisation rule.
+      – **It is a stale reading and must be shown as one**, like the passive round trip beside
+        it: summaries arrive at connection close and every few tens of seconds, so the header
+        shows the age with the same "as of N s ago" treatment, or ages it forward from the
+        event's own stamp — never mixing `FlowInstant` with `Instant`, which the type system
+        already forbids.
+      – **UDP has no such thing and must not borrow it.** There is no connection to have been
+        established, so what the header can honestly show is **how long this app has been
+        watched talking to that endpoint** — `Endpoint::first_seen`, which `nm_core` has held
+        since Phase 4 and never surfaced. Two different facts, two different words, never one
+        field that means whichever was available.
+      – What the user actually asked for is served either way: telling a new endpoint from one
+        that has been there all match. It also gives the warm-up badge a natural neighbour.
+      – Level one gets one figure; which of the two facts it is, is stated in the expander.
+- [ ] **8. More services on the status page, starting with Ubisoft.** *Eighth: pure data, no
+      code, and it can land at any time — it is late only because it competes with nothing.*
+      Eleven services ship today. Missing and named by the user: **Ubisoft Connect**. Others
+      worth the same check: Rockstar, Wargaming, Roblox, HoYoverse, Nintendo, and on the
+      infrastructure side Akamai, Fastly and Azure, which host a large share of what the
+      platform cards depend on.
+      – Every rule in `assets/targets/README.md` applies unchanged, and the tests enforce them:
+        **names, never addresses**; the probe kind is a hint and never a permission; the whole
+        list stays inside its share of the global cap, which is what bounds how many services
+        can be added at all.
+      – **Every host verified from this machine before it is committed**, with the probe kind
+        the app will use — the check Phase 6 ran for the existing thirteen. A front door that
+        does not answer is a permanently red card about a service that is up, which is the
+        exact failure the bundled SDR hostnames caused in Phase 2.
+      – Adding a service must stay a data change; if any candidate needs code, it does not ship
+        here.
+- [ ] **9. Sweep for the words item 1 replaced.** *Last, and it is bookkeeping rather than a
+      feature.* Once the vocabulary changes, the old names survive in the help text, the
+      tooltips, the tray labels, the chart legend and the Russian locale that Phase 7 is about
+      to create. One pass across `locales/en/common.json` and the help topics, so Phase 7's
+      translator never has to translate a word the product no longer uses.
+- **Accept**: a reader who has never used the app can say what every figure on the Applications
+  page and on the merged Network page measures, using the words the rest of the networking
+  world uses, without leaving level one to find out; a match server shows a route figure and
+  flow figures and **no dashes where a ping would be**; the status page states what one cell is
+  and how far back the strip reaches; the picker opens on a list a person can read, with the
+  hidden count visible and one click to see everything; a connection header says how old it is
+  and which kind of "old" that is; Ubisoft Connect appears on the status page and answered a
+  real probe from this machine before it was committed. Tests: the surviving level-one text of
+  the Applications page, the never-and-not-yet distinction of item 2, and that the word "ping"
+  appears on no route figure.
+
 ## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view

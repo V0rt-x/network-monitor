@@ -52,10 +52,17 @@ interface EndpointRowProps {
  * rate is taken over — and the result was that the numbers that matter were indistinguishable
  * from the caveats attached to them.
  *
- * *Level one*, always visible: what it is, one word of state, and three figures — response,
- * stability, loss. For an endpoint that answers nothing those three are dashes, and what
- * stands in for them is the route beside its own traffic: two quantities that are never
- * merged, because their disagreement is the diagnosis.
+ * *Level one*, always visible: what it is, one word of state, and three figures — ping (RTT),
+ * jitter, loss. **Those are the words the rest of the networking world uses**, and that is
+ * deliberate: the audience has met them in every other tool they have opened, and a quantity
+ * renamed around the reader teaches a vocabulary nobody else speaks. The plain-language
+ * sentence belongs to the ⓘ, which is what level three is for. *Ping* is honest here and only
+ * here — this is a round trip we really measured — and it is never applied to the route
+ * figure, which belongs to a router short of the endpoint.
+ *
+ * For an endpoint nothing can measure the three do not appear at all; what stands in for them
+ * is the route beside its own traffic, two quantities that are never merged, because their
+ * disagreement is the diagnosis.
  *
  * *Level two* is this row's expander, and there is deliberately **no setting**. A mode is a
  * second product to keep consistent and one a user forgets they are in; an expander is a
@@ -158,20 +165,21 @@ export const EndpointRow = ({
         )}
       </div>
 
-      {/* Level one: three figures and nothing else. Named for what the player experiences
-          rather than for the quantity an engineer would name. */}
+      {/* Level one: three figures and nothing else, under the names the rest of the
+          networking world uses. The plain-language sentence is the ⓘ's job, not the
+          label's — a renamed quantity teaches the reader a vocabulary nobody else speaks. */}
       <dl className="nm-endpoint__metrics">
         <div>
           <dt>
-            {t('apps.metric.response')}
-            <MetricHelp topic="response" />
+            {t('apps.metric.rtt')}
+            <MetricHelp topic="rtt" />
           </dt>
           <dd>{formatMs(endpoint.rttMs, locale)}</dd>
         </div>
         <div>
           <dt>
-            {t('apps.metric.stability')}
-            <MetricHelp topic="stability" />
+            {t('apps.metric.jitter')}
+            <MetricHelp topic="jitter" />
           </dt>
           <dd>{formatMs(endpoint.jitterMs, locale)}</dd>
         </div>
