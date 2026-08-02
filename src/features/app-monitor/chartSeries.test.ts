@@ -120,4 +120,13 @@ describe('formatAxisElapsed', () => {
     expect(formatAxisElapsed(90)).toBe('1:30');
     expect(formatAxisElapsed(117)).toBe('1:57');
   });
+
+  it('reads a long session in hours', () => {
+    // Found by running the build against a session eleven hours old: the axis read `652:10`,
+    // which is the truth and unreadable as a time. A monitor is left running exactly that
+    // long — that is what it is for.
+    expect(formatAxisElapsed(3_600)).toBe('1:00:00');
+    expect(formatAxisElapsed(39_130)).toBe('10:52:10');
+    expect(formatAxisElapsed(3_599)).toBe('59:59');
+  });
 });

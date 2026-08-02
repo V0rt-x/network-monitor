@@ -54,6 +54,11 @@ export const formatAxisMs = (value: number | null | undefined): string => {
  * grows rightwards from it. Minutes and seconds because two minutes of history read as
  * `1:30` far more readily than as `90`.
  *
+ * **Hours appear as hours.** Found by running the build against a session that had been
+ * watching a game for eleven hours: the axis read `652:10`, which is arithmetically the truth
+ * and unreadable as a time. A monitor is left running for exactly that long — that is what it
+ * is for — so anything past an hour reads `10:52:10`.
+ *
  * A blanked split arrives as `null`, exactly as on the round-trip axis, and treating one as a
  * number throws in the middle of a draw — which leaves an empty canvas and no error anywhere.
  */
@@ -61,9 +66,11 @@ export const formatAxisElapsed = (value: number | null | undefined): string => {
   if (value === null || value === undefined) return '';
   if (!Number.isFinite(value)) return '';
   const total = Math.max(0, Math.round(value));
-  const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3_600);
+  const tail = `${String(minutes).padStart(hours > 0 ? 2 : 1, '0')}:${String(seconds).padStart(2, '0')}`;
+  return hours > 0 ? `${String(hours)}:${tail}` : tail;
 };
 
 /**
