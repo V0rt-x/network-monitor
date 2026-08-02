@@ -24,6 +24,15 @@ const HEIGHT = 200;
 /** How dim a line gets while another endpoint is raised. */
 const DIMMED_ALPHA = '38';
 
+/**
+ * How much lighter a supporting connection is drawn than the match traffic.
+ *
+ * Emphasis, not a verdict: a TCP endpoint that is failing is a first-class finding and the
+ * list beside the chart says so in words. This only stops a launcher's connection competing
+ * for attention with the flow the game is played over.
+ */
+const SUPPORTING_ALPHA = 'b0';
+
 /** How near the cursor has to be, in pixels, for a line to be considered hovered. */
 const HOVER_PROXIMITY = 24;
 
@@ -94,9 +103,8 @@ export const EndpointChart = ({
       const raised = currentHighlight.current;
       // Dimmed by alpha rather than by a grey, so a line the user is not looking at keeps
       // its identity and can still be picked out.
-      return raised === null || raised === line.endpoint
-        ? line.colour
-        : `${line.colour}${DIMMED_ALPHA}`;
+      if (raised !== null && raised !== line.endpoint) return `${line.colour}${DIMMED_ALPHA}`;
+      return line.transport === 'tcp' ? `${line.colour}${SUPPORTING_ALPHA}` : line.colour;
     };
 
     let chart: uPlot | null = null;
@@ -147,7 +155,9 @@ export const EndpointChart = ({
             ...drawn.map((line, index) => ({
               label: line.label,
               stroke: stroke(index),
-              width: line.isPath ? 1.5 : 2,
+              // Thinner for a route, thinner again for a supporting connection: the match
+              // traffic is what the page is emphasising and the chart agrees with it.
+              width: (line.isPath ? 1.5 : 2) * (line.transport === 'tcp' ? 0.75 : 1),
               // The route is dashed, always. It is the one line on this chart that is not a
               // round trip to the thing it is named after.
               ...(line.isPath ? { dash: [4, 4] } : {}),

@@ -87,6 +87,7 @@ export const AppMonitorPage = () => {
                 app={app}
                 trafficWindowSecs={endpoints.trafficWindowSecs}
                 chartStepSecs={endpoints.chartStepSecs}
+                flowStatus={endpoints.flowStatus}
                 onForget={(id) => {
                   void forgetApp(id);
                 }}

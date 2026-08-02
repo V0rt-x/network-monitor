@@ -24,6 +24,31 @@ export const transportKey = (transport: TransportView) => {
   }
 };
 
+/**
+ * What a transport group is called on the page.
+ *
+ * Named for what the traffic *is* rather than for its protocol: a player knows the match is
+ * the thing that stutters, not that it travels over UDP. The protocol badge stays on the row
+ * for whoever wants it.
+ */
+export const groupKey = (transport: TransportView) => {
+  switch (transport) {
+    case 'udp':
+      return 'apps.group.udp' as const;
+    case 'tcp':
+      return 'apps.group.tcp' as const;
+  }
+};
+
+export const groupHintKey = (transport: TransportView) => {
+  switch (transport) {
+    case 'udp':
+      return 'apps.group.udpHint' as const;
+    case 'tcp':
+      return 'apps.group.tcpHint' as const;
+  }
+};
+
 export const livenessKey = (liveness: LivenessView) => {
   switch (liveness) {
     case 'active':

@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
 import { AppCard } from './AppCard';
-import type { AppView, EndpointView } from '../../shared/ipc';
+import type { AppView, EndpointGroupView, EndpointView, HealthCountsView } from '../../shared/ipc';
 
 // uPlot draws to a canvas, which jsdom does not implement. The chart is additive — every
 // figure it draws is also stated in the list beside it — so the tests replace it with a
@@ -60,7 +60,40 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   ...overrides,
 });
 
-const app = (overrides: Partial<AppView> = {}): AppView => ({
+const NO_COUNTS: HealthCountsView = {
+  ok: 0,
+  degraded: 0,
+  unreachable: 0,
+  blocked: 0,
+  carryingTraffic: 0,
+  unknown: 0,
+};
+
+/**
+ * Groups a flat endpoint list the way Rust does: the match traffic first, the supporting
+ * connections below, each carrying its own distribution.
+ *
+ * The tests state endpoints as one list because that is what most of them are about; the
+ * grouping is reproduced here rather than written out per case, so no test can accidentally
+ * describe a shape Rust never sends.
+ */
+const groupsOf = (endpoints: readonly EndpointView[]): EndpointGroupView[] =>
+  (['udp', 'tcp'] as const).map((transport) => {
+    const members = endpoints.filter((candidate) => candidate.transport === transport);
+    const counts = { ...NO_COUNTS };
+    for (const member of members) counts[member.health] += 1;
+    return {
+      transport,
+      counts,
+      needsAttention: members.some((member) => member.health !== 'ok'),
+      endpoints: members,
+    };
+  });
+
+const app = ({
+  endpoints = [endpoint()],
+  ...overrides
+}: Partial<Omit<AppView, 'groups'>> & { endpoints?: EndpointView[] } = {}): AppView => ({
   id: 1,
   name: 'game.exe',
   processes: [{ pid: 4242, name: 'game.exe' }],
@@ -73,13 +106,21 @@ const app = (overrides: Partial<AppView> = {}): AppView => ({
   },
   pool: null,
   chartAgeSecs: [-2, -1, 0],
-  endpoints: [endpoint()],
+  groups: groupsOf(endpoints),
   ...overrides,
 });
 
 describe('AppCard', () => {
   it('names the application it is following', () => {
-    render(<AppCard app={app()} trafficWindowSecs={30} chartStepSecs={3} onForget={vi.fn()} />);
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(screen.getByRole('heading', { name: 'game.exe' })).toBeInTheDocument();
     expect(screen.getByText('game.exe · PID 4242')).toBeInTheDocument();
@@ -99,6 +140,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -114,6 +156,7 @@ describe('AppCard', () => {
         app={app({ processes: [] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -143,13 +186,105 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
 
-    expect(screen.getByText('1 Unreachable')).toBeInTheDocument();
-    expect(screen.getByText('2 Degraded')).toBeInTheDocument();
-    expect(screen.getByText('4 OK')).toBeInTheDocument();
+    // The application's own tally, not a group's: each transport group carries one too, and
+    // they are different statements about different sets of endpoints.
+    const total = within(
+      screen.getByRole('list', { name: 'Endpoint states across this application' }),
+    );
+    expect(total.getByText('1 Unreachable')).toBeInTheDocument();
+    expect(total.getByText('2 Degraded')).toBeInTheDocument();
+    expect(total.getByText('4 OK')).toBeInTheDocument();
+  });
+
+  it('gives the match traffic its own group, ahead of the supporting connections', () => {
+    // During a game the endpoints that decide whether it plays well are the UDP flows.
+    // Severity alone puts them wherever their health happens to fall, between a launcher's
+    // connection and a content network.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:27015', transport: 'udp' }),
+            endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp', health: 'degraded' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    const groups = screen.getAllByText(/Match traffic|Supporting connections/);
+    expect(groups.map((node) => node.textContent)).toEqual([
+      'Match traffic',
+      'Supporting connections',
+    ]);
+    const supporting = within(
+      screen.getByRole('list', { name: 'Endpoint states in Supporting connections' }),
+    );
+    expect(supporting.getByText('1 Degraded')).toBeInTheDocument();
+  });
+
+  it('says why there is no match traffic rather than showing an empty group', () => {
+    // Without the one-time tracing setup there are no UDP endpoints at all on this machine,
+    // and an unexplained empty "match traffic" reads as a game that plays over nothing.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp' })],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="notPermitted"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Match traffic cannot be discovered on this machine/),
+    ).toBeInTheDocument();
+  });
+
+  it('unfolds the supporting connections when any of them is worse than clean', () => {
+    // TCP is demoted, never hidden: a login service with a filter on it is exactly what
+    // "I cannot get into the game" looks like.
+    const { rerender } = render(
+      <AppCard
+        app={app({
+          endpoints: [endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp' })],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Supporting connections').closest('details')).not.toHaveAttribute(
+      'open',
+    );
+
+    rerender(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp', health: 'blocked' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Supporting connections').closest('details')).toHaveAttribute('open');
   });
 
   it('renders each endpoint with its own state', () => {
@@ -163,6 +298,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -201,6 +337,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -227,6 +364,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -250,6 +388,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -265,6 +404,7 @@ describe('AppCard', () => {
         app={app({ endpoints: [endpoint({ egress: '10.7.0.2', egressInterface: null })] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -290,6 +430,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -302,7 +443,15 @@ describe('AppCard', () => {
   });
 
   it('says nothing about a second route when the probe follows the application', () => {
-    render(<AppCard app={app()} trafficWindowSecs={30} chartStepSecs={3} onForget={vi.fn()} />);
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
 
     expect(screen.queryByText(/The probe cannot follow it/)).not.toBeInTheDocument();
   });
@@ -333,6 +482,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -360,6 +510,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -376,6 +527,7 @@ describe('AppCard', () => {
         app={app({ endpoints: [endpoint({ passiveRtt: null })] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -389,6 +541,7 @@ describe('AppCard', () => {
         app={app({ endpoints: [endpoint({ recentBytes: null, rttMs: null, lossPct: null })] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -414,6 +567,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -426,7 +580,13 @@ describe('AppCard', () => {
     // while its children are still being measured.
     const onForget = vi.fn();
     render(
-      <AppCard app={app({ id: 7 })} trafficWindowSecs={30} chartStepSecs={3} onForget={onForget} />,
+      <AppCard
+        app={app({ id: 7 })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={onForget}
+      />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
@@ -455,6 +615,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -484,6 +645,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -501,6 +663,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -527,6 +690,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -548,6 +712,7 @@ describe('AppCard', () => {
         })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );
@@ -571,6 +736,7 @@ describe('AppCard', () => {
         app={app({ endpoints: [endpoint({ key: 'a', address: '1.1.1.1:27015' })] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
+        flowStatus="active"
         onForget={vi.fn()}
       />,
     );

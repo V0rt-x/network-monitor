@@ -1,7 +1,17 @@
+import type { TransportView } from '../../shared/ipc';
+
 /** One line on an application's chart. */
 export interface ChartLine {
   /** The endpoint it belongs to. Two lines can share this — see `isPath`. */
   readonly endpoint: string;
+  /**
+   * How the application reaches the endpoint.
+   *
+   * The chart follows the page's emphasis: the match traffic is drawn at full weight and the
+   * supporting connections lighter. It is emphasis and not a verdict — the worst-first list
+   * remains the only authority on health.
+   */
+  readonly transport: TransportView;
   /** What the line is called in the chart's own legend. */
   readonly label: string;
   /** Milliseconds in each slot; `null` is a gap and is never drawn across. */

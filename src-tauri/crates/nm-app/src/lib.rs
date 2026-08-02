@@ -52,9 +52,9 @@ pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth, ServiceStatus};
 pub use shell::TrayLabels;
 pub use view::{
     AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
-    CheckMarkView, CheckView, EndpointView, FlowStatusView, FlowView, GroupView, HealthCountsView,
-    HealthView, LivenessView, PassiveRttView, ProbeKindView, ProbingView, ServiceEndpointView,
-    ServiceView, TargetView, TransportView, SERIES_POINTS,
+    CheckMarkView, CheckView, EndpointGroupView, EndpointView, FlowStatusView, FlowView, GroupView,
+    HealthCountsView, HealthView, LivenessView, PassiveRttView, ProbeKindView, ProbingView,
+    ServiceEndpointView, ServiceView, TargetView, TransportView, SERIES_POINTS,
 };
 
 use std::path::PathBuf;

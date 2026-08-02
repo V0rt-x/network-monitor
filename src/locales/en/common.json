@@ -134,6 +134,18 @@
       "tcp": "TCP",
       "udp": "UDP"
     },
+    "distribution": {
+      "application": "Endpoint states across this application",
+      "group": "Endpoint states in {{group}}"
+    },
+    "group": {
+      "udp": "Match traffic",
+      "udpHint": "The connections a game actually plays over",
+      "udpEmpty": "No match traffic discovered yet — nothing of this kind has been seen leaving this application.",
+      "udpUnobservable": "Match traffic cannot be discovered on this machine: per-process flow events are not running, so these connections are invisible to the app. The note above the applications says what to do about it.",
+      "tcp": "Supporting connections",
+      "tcpHint": "Sign-in, launchers, content networks and telemetry — not where the game is played, and still where being blocked stops you playing"
+    },
     "liveness": {
       "active": "In use",
       "idle": "Idle"

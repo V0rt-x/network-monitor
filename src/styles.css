@@ -580,13 +580,49 @@ body {
   border: 0;
 }
 
-.nm-appcard__distribution {
+.nm-distribution {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   list-style: none;
-  margin: 0.85rem 0 0;
+  margin: 0;
   padding: 0;
+}
+
+.nm-appcard__distribution {
+  margin: 0.85rem 0 0;
+}
+
+/* The match traffic first, the supporting connections below and folded when they are all
+   clean. A group is a section rather than a filter: nothing is removed from the page. */
+.nm-endpointgroup {
+  margin: 1.1rem 0 0;
+}
+
+.nm-endpointgroup__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+details.nm-endpointgroup > summary {
+  cursor: pointer;
+}
+
+.nm-endpointgroup__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.nm-endpointgroup__hint {
+  color: var(--nm-muted);
+  font-size: 0.8rem;
+}
+
+.nm-distribution--inline {
+  margin-left: auto;
 }
 
 .nm-appcard__endpoints {

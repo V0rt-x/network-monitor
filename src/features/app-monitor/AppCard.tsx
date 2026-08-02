@@ -1,14 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { formatCount } from '../../shared/format';
-import type { AppView } from '../../shared/ipc';
+import type { AppView, FlowStatusView } from '../../shared/ipc';
 import { VerdictBanner } from '../../shared/VerdictBanner';
-import { healthModifier } from '../dashboard/labels';
 import type { ChartLine } from './chartSeries';
+import { Distribution } from './Distribution';
 import { EndpointChart } from './EndpointChart';
 import { EndpointColours } from './endpointColours';
-import { EndpointRow } from './EndpointRow';
+import { EndpointGroup } from './EndpointGroup';
 import { PoolPanel } from './PoolPanel';
 
 interface AppCardProps {
@@ -17,18 +16,10 @@ interface AppCardProps {
   readonly trafficWindowSecs: number;
   /** How much time one slot of the chart covers, so the note can say what a point is. */
   readonly chartStepSecs: number;
+  /** Whether per-process flow events are running, which decides why a UDP group is empty. */
+  readonly flowStatus: FlowStatusView;
   readonly onForget: (app: number) => void;
 }
-
-/** Which counts are worth showing, and in what order of severity. */
-const DISTRIBUTION = [
-  { key: 'unreachable', labelKey: 'dashboard.health.unreachable' },
-  { key: 'degraded', labelKey: 'dashboard.health.degraded' },
-  { key: 'blocked', labelKey: 'dashboard.health.blocked' },
-  { key: 'carryingTraffic', labelKey: 'dashboard.health.carryingTraffic' },
-  { key: 'ok', labelKey: 'dashboard.health.ok' },
-  { key: 'unknown', labelKey: 'dashboard.health.unknown' },
-] as const;
 
 /**
  * One monitored application: every endpoint on one chart, and the same endpoints in a list
@@ -51,9 +42,14 @@ const DISTRIBUTION = [
  * does focusing or activating a row, which is how the same thing is reached without a mouse.
  * Nothing about health is expressed by the chart alone.
  */
-export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: AppCardProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+export const AppCard = ({
+  app,
+  trafficWindowSecs,
+  chartStepSecs,
+  flowStatus,
+  onForget,
+}: AppCardProps) => {
+  const { t } = useTranslation();
 
   // Pinned by a click or by activating a row; cleared by picking it again.
   const [pinned, setPinned] = useState<string | null>(null);
@@ -64,19 +60,20 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
   // every line would change colour once a second.
   const colours = useRef(new EndpointColours());
 
-  const counts = DISTRIBUTION.map((entry) => ({
-    ...entry,
-    value: app.counts[entry.key],
-  })).filter((entry) => entry.value > 0);
+  // The chart draws every endpoint of the application, groups or no groups: "which of these
+  // is the odd one out" is a question about all of them at once. The grouping reaches it as
+  // emphasis — the match traffic at full weight — and never as an omission.
+  const endpoints = useMemo(() => app.groups.flatMap((group) => group.endpoints), [app.groups]);
 
   const lines = useMemo(() => {
-    colours.current.reconcile(app.endpoints.map((endpoint) => endpoint.key));
+    colours.current.reconcile(endpoints.map((endpoint) => endpoint.key));
     const drawn: ChartLine[] = [];
-    for (const endpoint of app.endpoints) {
+    for (const endpoint of endpoints) {
       const colour = colours.current.of(endpoint.key);
       if (endpoint.chartRttMs.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
+          transport: endpoint.transport,
           label: endpoint.address,
           values: endpoint.chartRttMs,
           colour,
@@ -89,6 +86,7 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
       if (endpoint.chartPathMs.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
+          transport: endpoint.transport,
           label: t('apps.chart.pathSeries', { endpoint: endpoint.address }),
           values: endpoint.chartPathMs,
           colour,
@@ -97,7 +95,7 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
       }
     }
     return drawn;
-  }, [app.endpoints, t]);
+  }, [endpoints, t]);
 
   return (
     <section className="nm-appcard">
@@ -130,18 +128,11 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
       <VerdictBanner diagnosis={app.diagnosis} subject={app.name} />
       <PoolPanel pool={app.pool} />
 
-      {counts.length > 0 && (
-        <ul className="nm-appcard__distribution">
-          {counts.map((entry) => (
-            <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
-              {t('dashboard.distributionEntry', {
-                amount: formatCount(entry.value, locale),
-                state: t(entry.labelKey),
-              })}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Distribution
+        counts={app.counts}
+        label={t('apps.distribution.application')}
+        className="nm-appcard__distribution"
+      />
 
       {lines.length > 0 && (
         <>
@@ -159,27 +150,23 @@ export const AppCard = ({ app, trafficWindowSecs, chartStepSecs, onForget }: App
         </>
       )}
 
-      {app.endpoints.length === 0 ? (
-        <p className="nm-state--pending">{t('apps.noEndpoints')}</p>
-      ) : (
-        <ul className="nm-appcard__endpoints">
-          {app.endpoints.map((endpoint) => (
-            <EndpointRow
-              key={endpoint.key}
-              endpoint={endpoint}
-              trafficWindowSecs={trafficWindowSecs}
-              colour={colours.current.of(endpoint.key)}
-              raised={highlighted === endpoint.key}
-              dimmed={highlighted !== null && highlighted !== endpoint.key}
-              pinned={pinned === endpoint.key}
-              onPin={() => {
-                setPinned((current) => (current === endpoint.key ? null : endpoint.key));
-              }}
-              onHover={setHovered}
-            />
-          ))}
-        </ul>
-      )}
+      {endpoints.length === 0 && <p className="nm-state--pending">{t('apps.noEndpoints')}</p>}
+
+      {app.groups.map((group) => (
+        <EndpointGroup
+          key={group.transport}
+          group={group}
+          flowStatus={flowStatus}
+          trafficWindowSecs={trafficWindowSecs}
+          colourOf={(endpoint) => colours.current.of(endpoint)}
+          highlighted={highlighted}
+          pinned={pinned}
+          onPin={(endpoint) => {
+            setPinned((current) => (current === endpoint ? null : endpoint));
+          }}
+          onHover={setHovered}
+        />
+      ))}
     </section>
   );
 };

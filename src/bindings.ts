@@ -172,8 +172,16 @@ export type AppView = {
 	 *  the odd one out". Every endpoint's `chartRttMs` and `chartPathMs` are aligned to it.
 	 */
 	chartAgeSecs: (number | null)[],
-	/**  Its endpoints, worst first. */
-	endpoints: EndpointView[],
+	/**
+	 *  Its endpoints, grouped by transport — the match traffic first — and worst first
+	 *  within each group.
+	 * 
+	 *  Always both groups, in that order, even when one is empty. An empty match-traffic
+	 *  group is a state the page has to explain rather than omit: without the one-time
+	 *  tracing setup there are no UDP endpoints at all, and a missing group would read as a
+	 *  game that plays over nothing.
+	 */
+	groups: EndpointGroupView[],
 };
 
 /**
@@ -321,6 +329,41 @@ export type DiagnosisView = {
 	endpointsAffected: number,
 	/**  How many endpoints the application has in total. */
 	endpointsTotal: number,
+};
+
+/**
+ *  One transport's worth of an application's endpoints.
+ * 
+ *  **The match traffic first, the supporting connections below.** During a game the
+ *  endpoints that decide whether it plays well are the UDP flows; a launcher's connection, a
+ *  content network and a telemetry host are the company they keep. Ordered by severity alone
+ *  they interleave, and the endpoint the user came to look at sits wherever its health
+ *  happened to put it.
+ * 
+ *  Grouping is by transport and nothing else — no endpoint is labelled by role, because
+ *  everything except the transport and the traffic volume would be a guess, and a wrong
+ *  label on the right number is worse than no label.
+ * 
+ *  **TCP is demoted, never hidden.** A blocked or throttled TCP endpoint is a first-class
+ *  finding: a login service or a content network with a filter on it is exactly what "I
+ *  cannot get into the game" looks like. The group carries its own distribution so that a
+ *  member worse than `Ok` is visible before anything is unfolded.
+ */
+export type EndpointGroupView = {
+	/**  Which transport this group holds. */
+	transport: TransportView,
+	/**  How many of its members are in each state. */
+	counts: HealthCountsView,
+	/**
+	 *  Whether anything in it is worse than `Ok`.
+	 * 
+	 *  Sent rather than derived in TypeScript: whether a group may stay folded is a
+	 *  judgement about what the user must not miss, and every judgement in this product
+	 *  lives in Rust where it is tested.
+	 */
+	needsAttention: boolean,
+	/**  Its members, worst first. */
+	endpoints: EndpointView[],
 };
 
 /**

@@ -5,6 +5,7 @@ import { alignSeries, formatAxisMs, LOG_FLOOR_MS } from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
+  transport: 'udp',
   label: '1.1.1.1:27015',
   values,
   colour: '#58a6ff',

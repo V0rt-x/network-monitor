@@ -995,6 +995,75 @@ const fn severity(health: HealthView) -> u8 {
     }
 }
 
+/// One transport's worth of an application's endpoints.
+///
+/// **The match traffic first, the supporting connections below.** During a game the
+/// endpoints that decide whether it plays well are the UDP flows; a launcher's connection, a
+/// content network and a telemetry host are the company they keep. Ordered by severity alone
+/// they interleave, and the endpoint the user came to look at sits wherever its health
+/// happened to put it.
+///
+/// Grouping is by transport and nothing else — no endpoint is labelled by role, because
+/// everything except the transport and the traffic volume would be a guess, and a wrong
+/// label on the right number is worse than no label.
+///
+/// **TCP is demoted, never hidden.** A blocked or throttled TCP endpoint is a first-class
+/// finding: a login service or a content network with a filter on it is exactly what "I
+/// cannot get into the game" looks like. The group carries its own distribution so that a
+/// member worse than `Ok` is visible before anything is unfolded.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EndpointGroupView {
+    /// Which transport this group holds.
+    pub transport: TransportView,
+    /// How many of its members are in each state.
+    pub counts: HealthCountsView,
+    /// Whether anything in it is worse than `Ok`.
+    ///
+    /// Sent rather than derived in TypeScript: whether a group may stay folded is a
+    /// judgement about what the user must not miss, and every judgement in this product
+    /// lives in Rust where it is tested.
+    pub needs_attention: bool,
+    /// Its members, worst first.
+    pub endpoints: Vec<EndpointView>,
+}
+
+impl EndpointGroupView {
+    /// Collects the endpoints of one transport, worst first.
+    fn of(transport: TransportView, endpoints: Vec<EndpointView>) -> Self {
+        let mut counts = HealthCounts::default();
+        for endpoint in &endpoints {
+            counts.record(health_of(endpoint.health));
+        }
+        let needs_attention = endpoints
+            .iter()
+            .any(|endpoint| endpoint.health != HealthView::Ok);
+        Self {
+            transport,
+            counts: counts.into(),
+            needs_attention,
+            endpoints,
+        }
+    }
+}
+
+/// The core state a view state came from, so one distribution can be counted from views.
+///
+/// `HealthCounts` is the core's own tally and the only implementation of "how many are in
+/// each state"; a second copy over `HealthView` would be the same arithmetic drifting
+/// separately. [`HealthView::Unknown`] stands for anything the core grew that this build has
+/// no word for, which is what the conversion above already decided.
+const fn health_of(view: HealthView) -> Health {
+    match view {
+        HealthView::Ok => Health::Ok,
+        HealthView::Degraded => Health::Degraded,
+        HealthView::Unreachable => Health::Unreachable,
+        HealthView::Blocked => Health::Blocked,
+        HealthView::CarryingTraffic => Health::CarryingTraffic,
+        HealthView::Unknown => Health::Unknown,
+    }
+}
+
 /// One process an application currently consists of.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -1050,8 +1119,14 @@ pub struct AppView {
     /// "how is this endpoint" and the question the user actually has is "which of these is
     /// the odd one out". Every endpoint's `chartRttMs` and `chartPathMs` are aligned to it.
     pub chart_age_secs: Vec<f64>,
-    /// Its endpoints, worst first.
-    pub endpoints: Vec<EndpointView>,
+    /// Its endpoints, grouped by transport — the match traffic first — and worst first
+    /// within each group.
+    ///
+    /// Always both groups, in that order, even when one is empty. An empty match-traffic
+    /// group is a state the page has to explain rather than omit: without the one-time
+    /// tracing setup there are no UDP endpoints at all, and a missing group would read as a
+    /// game that plays over nothing.
+    pub groups: Vec<EndpointGroupView>,
 }
 
 impl AppView {
@@ -1094,6 +1169,11 @@ impl AppView {
                 .cmp(&severity(right.health))
                 .then_with(|| left.key.cmp(&right.key))
         });
+        // Partitioned after sorting, so each group keeps the one severity order rather than
+        // being sorted twice by two copies of the same rule.
+        let (udp, tcp): (Vec<EndpointView>, Vec<EndpointView>) = endpoints
+            .into_iter()
+            .partition(|endpoint| endpoint.transport == TransportView::Udp);
 
         Self {
             id,
@@ -1103,7 +1183,10 @@ impl AppView {
             diagnosis: diagnosis.into(),
             pool: pool.map(|(seeded, learned, reading)| PoolView::of(seeded, learned, &reading)),
             chart_age_secs,
-            endpoints,
+            groups: vec![
+                EndpointGroupView::of(TransportView::Udp, udp),
+                EndpointGroupView::of(TransportView::Tcp, tcp),
+            ],
         }
     }
 }
