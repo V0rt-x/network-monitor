@@ -414,6 +414,33 @@ body {
   font-size: 0.8rem;
 }
 
+/*
+ * The escape hatch beside the search, and the count of what it would reveal.
+ *
+ * The count is shown rather than implied: a user who cannot find their game has to be able
+ * to tell "this app cannot see it" from "the filter is hiding it", and only one of those is
+ * true.
+ */
+.nm-picker__scope {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.nm-picker__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.nm-picker__hidden {
+  color: var(--nm-muted);
+  font-size: 0.75rem;
+}
+
 .nm-picker__search {
   display: flex;
   flex-direction: column;

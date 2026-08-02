@@ -289,6 +289,18 @@ pub struct Candidate {
     /// inspect is one they cannot correct — and a proper noun that turns out to name the
     /// wrong program is worse than a file name that names the right one.
     pub executable: String,
+    /// Whether anything the app ships knows a name for it, as against showing a file name.
+    ///
+    /// A machine runs several hundred processes and a handful of them are things anyone
+    /// would watch, so the picker offers the ones with a name and puts the rest behind a
+    /// toggle. **This is a fact about the bundled lists, not a claim about the program**: a
+    /// title too new for the catalogue, a regional client or anything Discord's index never
+    /// indexed is unnamed and perfectly watchable, which is exactly why the toggle is not
+    /// optional and why the count of what is hidden is shown rather than implied.
+    ///
+    /// It can never become a grouping by the back door: a catalogue entry supplies a label
+    /// and nothing else, and the key above is computed before this is consulted.
+    pub named: bool,
     /// The process to form the application around, if the user chooses it.
     pub seed: Pid,
     /// The processes it is offered as, in identifier order.
@@ -322,10 +334,9 @@ pub fn candidates(presets: &PresetList, snapshot: &[ProcessInfo]) -> Vec<Candida
         let key = presets
             .matching(&process.name)
             .map_or_else(|| process.name.to_lowercase(), |preset| preset.id.clone());
-        let label = presets
-            .label_of(&process.name)
-            .unwrap_or(&process.name)
-            .to_owned();
+        let known = presets.label_of(&process.name);
+        let label = known.unwrap_or(&process.name).to_owned();
+        let named = known.is_some();
 
         if let Some(candidate) = index.get(&key).and_then(|at| found.get_mut(*at)) {
             candidate.processes.push(process.pid);
@@ -336,6 +347,7 @@ pub fn candidates(presets: &PresetList, snapshot: &[ProcessInfo]) -> Vec<Candida
             key,
             label,
             executable: process.name.clone(),
+            named,
             seed: process.pid,
             processes: vec![process.pid],
         });

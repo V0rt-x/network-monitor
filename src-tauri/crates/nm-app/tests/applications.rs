@@ -501,6 +501,65 @@ fn a_preset_is_offered_under_its_own_name_once() {
 }
 
 #[test]
+fn an_offer_says_whether_anything_bundled_knows_a_name_for_it() {
+    // What the picker filters on, so that it opens on a list a person can read rather than
+    // on several hundred rows of task manager. It is a fact about the bundled lists and
+    // never a claim about the program — an unnamed offer is perfectly watchable, which is
+    // why the picker's toggle is not optional.
+    let presets = PresetList::parse(
+        r#"{
+            "schemaVersion": 1,
+            "applications": [
+                { "id": "example-game", "label": "Example Game", "executables": ["game.exe"] }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let snapshot = vec![
+        process(100, "game.exe", Some(4)),
+        process(200, "some-service.exe", Some(4)),
+    ];
+
+    let offers = candidates(&presets, &snapshot);
+
+    let named: Vec<(&str, bool)> = offers
+        .iter()
+        .map(|offer| (offer.label.as_str(), offer.named))
+        .collect();
+    assert_eq!(
+        named,
+        vec![("Example Game", true), ("some-service.exe", false)]
+    );
+}
+
+#[test]
+fn naming_an_executable_never_groups_it() {
+    // The rule Phase 6.5 established, and the one the picker's filter could quietly break:
+    // a name is a label and never a grouping. Two differently-named executables stay two
+    // offers even when both are named.
+    let presets = PresetList::parse(
+        r#"{
+            "schemaVersion": 1,
+            "applications": [],
+            "labels": [
+                { "id": "store", "label": "Store", "executable": "store.exe" },
+                { "id": "helper", "label": "Store Helper", "executable": "storehelper.exe" }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let snapshot = vec![
+        process(100, "store.exe", Some(4)),
+        process(200, "storehelper.exe", Some(4)),
+    ];
+
+    let offers = candidates(&presets, &snapshot);
+
+    assert_eq!(offers.len(), 2);
+    assert!(offers.iter().all(|offer| offer.named));
+}
+
+#[test]
 fn an_offer_is_seeded_from_the_process_whose_parent_is_not_one_of_its_own() {
     // The main process of a helpered application: the one whose children are worth
     // adopting when the user commits to watching it.

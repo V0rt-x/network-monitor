@@ -156,10 +156,33 @@ describe('AppMonitorPage', () => {
     // An application adopts its namesakes and its children, so the picker has to answer
     // "is this taken" for processes the user never clicked.
     fetchApplications.mockResolvedValue({
+      // Named, so the picker's default filter offers all three: what this test is about is
+      // which of them the monitor has already claimed.
       applications: [
-        { key: 'game.exe', label: 'game.exe', seedPid: 4242, pids: [4242] },
-        { key: 'title.exe', label: 'title.exe', seedPid: 4300, pids: [4300] },
-        { key: 'unrelated.exe', label: 'unrelated.exe', seedPid: 900, pids: [900] },
+        {
+          key: 'game.exe',
+          label: 'game.exe',
+          executable: 'game.exe',
+          named: true,
+          seedPid: 4242,
+          pids: [4242],
+        },
+        {
+          key: 'title.exe',
+          label: 'title.exe',
+          executable: 'title.exe',
+          named: true,
+          seedPid: 4300,
+          pids: [4300],
+        },
+        {
+          key: 'unrelated.exe',
+          label: 'unrelated.exe',
+          executable: 'unrelated.exe',
+          named: true,
+          seedPid: 900,
+          pids: [900],
+        },
       ],
       problem: null,
     });

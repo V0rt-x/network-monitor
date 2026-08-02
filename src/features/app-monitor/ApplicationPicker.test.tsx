@@ -18,14 +18,25 @@ const listing = (overrides: Partial<ApplicationListView> = {}): ApplicationListV
       key: 'discord',
       label: 'Discord',
       executable: 'Discord.exe',
+      named: true,
       seedPid: 100,
       pids: [100, 101, 102, 103, 104, 105],
     },
-    { key: 'game.exe', label: 'game.exe', executable: 'game.exe', seedPid: 200, pids: [200] },
+    {
+      key: 'example-game',
+      label: 'Example Game',
+      executable: 'game.exe',
+      named: true,
+      seedPid: 200,
+      pids: [200],
+    },
+    // Nothing bundled knows a name for it, so the picker hides it behind the toggle: this
+    // is the row that made the list read like a task manager.
     {
       key: 'svchost.exe',
       label: 'svchost.exe',
       executable: 'svchost.exe',
+      named: false,
       seedPid: 300,
       pids: [300, 301],
     },
@@ -55,13 +66,51 @@ describe('ApplicationPicker', () => {
 
   it('shows the executable beside a name that came from the bundled list', async () => {
     // A name is a claim about which program this is. A user who cannot see what it was
-    // matched against cannot tell a right name on the wrong program from a right one — and
-    // where the label *is* the file name, repeating it would be noise.
+    // matched against cannot tell a right name on the wrong program from a right one.
     render(picker());
 
     expect(await screen.findByText('Discord')).toBeInTheDocument();
     expect(screen.getByText('Discord.exe')).toBeInTheDocument();
-    expect(screen.getAllByText('game.exe')).toHaveLength(1);
+    expect(screen.getByText('Example Game')).toBeInTheDocument();
+    expect(screen.getByText('game.exe')).toBeInTheDocument();
+  });
+
+  it('opens on the applications it can name, and says how many it is hiding', async () => {
+    // A machine runs several hundred processes and a handful of them are things anyone
+    // would watch. The count is shown rather than implied, because a user who cannot find
+    // their game has to be able to tell "this app cannot see it" from "the filter hid it".
+    render(picker());
+    await screen.findByText('Discord');
+
+    expect(screen.queryByText('svchost.exe')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('1 process hidden — nothing here knows a name for it'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows everything running when asked, and it is one click', async () => {
+    // Not optional. The bundled catalogue is large and not complete: a title too new for
+    // it, a regional client, or anything Discord's index never indexed would otherwise be
+    // unwatchable, and "the app cannot see my game" is worse than a long list.
+    render(picker());
+    await screen.findByText('Discord');
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Show everything running' }));
+
+    // Once, as its own row — where the label *is* the file name, repeating it beside itself
+    // would be noise.
+    expect(screen.getAllByText('svchost.exe')).toHaveLength(1);
+    expect(screen.queryByText(/process(es)? hidden/)).not.toBeInTheDocument();
+  });
+
+  it('searches the file name too, so knowing the executable is enough', async () => {
+    render(picker());
+    await screen.findByText('Discord');
+
+    await userEvent.type(screen.getByRole('searchbox'), 'game.exe');
+
+    expect(screen.getByText('Example Game')).toBeInTheDocument();
+    expect(screen.queryByText('Discord')).not.toBeInTheDocument();
   });
 
   it('offers applications rather than a row per process', async () => {
@@ -81,7 +130,7 @@ describe('ApplicationPicker', () => {
     await screen.findByText('Discord');
 
     expect(screen.getByText('PID 200')).toBeInTheDocument();
-    expect(screen.getByText('2 processes')).toBeInTheDocument();
+    expect(screen.getByText('6 processes')).toBeInTheDocument();
   });
 
   it('filters by name as the user searches', async () => {
@@ -114,7 +163,7 @@ describe('ApplicationPicker', () => {
     await screen.findByText('Discord');
 
     expect(screen.getByText('Part of Discord')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Monitor' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Monitor' })).toHaveLength(1);
   });
 
   it('stops the application rather than the process', async () => {
@@ -175,12 +224,26 @@ describe('ApplicationPicker', () => {
   });
 
   it('says a search matched nothing rather than looking broken', async () => {
+    // With everything showing there is nothing left to look behind, so the plain answer is
+    // the honest one.
     render(picker());
     await screen.findByText('Discord');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Show everything running' }));
 
     await userEvent.type(screen.getByRole('searchbox'), 'nothing-like-this');
 
     expect(screen.getByText('No application matches that name')).toBeInTheDocument();
+  });
+
+  it('never answers "no match" when the filter is why', async () => {
+    // The failure the toggle exists to prevent, one step further on: a user searching for a
+    // game the catalogue has never heard of must not conclude the app cannot see it.
+    render(picker());
+    await screen.findByText('Discord');
+
+    await userEvent.type(screen.getByRole('searchbox'), 'svchost');
+
+    expect(screen.getByText(/Turn on .Show everything running./)).toBeInTheDocument();
   });
 
   it('re-reads the list when asked, rather than polling for it', async () => {

@@ -61,6 +61,9 @@ export const ApplicationPicker = ({
   const locale = i18n.language;
   const { state, refresh } = useApplicationList();
   const [search, setSearch] = useState('');
+  // Off by default: a machine runs several hundred processes and a handful of them are
+  // things anyone would watch. It is not optional, though — see the count below it.
+  const [showAll, setShowAll] = useState(false);
 
   // Memoized rather than read inline so the filter below does not re-run on every render
   // of an unchanged list — this component re-renders on every keystroke.
@@ -68,14 +71,26 @@ export const ApplicationPicker = ({
     () => (state.kind === 'listed' ? state.list.applications : []),
     [state],
   );
+  // Rust decides which offers have a name; this only chooses whether to render the rest.
+  const offered = useMemo(
+    () => (showAll ? applications : applications.filter((application) => application.named)),
+    [applications, showAll],
+  );
+  const hidden = applications.length - offered.length;
   const matches = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const found =
       needle === ''
-        ? applications
-        : applications.filter((application) => application.label.toLowerCase().includes(needle));
+        ? offered
+        : offered.filter(
+            (application) =>
+              application.label.toLowerCase().includes(needle) ||
+              // The file name too: a user who knows what the executable is called finds it
+              // without having to turn the filter off first.
+              application.executable.toLowerCase().includes(needle),
+          );
     return found.slice(0, SHOWN);
-  }, [applications, search]);
+  }, [offered, search]);
 
   const full = count >= limit;
 
@@ -101,6 +116,29 @@ export const ApplicationPicker = ({
       </header>
 
       <p className="nm-picker__hint">{t('apps.picker.hint', { limit })}</p>
+
+      {/* The escape hatch, and it is not optional. The bundled catalogue is large and not
+          complete: a title too new for it, a regional client, or anything Discord's index
+          never indexed would otherwise be unwatchable, and "the app cannot see my game" is
+          a worse failure than a long list. The count of what is hidden is shown rather than
+          implied, so nobody has to guess whether the filter is why they cannot find it. */}
+      <div className="nm-picker__scope">
+        <label className="nm-picker__toggle">
+          <input
+            type="checkbox"
+            checked={showAll}
+            onChange={(event) => {
+              setShowAll(event.target.checked);
+            }}
+          />
+          <span>{t('apps.picker.showAll')}</span>
+        </label>
+        {!showAll && hidden > 0 && (
+          <span className="nm-picker__hidden">
+            {t('apps.picker.hidden', { count: hidden, formatted: formatCount(hidden, locale) })}
+          </span>
+        )}
+      </div>
 
       <label className="nm-picker__search">
         <span>{t('apps.picker.searchLabel')}</span>
@@ -128,8 +166,13 @@ export const ApplicationPicker = ({
         </p>
       )}
 
+      {/* "No match" must not be the answer when the filter is why: a user searching for a
+          game the catalogue has never heard of would otherwise conclude the app cannot see
+          it, which is precisely the failure the toggle exists to prevent. */}
       {state.kind === 'listed' && state.list.problem === null && matches.length === 0 && (
-        <p className="nm-state--pending">{t('apps.picker.noMatches')}</p>
+        <p className="nm-state--pending">
+          {!showAll && hidden > 0 ? t('apps.picker.noMatchesFiltered') : t('apps.picker.noMatches')}
+        </p>
       )}
 
       <ul className="nm-picker__list">

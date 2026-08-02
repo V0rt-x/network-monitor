@@ -1294,6 +1294,15 @@ pub struct ApplicationChoiceView {
     /// claim about which program this is, and a user who cannot see what it was matched
     /// against cannot tell a right name on the wrong program from a right one.
     pub executable: String,
+    /// Whether the label came from the bundled lists rather than being the file name.
+    ///
+    /// The picker offers the named ones and puts the rest behind a toggle: a machine runs
+    /// several hundred processes and a handful of them are things anyone would watch, so an
+    /// unfiltered list reads like a task manager. It is a fact about what the app ships and
+    /// never a claim about the program — a title too new for the bundled catalogue is
+    /// perfectly watchable, which is why the toggle is not optional and why the page states
+    /// how many rows it is hiding rather than implying it.
+    pub named: bool,
     /// The process monitoring would be seeded from.
     ///
     /// Crosses the boundary because that is what `monitor_app` takes; it is never shown as

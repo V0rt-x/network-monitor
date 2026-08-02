@@ -1670,7 +1670,7 @@ dash.
       compile error rather than a blank pane. The help tab is **Help** with "What the numbers
       mean" as the page's subtitle; the anchors are untouched, so every "Learn more" still
       lands where it did.
-- [ ] **6. The picker offers only applications the app can name.** *Sixth: a real ergonomic win
+- [x] **6. The picker offers only applications the app can name.** *Sixth: a real ergonomic win
       with a real risk, which is why it sits behind the items that cannot hide anything.*
       The picker lists every running process grouped by executable name, so it reads like a
       task manager — hundreds of rows, of which a handful are things anyone would watch.
@@ -1689,6 +1689,19 @@ dash.
         by the back door.
       – Search still searches the executable name, so a user who knows the file name finds it
         with the toggle off.
+      — `Candidate.named` is the predicate, decided in `applications::candidates` from
+      `label_of` and carried to the picker as `ApplicationChoiceView.named`. **A fact about
+      the bundled lists, never a claim about the program**, and it cannot become a grouping by
+      the back door: the offer's key is computed before the name is consulted, and a test
+      asserts two differently-named executables stay two offers.
+      The escape hatch is a checkbox beside the search, off by default, **with the hidden
+      count stated rather than implied** — a user who cannot find their game has to be able to
+      tell "this app cannot see it" from "the filter hid it".
+      One thing the item did not ask for and the build needed: **"no application matches that
+      name" must not be the answer when the filter is why.** Searching for a hidden process
+      would otherwise return the flat refusal, which is exactly the conclusion the toggle
+      exists to prevent; the message now points at the toggle instead, and a test pins it.
+      Search matches the executable as well as the label, so knowing the file name is enough.
 - [ ] **7. Age in the connection's header, and the honest word for it.** *Seventh: new
       information rather than a correction, and the user asked for it in exactly those terms —
       "how long it has been established, or failing that how long we have been watching it".*

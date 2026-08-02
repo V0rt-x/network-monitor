@@ -209,6 +209,7 @@ pub fn list_applications() -> ApplicationListView {
             key: candidate.key,
             label: candidate.label,
             executable: candidate.executable,
+            named: candidate.named,
             seed_pid: candidate.seed.get(),
             pids: candidate.processes.iter().map(|pid| pid.get()).collect(),
         })

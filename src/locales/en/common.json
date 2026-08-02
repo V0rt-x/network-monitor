@@ -129,13 +129,17 @@
       "processes": "{{count}} process",
       "processes_other": "{{count}} processes",
       "searchLabel": "Search",
-      "searchPlaceholder": "Filter by name",
+      "searchPlaceholder": "Filter by name or file name",
       "refresh": "Refresh",
+      "showAll": "Show everything running",
+      "hidden_one": "{{formatted}} process hidden — nothing here knows a name for it",
+      "hidden_other": "{{formatted}} processes hidden — nothing here knows a name for them",
       "loading": "Reading the application list…",
       "unavailable": "The application list could not be requested",
       "unsupportedPlatform": "This build cannot list applications on this operating system",
       "refused": "The system refused to list running processes",
       "noMatches": "No application matches that name",
+      "noMatchesFiltered": "No named application matches that. Turn on “Show everything running” to search every process.",
       "more": "Showing {{shown}} of {{total}} applications — narrow the search to see the rest"
     },
     "transport": {
