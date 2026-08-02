@@ -25,6 +25,22 @@ export const serviceGroupHintKey = (group: ServiceGroup) => {
   }
 };
 
+/**
+ * Every state a cell can be in, in the order the legend names them.
+ *
+ * Worst to best rather than in the enum's order: a reader scanning the legend for the colour
+ * they can see on a card is looking for a problem, not for the colour of "answered".
+ * Exhaustive by construction — the `satisfies` makes a new Rust variant a compile error
+ * here, so a state can never reach the page without a place in the legend that explains it.
+ */
+export const CHECK_MARKS = [
+  'lost',
+  'filtered',
+  'refused',
+  'slow',
+  'answered',
+] as const satisfies readonly CheckMarkView[];
+
 export const checkMarkKey = (mark: CheckMarkView) => {
   switch (mark) {
     case 'answered':
@@ -43,8 +59,9 @@ export const checkMarkKey = (mark: CheckMarkView) => {
 /**
  * CSS modifier for one check on the timeline.
  *
- * Colour is a second channel and never the only one: every cell also carries its translated
- * word as a title and the strip has a text summary beside it, so the page stays readable
- * without colour vision.
+ * Colour is a second channel and never the only one: every cell carries its translated word
+ * for a screen reader, pointing at one or arrowing through the strip writes that word out
+ * under it, and the page's legend names all five states beside their colours. A reader who
+ * sees neither green nor red loses nothing.
  */
 export const checkModifier = (mark: CheckMarkView) => `nm-check--${mark}` as const;

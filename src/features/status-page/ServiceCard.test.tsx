@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import '../../i18n';
@@ -39,7 +40,7 @@ const service = (overrides: Partial<ServiceView> = {}): ServiceView => ({
 
 describe('ServiceCard', () => {
   it('names the service, its verdict and when it was last checked', () => {
-    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
+    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
 
     expect(screen.getByRole('heading', { name: 'Steam' })).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
@@ -51,6 +52,7 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ verdict: 'unknown', rttMs: null, lastCheckedSecs: null })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -63,7 +65,11 @@ describe('ServiceCard', () => {
     // A status page whose data quietly stopped looks exactly like one reporting calm, so
     // the age has to become a warning rather than just a larger number.
     const { container } = render(
-      <ServiceCard service={service({ lastCheckedSecs: 200 })} checkIntervalSecs={45} />,
+      <ServiceCard
+        service={service({ lastCheckedSecs: 200 })}
+        checkIntervalSecs={45}
+        windowSecs={1080}
+      />,
     );
 
     expect(container.querySelector('.nm-service__stale')).not.toBeNull();
@@ -72,7 +78,11 @@ describe('ServiceCard', () => {
 
   it('does not call a fresh check stale', () => {
     const { container } = render(
-      <ServiceCard service={service({ lastCheckedSecs: 44 })} checkIntervalSecs={45} />,
+      <ServiceCard
+        service={service({ lastCheckedSecs: 44 })}
+        checkIntervalSecs={45}
+        windowSecs={1080}
+      />,
     );
 
     expect(container.querySelector('.nm-service__stale')).toBeNull();
@@ -106,6 +116,7 @@ describe('ServiceCard', () => {
           ],
         })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -115,7 +126,7 @@ describe('ServiceCard', () => {
   });
 
   it('does not repeat the headline on the only endpoint underneath it', () => {
-    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
+    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
     expect(screen.getAllByText('OK')).toHaveLength(1);
   });
 
@@ -126,6 +137,7 @@ describe('ServiceCard', () => {
           endpoints: [endpoint({ checks: checks(['answered', 'lost', 'slow', 'filtered']) })],
         })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -140,11 +152,85 @@ describe('ServiceCard', () => {
     expect(within(strip).getByText('Probe filtered')).toBeInTheDocument();
   });
 
+  it('says what each figure is and over what, rather than leaving them to be guessed', () => {
+    // The complaint this answers: the card showed "Latest", "Mean", "Loss" and a bare
+    // number, with nothing saying what a check was, which round trip the headline meant, or
+    // what span the averages covered. "Latest" in particular invites the reader to average
+    // the strip beside it by eye, which is exactly the wrong reading.
+    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+
+    expect(screen.getByText('Ping, median')).toBeVisible();
+    expect(screen.getByText('Ping, last check')).toBeVisible();
+    expect(screen.getByText('Ping, mean (18 min)')).toBeVisible();
+    expect(screen.getByText('Loss (18 min)')).toBeVisible();
+  });
+
+  it('gives every figure on the card an explanation reachable without a mouse', () => {
+    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+
+    for (const figure of ['Ping, median', 'Ping, last check', 'Ping, mean', 'Loss']) {
+      expect(screen.getByRole('button', { name: `What ${figure} means` })).toBeInTheDocument();
+    }
+  });
+
+  it('reads out a cell that is pointed at, with when it happened', async () => {
+    render(
+      <ServiceCard
+        service={service({
+          endpoints: [endpoint({ checks: checks(['answered', 'lost', 'answered']) })],
+        })}
+        checkIntervalSecs={45}
+        windowSecs={1080}
+      />,
+    );
+
+    const strip = screen.getByRole('list', {
+      name: 'Recent checks of Steam at api.steampowered.com',
+    });
+    const [, middle] = within(strip).getAllByRole('listitem');
+    if (middle === undefined) throw new Error('the strip should have drawn three cells');
+    await userEvent.hover(middle);
+
+    // The middle cell of three, 45 s apart: one check back from the newest.
+    expect(screen.getByRole('status')).toHaveTextContent('Check 2 of 3 · No answer · 45 s ago');
+  });
+
+  it('lets the arrow keys walk the strip, with one tab stop for the whole of it', async () => {
+    // A tab stop per cell would put several hundred of them on a page of thirteen services,
+    // between a keyboard user and the next thing they wanted. The reading has to be
+    // reachable all the same — a title attribute is not.
+    render(
+      <ServiceCard
+        service={service({
+          endpoints: [endpoint({ checks: checks(['lost', 'slow', 'answered']) })],
+        })}
+        checkIntervalSecs={45}
+        windowSecs={1080}
+      />,
+    );
+
+    const strip = screen.getByRole('list', {
+      name: 'Recent checks of Steam at api.steampowered.com',
+    });
+    strip.focus();
+    expect(strip).toHaveFocus();
+
+    // Landing on the newest check, then stepping back through the older ones.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('status')).toHaveTextContent('Check 2 of 3 · Answered slowly');
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('status')).toHaveTextContent('Check 1 of 3 · No answer · 90 s ago');
+    // And it cannot be walked off the end.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('status')).toHaveTextContent('Check 1 of 3');
+  });
+
   it('says a service has not been checked yet instead of drawing an empty strip', () => {
     render(
       <ServiceCard
         service={service({ endpoints: [endpoint({ checks: [] })] })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -156,6 +242,7 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ tunnelled: true })] })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -167,6 +254,7 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ resolvedAddress: null, measurable: false })] })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 
@@ -178,6 +266,7 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ lossPct: null, rttMs: null })] })}
         checkIntervalSecs={45}
+        windowSecs={1080}
       />,
     );
 

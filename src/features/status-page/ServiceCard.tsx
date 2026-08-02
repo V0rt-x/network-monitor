@@ -2,12 +2,15 @@ import { useTranslation } from 'react-i18next';
 
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { formatCount, formatMs, formatPct, NO_VALUE } from '../../shared/format';
+import { MetricHelp } from '../help/MetricHelp';
 import type { ServiceEndpointView, ServiceView } from '../../shared/ipc';
 import { CheckTimeline } from './CheckTimeline';
 
 interface ServiceCardProps {
   readonly service: ServiceView;
   readonly checkIntervalSecs: number;
+  /** Span the mean and loss figures cover, so each can say what it is an average over. */
+  readonly windowSecs: number;
 }
 
 /** Which counts are worth showing, and in what order of severity. */
@@ -23,6 +26,8 @@ interface EndpointRowProps {
   readonly endpoint: ServiceEndpointView;
   readonly serviceLabel: string;
   readonly alone: boolean;
+  /** Minutes the mean and loss cover, stated on the figures themselves. */
+  readonly windowMins: number;
 }
 
 /**
@@ -31,8 +36,14 @@ interface EndpointRowProps {
  * The caveats are not decoration. A figure measured through a local tunnel is not a round
  * trip to the service; a name that never resolved is a finding rather than a blank; and
  * "we proved this probe kind is filtered" is a different claim from "this host is silent".
+ *
+ * **Every figure says what it is and over what.** *Latest* was one check labelled with a word
+ * that invited the reader to average the strip beside it by eye; it now says it is the last
+ * check, the mean and the loss carry the span they are taken over, and each of the three has
+ * an ⓘ. They are the same quantities the applications page shows, under the same names the
+ * rest of the networking world uses.
  */
-const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
+const EndpointRow = ({ endpoint, serviceLabel, alone, windowMins }: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
 
@@ -76,15 +87,24 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
 
       <dl className="nm-service__metrics">
         <div>
-          <dt>{t('status.metric.latest')}</dt>
+          <dt>
+            {t('status.metric.latest')}
+            <MetricHelp topic="latestCheck" />
+          </dt>
           <dd>{formatMs(endpoint.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('status.metric.mean')}</dt>
+          <dt>
+            {t('status.metric.mean', { minutes: windowMins })}
+            <MetricHelp topic="meanRtt" />
+          </dt>
           <dd>{formatMs(endpoint.meanRttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('status.metric.loss')}</dt>
+          <dt>
+            {t('status.metric.loss', { minutes: windowMins })}
+            <MetricHelp topic="loss" />
+          </dt>
           <dd>{formatPct(endpoint.lossPct, locale)}</dd>
         </div>
       </dl>
@@ -105,9 +125,10 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
  * disagree: a storefront answering while the gateway does not is the finding, and one
  * amber dot would hide which half is broken.
  */
-export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) => {
+export const ServiceCard = ({ service, checkIntervalSecs, windowSecs }: ServiceCardProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
+  const windowMins = Math.max(1, Math.round(windowSecs / 60));
 
   const counts = DISTRIBUTION.map((entry) => ({
     ...entry,
@@ -132,7 +153,14 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
         </span>
       </header>
 
+      {/* The headline figure used to be a bare number with nothing saying what it was —
+          which of the several round trips on this card, over what, across what. It is the
+          median across the endpoints that answered, and it says so. */}
       <p className="nm-service__meta">
+        <span className="nm-service__rttlabel">
+          {t('status.metric.median')}
+          <MetricHelp topic="serviceRtt" />
+        </span>
         <span className="nm-service__rtt">
           {service.rttMs === null ? NO_VALUE : formatMs(service.rttMs, locale)}
         </span>
@@ -159,6 +187,7 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
             endpoint={endpoint}
             serviceLabel={service.label}
             alone={service.endpoints.length === 1}
+            windowMins={windowMins}
           />
         ))}
       </ul>

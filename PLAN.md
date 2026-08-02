@@ -1562,7 +1562,7 @@ dash.
       Two tests pin the two halves in Rust — a chain still trying kinds against one that has
       run out — and two more in the page: the match-server row has no *Ping (RTT)* and says in
       one line why, and a row whose figures have not arrived yet keeps its three dashes.
-- [ ] **3. The status page must explain its own numbers and its cells.** *Third, because it is
+- [x] **3. The status page must explain its own numbers and its cells.** *Third, because it is
       the same defect as 1 and 2 on a page the user could not read at all: they asked what the
       figures and the coloured cells mean, which is a page failing at its one job.*
       Today a card shows *Latest*, *Mean*, *Loss* with no statement of what a check is, and a
@@ -1579,6 +1579,25 @@ dash.
         reader who sees neither green nor red.
       – The existing caveat — that a card states what *this machine* can reach — is a warning
         and stays at level one, per the standing rule.
+      — **the legend is one block for the page, not one per card.** The strip is the same strip
+      on thirteen cards, so the three facts sit above them once: one cell is one check, oldest
+      on the left, and a full strip is the last 24 checks — about 18 min at the shipped cadence.
+      The count comes from Rust (`ServiceStatus.timelinePoints`) rather than from counting
+      cells, because a fresh endpoint has fewer and the claim is about a *full* strip.
+      **A cell's own time is reachable by keyboard, and that cost the `title` attribute.** A
+      tooltip is unreachable without a mouse, so the reading moved to a line under the strip
+      that both hovering and the arrow keys write into. **One tab stop for the whole strip**,
+      not one per cell: thirteen services would otherwise put several hundred stops between a
+      keyboard user and the next thing they wanted.
+      Colour stops being the only channel in three places at once — every cell still carries
+      its word for a screen reader, the readout writes it out, and the legend names all five
+      states beside their colours. `CHECK_MARKS` is `satisfies readonly CheckMarkView[]`, so a
+      new Rust variant is a compile error rather than a colour with no name.
+      **Every figure now says what it is and over what.** *Latest* invited exactly the wrong
+      reading — averaging the strip by eye — and is now *Ping, last check*; the mean and the
+      loss carry the span they cover; and the card's headline was a bare number with nothing
+      saying which round trip it was, so it is labelled *Ping, median* and says why a median.
+      Four help topics were added for them, since the ⓘ and the help read from one list.
 - [ ] **4. The Applications page carries too much prose.** *Fourth: it is a real complaint about
       the busiest page in the product, and it is deliberately behind 1–3 because the text that
       survives it should be written in the vocabulary those items settle.*

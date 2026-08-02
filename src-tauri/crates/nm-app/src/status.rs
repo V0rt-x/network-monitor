@@ -220,6 +220,7 @@ impl ServiceMonitor {
         ServiceStatus {
             check_interval_secs: nm_core::time::elapsed_secs(CHECK_INTERVAL),
             window_secs: nm_core::time::elapsed_secs(stats_window()),
+            timeline_points: u32::try_from(TIMELINE_POINTS).unwrap_or(u32::MAX),
             services,
         }
     }

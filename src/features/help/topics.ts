@@ -25,6 +25,13 @@ export const HELP_TOPICS = [
   'traffic',
   'probeKind',
   'egress',
+  // The status page's own figures. Its round trips are the same quantity as the ones above
+  // and still need topics of their own: what distinguishes them is *which* checks each one
+  // folds in, and that is exactly what a reader averaging a strip by eye has got wrong.
+  'checks',
+  'serviceRtt',
+  'latestCheck',
+  'meanRtt',
 ] as const;
 
 /** One thing the page can explain. */

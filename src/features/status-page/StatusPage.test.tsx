@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
@@ -42,6 +42,7 @@ const service = (overrides: Partial<ServiceView> = {}): ServiceView => ({
 const STATUS: ServiceStatus = {
   checkIntervalSecs: 45,
   windowSecs: 1080,
+  timelinePoints: 24,
   services: [
     service(),
     service({
@@ -122,6 +123,24 @@ describe('StatusPage', () => {
         'These checks say whether this machine can reach each service. A service you cannot reach may be running normally for everyone else.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('says what one cell is, how far back a strip reaches, and what every colour means', async () => {
+    // The user asked what the coloured cells meant, which is a page failing at its one job.
+    // All three facts belong on the page rather than in the source, and the legend is also
+    // what stops colour being the only channel: every state is named beside its colour.
+    await emit(STATUS);
+
+    expect(
+      screen.getByText(
+        'One check, oldest on the left. A full strip is the last 24 checks — about 18 min at this cadence.',
+      ),
+    ).toBeInTheDocument();
+
+    const legend = screen.getByRole('list', { name: 'What a cell can say' });
+    for (const state of ['No answer', 'Probe filtered', 'Refused', 'Answered slowly', 'Answered']) {
+      expect(within(legend).getByText(state)).toBeInTheDocument();
+    }
   });
 
   it('says a group is empty rather than rendering a bare heading', async () => {

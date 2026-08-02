@@ -848,9 +848,17 @@ details.nm-endpointgroup > summary {
   gap: 0.75rem;
 }
 
+/* The headline figure was a bare number: which round trip on this card, over what, across
+   what, was nowhere on screen. It now travels with its own label. */
+.nm-service__rttlabel {
+  color: var(--nm-muted);
+  font-size: 0.7rem;
+}
+
 .nm-service__rtt {
   font-variant-numeric: tabular-nums;
   font-size: 1.15rem;
+  margin-inline-end: auto;
 }
 
 .nm-service__checked {
@@ -865,6 +873,58 @@ details.nm-endpointgroup > summary {
 .nm-service__stale {
   color: var(--nm-warn);
   font-size: 0.75rem;
+}
+
+/*
+ * The strip's legend, once for the page rather than once per card.
+ *
+ * It carries the three facts a reader needs about every strip on the page — one cell is one
+ * check, oldest is on the left, and this is how far back a full one reaches — and it is
+ * where colour stops being the only channel, since each state is named beside its colour.
+ */
+.nm-status__legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--nm-border);
+  border-radius: 8px;
+}
+
+.nm-status__legendtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.nm-status__legendnote {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.75rem;
+}
+
+.nm-status__marks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  font-size: 0.72rem;
+  color: var(--nm-muted);
+}
+
+.nm-status__mark {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* The swatch is the same cell the strip draws, at a size a legend can carry. */
+.nm-status__mark .nm-check {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
 }
 
 .nm-service__endpoints {
@@ -917,9 +977,16 @@ details.nm-endpointgroup > summary {
  * The mini-timeline: one cell per check, oldest on the left.
  *
  * Colour is a second channel and never the only one — every cell carries its translated
- * word as a title and in visually hidden text, so a screen reader and a user without
- * colour vision both get the same history.
+ * word in visually hidden text, the readout beneath writes out whichever cell is being
+ * pointed at or arrowed to, and the page's legend names all five states beside their
+ * colours. A reader who sees neither green nor red loses nothing.
  */
+.nm-timeline__strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .nm-timeline {
   list-style: none;
   margin: 0;
@@ -927,6 +994,28 @@ details.nm-endpointgroup > summary {
   display: flex;
   gap: 2px;
   height: 18px;
+  border-radius: 3px;
+}
+
+/* One tab stop for the whole strip, with the arrow keys inside it: a stop per cell would
+   put several hundred of them between a keyboard user and the next thing they wanted. */
+.nm-timeline:focus-visible {
+  outline: 2px solid var(--nm-accent);
+  outline-offset: 2px;
+}
+
+.nm-timeline__readout {
+  margin: 0;
+  min-height: 1.1rem;
+  color: var(--nm-muted);
+  font-size: 0.7rem;
+}
+
+/* The cell currently being read, so the pointer and the arrow keys land somewhere visible
+   rather than only changing a line of text below. */
+.nm-check--read {
+  outline: 1px solid var(--nm-text);
+  outline-offset: 1px;
 }
 
 .nm-timeline__empty {

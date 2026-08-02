@@ -1,7 +1,14 @@
 import { useTranslation } from 'react-i18next';
 
+import { MetricHelp } from '../help/MetricHelp';
 import type { ServiceGroup, ServiceView } from '../../shared/ipc';
-import { serviceGroupHintKey, serviceGroupKey } from './labels';
+import {
+  CHECK_MARKS,
+  checkMarkKey,
+  checkModifier,
+  serviceGroupHintKey,
+  serviceGroupKey,
+} from './labels';
 import { ServiceCard } from './ServiceCard';
 import { useServiceStatus } from './useServiceStatus';
 
@@ -36,7 +43,7 @@ export const StatusPage = () => {
     );
   }
 
-  const { services, checkIntervalSecs } = status.status;
+  const { services, checkIntervalSecs, windowSecs, timelinePoints } = status.status;
   const inGroup = (group: ServiceGroup): ServiceView[] =>
     services.filter((service) => service.group === group);
 
@@ -44,6 +51,32 @@ export const StatusPage = () => {
     <div className="nm-status">
       <p className="nm-status__cadence">{t('status.cadence', { seconds: checkIntervalSecs })}</p>
       <p className="nm-status__caveat">{t('status.caveat')}</p>
+
+      {/* Once for the page, not once per card. The strip is the same strip on every card,
+          and the three facts a reader needs about it — one cell is one check, oldest is on
+          the left, and this is how far back a full one reaches — were previously nowhere
+          but in the source. The legend is also what makes colour stop being the only
+          channel: every state is named beside the colour that carries it. */}
+      <section className="nm-status__legend">
+        <h2 className="nm-status__legendtitle">
+          {t('status.timeline.heading')}
+          <MetricHelp topic="checks" />
+        </h2>
+        <p className="nm-status__legendnote">
+          {t('status.timeline.note', {
+            count: timelinePoints,
+            minutes: Math.max(1, Math.round(windowSecs / 60)),
+          })}
+        </p>
+        <ul className="nm-status__marks" aria-label={t('status.timeline.legendLabel')}>
+          {CHECK_MARKS.map((mark) => (
+            <li key={mark} className="nm-status__mark">
+              <span className={`nm-check ${checkModifier(mark)}`} aria-hidden="true" />
+              {t(checkMarkKey(mark))}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {GROUPS.map((group) => {
         const members = inGroup(group);
@@ -63,6 +96,7 @@ export const StatusPage = () => {
                     key={service.id}
                     service={service}
                     checkIntervalSecs={checkIntervalSecs}
+                    windowSecs={windowSecs}
                   />
                 ))}
               </div>

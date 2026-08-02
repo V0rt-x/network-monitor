@@ -307,6 +307,26 @@
         "short": "Which kind of probe produced the numbers. Different kinds measure slightly different things.",
         "body": "The app tries the cheapest honest probe first and falls back when it is refused. An echo is the plainest round trip. A connection attempt measures a round trip plus the far end deciding to accept it. A handshake probe measures the round trip end to end through a tunnel, where the two cheaper kinds would measure only as far as the tunnel and report a falsely good number. \"Filtering confirmed\" means a kind was proven blocked — a later kind succeeded where it failed — which is knowledge, unlike silence. \"Through a tunnel\" means something on your network redirects this address, so the figure covers the whole tunnelled path rather than a round trip to the server."
       },
+      "checks": {
+        "title": "The check strip",
+        "short": "One cell is one check of that service, oldest on the left. Colour is never the only signal — every cell carries its word.",
+        "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. A cell is a fact rather than a verdict: it says what that single check produced — answered, answered slowly, no answer, refused, or the probe was filtered — and keeping those apart is the point, because a single colour on the card cannot. Pointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
+      },
+      "serviceRtt": {
+        "title": "Ping, median",
+        "short": "The middle round trip across the endpoints of this service, so one slow front door does not speak for all of them.",
+        "body": "A service can publish several front doors — a storefront, an account gateway, a content network. This figure is the median across the ones that answered, not the average: with an average, a single endpoint on a bad path drags the headline away from what the others are actually doing, and the finding on this page is usually which half of a service is reachable rather than what the arithmetic mean is. The distribution beside it says how the endpoints disagree, and each of them carries its own figures below."
+      },
+      "latestCheck": {
+        "title": "Ping, last check",
+        "short": "The round trip of the single most recent check — not an average of the strip beside it.",
+        "body": "One check, the newest one, and nothing else folded in. It is here because it answers \"how is it responding right now\", which an average over the last quarter of an hour cannot: a service that has just started answering slowly still has a fast mean. Reading it as an average is the mistake this label exists to prevent — the mean is the figure beside it, over a stated window, and the strip shows how the checks in between actually went."
+      },
+      "meanRtt": {
+        "title": "Ping, mean",
+        "short": "The average round trip over the whole window the strip covers. One slow check barely moves it.",
+        "body": "The average of every check in the stated window, which is the same stretch of time the strip beside it draws. Where the last check tells you how the service is answering at this moment, this tells you how it has been answering — and the gap between the two is itself informative: a last check far above the mean is the beginning of something, while the two sitting together means whatever you are seeing has been going on for a while."
+      },
       "egress": {
         "title": "Which adapter it leaves by",
         "short": "The network adapter this application's traffic uses — Wi-Fi, Ethernet, a VPN or an accelerator.",
@@ -358,10 +378,21 @@
       "refused": "Refused",
       "filtered": "Probe filtered"
     },
+    "timeline": {
+      "heading": "What one cell is",
+      "note": "One check, oldest on the left. A full strip is the last {{count}} checks — about {{minutes}} min at this cadence.",
+      "legendLabel": "What a cell can say",
+      "readoutIdle": "Point at a cell, or move through the strip with the arrow keys, to read when it happened.",
+      "position": "Check {{index}} of {{count}}",
+      "agedSeconds": "{{seconds}} s ago",
+      "agedMinutes": "{{minutes}} min ago",
+      "cell": "{{state}} · {{age}}"
+    },
     "metric": {
-      "latest": "Latest",
-      "mean": "Mean",
-      "loss": "Loss"
+      "median": "Ping, median",
+      "latest": "Ping, last check",
+      "mean": "Ping, mean ({{minutes}} min)",
+      "loss": "Loss ({{minutes}} min)"
     }
   },
   "settings": {

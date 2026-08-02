@@ -65,7 +65,17 @@ pub struct ServiceStatus {
     /// is current at this cadence and would be stale at the dashboard's.
     pub check_interval_secs: u32,
     /// Span the latency and loss figures are computed over, in seconds.
+    ///
+    /// The same span the strip covers, by construction — the window is defined as however
+    /// long [`crate::status::TIMELINE_POINTS`] checks take — so the figures and the cells
+    /// beside them describe one stretch of time rather than quietly disagreeing.
     pub window_secs: u32,
+    /// How many cells a full strip holds.
+    ///
+    /// Sent rather than counted from the cells, because a fresh endpoint has fewer of them
+    /// and the page's legend states what a *full* strip covers. Without it the legend would
+    /// either grow its own claim as the history filled or be arithmetic in the frontend.
+    pub timeline_points: u32,
     /// The services, in list order.
     pub services: Vec<ServiceView>,
 }
