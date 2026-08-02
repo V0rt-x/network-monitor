@@ -1409,7 +1409,7 @@ audience has no reason to extend that.
       A test pins that the same evidence produces "the route this application takes" once the
       window is real and never during warm-up, and another pins that filtering proven,
       nothing getting through, and alive-by-its-own-traffic all still arrive at full speed.
-- [ ] **6. The page must stop jumping.** Four separate causes, and they need separate fixes:
+- [x] **6. The page must stop jumping.** Four separate causes, and they need separate fixes:
       rows re-sort as health flickers between states; a row changes height when an optional
       panel or field appears (path, flow, the stack round trip); endpoints appear and disappear
       as discovery finds and forgets them; the chart is rebuilt whenever the *set* of lines
@@ -1423,29 +1423,45 @@ audience has no reason to extend that.
       – **A pinned endpoint holds its place.** Pinning is the user's own answer to a page that
         moves while they read it, and it must survive re-sorting, new endpoints and a chart
         rebuild.
-- [ ] **7. A verification pass across five titles**: CS2, Dota 2, World of Tanks, Forza Horizon,
-      Deadlock — one live session each. They are not five instances of the same check: Valve's
-      SDR backs three of them (CS2, Dota 2, Deadlock), which is the cross-check Phase 6's
-      reference pools were built for; World of Tanks runs on Wargaming's own infrastructure; and
-      Forza Horizon is a Microsoft title with its own launcher and peer traffic, which is the
-      case none of the others cover.
-      Record per title: whether a preset named it, which processes it grouped and whether that
-      grouping was right, whether a UDP match server appeared and whether it was the busiest
-      endpoint, whether the path edge engaged and how far it reached, what the flow figures
-      said, what the reference pool had, and the CPU/RAM cost. Report in `docs/` (Russian), and
-      the corrections it produces come back into this plan — the same loop the two spikes ran.
-      This does **not** replace the acceptance criteria still open from Phases 4 and 5: Discord
-      and a game at once, a single endpoint blocked by a firewall rule, five applications
-      against the probe budget.
+      — **the hysteresis separates two uses of one verdict** (`nm_core::settle`): what the
+      badge shows changes at once, so nothing on screen is ever stale, while what the
+      *ordering* uses adopts a state only once it has held for five seconds. A flicker
+      therefore never moves a row, because it never survives long enough to settle. A test
+      replays sixty seconds of a state alternating every second and asserts the order never
+      moves; another asserts that a change which persists does move it.
+      The ordering sorts the *reports*, not the views, so the settled state never crosses the
+      IPC boundary — it explains an ordering the UI does not compute. `AppMonitor::endpoints`
+      takes `&mut self` for this: how long a state has held can only advance where both the
+      verdict and the clock are known, and reports are produced on the emission beat, which is
+      exactly the cadence the hold is counted in.
+      **Reserved space**: the chart already had a fixed height; added are the badge strip —
+      the one part of a row that really does flicker, as a warm-up badge and a warning come
+      and go — and the metric values, so a figure alternating between a number and a dash
+      cannot change a line's height. The largest single win was item 4's: the optional
+      *fields* moved into the expander, so their arrival now changes nothing at all.
+      **The pin is positional** (`holdPlace`, pure and tested): it returns the pinned row to
+      the index it occupied when it was pinned, and leaves every other row in Rust's order. A
+      pin that promoted the row to the top would be the same jump the pin exists to prevent.
+      It survives a new endpoint above it, the list shrinking under it, and an endpoint that
+      is no longer listed at all.
 - **Accept**: on a live session, the match traffic is the first thing on the page and named as
   such; a title from item 2's list appears by its own name; the chart can be pointed at without
   chasing it, and neither a new endpoint nor a health change moves the row being read; the first
   seconds of a capture show a warm-up rather than a verdict; a closed row carries three figures
   and no caveats, every one of them has a keyboard-reachable explanation, and the match-server
-  card says in as many words why the game's own ping is a different number; the five titles are
-  recorded in `docs/` with the corrections they force.
+  card says in as many words why the game's own ping is a different number.
   A test asserts what the *closed* row contains, because the whole item is about what is not
   shown by default, and that is exactly the kind of thing that grows back one field at a time.
+
+**Phase 6.5 status: items 1–6 are built and tested; nothing here has been seen running.**
+
+Every rule above is pinned by tests — the grouping and its ordering, the anchored chart and
+its stepping, what a closed row contains, the warm-up and what it refuses to hide, the
+hysteresis and the pin. What no test can establish is what the page *looks like*: jsdom has
+no canvas, and "the chart can be pointed at without chasing it" is a claim about a pointer.
+The live pass that would settle it is the item below, now at the end of Phase 7 — so this
+phase's acceptance criterion is met in the parts tests can reach and open in the parts they
+cannot, exactly as Phases 4 and 6 recorded theirs.
 
 ## Phase 7 — Polish, persistence, packaging
 
@@ -1454,7 +1470,29 @@ audience has no reason to extend that.
 - [ ] Windows installer (NSIS/MSI via Tauri bundler), code-signing hook point, portable build
 - [ ] Perf pass: measure real CPU/RAM against budget, profile hot paths, document results in README
 - [ ] Error UX: offline mode, no-targets state, ETW-unavailable banner
-- **Accept**: signed-ready installer; budgets verified and documented; switching to ru requires zero code changes.
+- [ ] **A verification pass across five titles**: CS2, Dota 2, World of Tanks, Forza Horizon,
+      Deadlock — one live session each. *Moved here from Phase 6.5 item 7 by the user on
+      2026-08-02, to be run last.* The reason it belongs at the end is that it is the only
+      item in the plan that cannot be run by anyone but the person whose machine the games
+      are installed on, and every correction it produces lands on code that should by then
+      have stopped moving.
+      They are not five instances of the same check: Valve's SDR backs three of them (CS2,
+      Dota 2, Deadlock), which is the cross-check Phase 6's reference pools were built for;
+      World of Tanks runs on Wargaming's own infrastructure; and Forza Horizon is a Microsoft
+      title with its own launcher and peer traffic, which is the case none of the others
+      cover. All five are installed on the development machine, which is what makes this
+      runnable at all.
+      Record per title: whether a preset named it, which processes it grouped and whether that
+      grouping was right, whether a UDP match server appeared and whether it was the busiest
+      endpoint, whether the path edge engaged and how far it reached, what the flow figures
+      said, what the reference pool had, and the CPU/RAM cost. Report in `docs/` (Russian), and
+      the corrections it produces come back into this plan — the same loop the two spikes ran.
+      It also settles what Phase 6.5's own acceptance criterion could not: whether the chart
+      can be pointed at without chasing it, and whether a row being read stays still.
+      This does **not** replace the acceptance criteria still open from Phases 4 and 5: Discord
+      and a game at once, a single endpoint blocked by a firewall rule, five applications
+      against the probe budget.
+- **Accept**: signed-ready installer; budgets verified and documented; switching to ru requires zero code changes; the five titles are recorded in `docs/` with the corrections they force.
 
 ## Phase 8+ — Later (do not start without explicit go-ahead)
 

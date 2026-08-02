@@ -51,10 +51,12 @@ export const AppCard = ({
 }: AppCardProps) => {
   const { t } = useTranslation();
 
-  // Pinned by a click or by activating a row; cleared by picking it again.
-  const [pinned, setPinned] = useState<string | null>(null);
+  // Pinned by a click or by activating a row; cleared by picking it again. The index it held
+  // when it was pinned travels with it: a pin that moved the row would be the same jump the
+  // pin exists to prevent.
+  const [pinned, setPinned] = useState<{ key: string; at: number } | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const highlighted = hovered ?? pinned;
+  const highlighted = hovered ?? pinned?.key ?? null;
 
   // View state, not a measurement — but it has to survive the re-render new data causes, or
   // every line would change colour once a second.
@@ -64,6 +66,23 @@ export const AppCard = ({
   // is the odd one out" is a question about all of them at once. The grouping reaches it as
   // emphasis — the match traffic at full weight — and never as an omission.
   const endpoints = useMemo(() => app.groups.flatMap((group) => group.endpoints), [app.groups]);
+
+  /**
+   * Pins an endpoint where it currently sits, or unpins it.
+   *
+   * The place is recorded with the key because that is the whole point: a pin that moved the
+   * row to the top would be the same jump the pin exists to prevent. Picking the same
+   * endpoint again releases it.
+   */
+  const pin = (key: string, at?: number) => {
+    const index =
+      at ??
+      app.groups.reduce((found, group) => {
+        const inside = group.endpoints.findIndex((endpoint) => endpoint.key === key);
+        return inside === -1 ? found : inside;
+      }, 0);
+    setPinned((current) => (current?.key === key ? null : { key, at: index }));
+  };
 
   const lines = useMemo(() => {
     colours.current.reconcile(endpoints.map((endpoint) => endpoint.key));
@@ -150,7 +169,7 @@ export const AppCard = ({
             lines={lines}
             highlighted={highlighted}
             onHover={setHovered}
-            onSelect={setPinned}
+            onSelect={pin}
             label={t('apps.chart.label', { name: app.name })}
           />
           <p className="nm-appcard__chartnote">
@@ -169,10 +188,9 @@ export const AppCard = ({
           trafficWindowSecs={trafficWindowSecs}
           colourOf={(endpoint) => colours.current.of(endpoint)}
           highlighted={highlighted}
-          pinned={pinned}
-          onPin={(endpoint) => {
-            setPinned((current) => (current === endpoint ? null : endpoint));
-          }}
+          pinned={pinned?.key ?? null}
+          pinnedAt={pinned?.at ?? null}
+          onPin={pin}
           onHover={setHovered}
         />
       ))}

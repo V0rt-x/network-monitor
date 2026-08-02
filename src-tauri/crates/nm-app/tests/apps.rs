@@ -851,7 +851,7 @@ fn a_silent_endpoint_carrying_traffic_is_never_reported_as_unmeasured() {
     // Once the chain has fallen through to the route, no future probe will say anything more
     // about the endpoint — so "not measured yet" has stopped being the honest word, and the
     // traffic crossing it is the answer.
-    let (monitor, _, now, _, _) = silent_but_busy();
+    let (mut monitor, _, now, _, _) = silent_but_busy();
     assert_eq!(
         monitor.endpoints(APP, now)[0].health,
         Health::CarryingTraffic

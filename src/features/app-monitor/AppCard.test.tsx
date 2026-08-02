@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -481,9 +481,12 @@ describe('AppCard', () => {
     for (const metric of ['Response', 'Steadiness', 'Lost replies']) {
       expect(screen.getByRole('button', { name: `What ${metric} means` })).toBeInTheDocument();
     }
-    // Reached by keyboard, like everything else on this page.
+    // Reached by keyboard, like everything else on this page. A real focus rather than a
+    // synthetic event, because what is being asserted is that focus alone opens it.
     const help = screen.getByRole('button', { name: 'What Response means' });
-    help.focus();
+    act(() => {
+      help.focus();
+    });
     expect(await screen.findByRole('note')).toBeInTheDocument();
   });
 

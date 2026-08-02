@@ -169,16 +169,19 @@ fn flat(view: &AppView) -> Vec<EndpointView> {
 /// Most of these tests are about what a *measurement* renders as, and during warm-up the
 /// derived figures are deliberately withheld — so they ask for the view at a moment past it.
 /// The tests that are about the warm-up itself use [`warming`].
-fn view(monitor: &AppMonitor, now: Instant) -> AppView {
+fn view(monitor: &mut AppMonitor, now: Instant) -> AppView {
     view_at(monitor, now, None)
 }
 
 /// The page as it looks while the application is still warming up.
-fn warming(monitor: &AppMonitor, now: Instant) -> AppView {
-    view_at(monitor, now, monitor.warmup_remaining(APP, now))
+fn warming(monitor: &mut AppMonitor, now: Instant) -> AppView {
+    let warmup = monitor.warmup_remaining(APP, now);
+    view_at(monitor, now, warmup)
 }
 
-fn view_at(monitor: &AppMonitor, now: Instant, warmup: Option<Duration>) -> AppView {
+fn view_at(monitor: &mut AppMonitor, now: Instant, warmup: Option<Duration>) -> AppView {
+    let axis = monitor.chart_elapsed_secs(APP, now);
+    let reports = monitor.endpoints(APP, now);
     AppView::of(
         APP_ID,
         "game.exe".to_owned(),
@@ -186,10 +189,10 @@ fn view_at(monitor: &AppMonitor, now: Instant, warmup: Option<Duration>) -> AppV
             pid: PID,
             name: "game.exe".to_owned(),
         }],
-        monitor.chart_elapsed_secs(APP, now),
+        axis,
         warmup,
         &adapters(),
-        &monitor.endpoints(APP, now),
+        &reports,
         None,
         (
             BaselineEvidence::of(clean_baseline()),
@@ -217,7 +220,7 @@ fn the_worst_endpoints_come_first() {
     fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
     // The third is never probed, so nothing is known about it.
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
     let order: Vec<HealthView> = flat(&view).iter().map(|endpoint| endpoint.health).collect();
     assert_eq!(
@@ -245,7 +248,7 @@ fn an_application_is_a_distribution_and_not_one_colour() {
     );
     fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
     assert_eq!(view.counts.ok, 1);
     assert_eq!(view.counts.unreachable, 1);
@@ -272,7 +275,7 @@ fn ties_keep_a_stable_order() {
     }
     registered(&mut monitor, &mut registry, now);
 
-    let keys: Vec<String> = flat(&view(&monitor, now))
+    let keys: Vec<String> = flat(&view(&mut monitor, now))
         .into_iter()
         .map(|endpoint| endpoint.key)
         .collect();
@@ -295,7 +298,7 @@ fn transport_is_part_of_an_endpoints_identity() {
         .unwrap();
     registered(&mut monitor, &mut registry, now);
 
-    let view = view(&monitor, now);
+    let view = view(&mut monitor, now);
     let endpoints = flat(&view);
     assert_eq!(endpoints.len(), 2);
     let keys: Vec<&str> = endpoints
@@ -327,7 +330,7 @@ fn every_caveat_travels_with_the_number() {
     let ids = registered(&mut monitor, &mut registry, now);
     monitor.note_probe_state(ids[0], Some(ProbeKind::TlsHello), true, true);
 
-    let view = view(&monitor, now);
+    let view = view(&mut monitor, now);
     let endpoints = flat(&view);
     let endpoint = &endpoints[0];
 
@@ -367,7 +370,7 @@ fn a_game_server_carrying_traffic_is_never_called_unreachable() {
     // not the warm-up withholding a figure it would have shown a minute later.
     soak(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + WINDOW);
+    let view = view(&mut monitor, now + WINDOW);
     let endpoints = flat(&view);
     let endpoint = &endpoints[0];
 
@@ -400,7 +403,7 @@ fn a_silent_endpoint_with_no_traffic_is_still_unreachable() {
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     assert_eq!(flat(&view)[0].health, HealthView::Unreachable);
 }
 
@@ -419,7 +422,7 @@ fn a_measured_endpoint_keeps_the_verdict_its_probes_earned() {
         ProbeOutcome::Success(Rtt::from_micros(400_000)),
     );
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     assert_eq!(flat(&view)[0].health, HealthView::Degraded);
 }
 
@@ -437,7 +440,7 @@ fn a_live_but_unmeasured_endpoint_sorts_below_the_broken_ones() {
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
     fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     let order: Vec<HealthView> = flat(&view).iter().map(|endpoint| endpoint.health).collect();
     assert_eq!(
         order,
@@ -453,7 +456,7 @@ fn unknown_throughput_is_not_reported_as_zero() {
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     registered(&mut monitor, &mut registry, now);
 
-    assert_eq!(flat(&view(&monitor, now))[0].recent_bytes, None);
+    assert_eq!(flat(&view(&mut monitor, now))[0].recent_bytes, None);
 }
 
 #[test]
@@ -462,7 +465,7 @@ fn an_unmeasured_endpoint_reports_no_figures_at_all() {
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     registered(&mut monitor, &mut registry, now);
 
-    let view = view(&monitor, now);
+    let view = view(&mut monitor, now);
     let endpoints = flat(&view);
     let endpoint = &endpoints[0];
     assert_eq!(endpoint.rtt_ms, None);
@@ -477,8 +480,8 @@ fn an_unmeasured_endpoint_reports_no_figures_at_all() {
 
 #[test]
 fn an_application_with_nothing_discovered_renders_empty_rather_than_missing() {
-    let (monitor, _registry, now) = monitor();
-    let view = view(&monitor, now);
+    let (mut monitor, _registry, now) = monitor();
+    let view = view(&mut monitor, now);
     assert!(flat(&view).is_empty());
     assert_eq!(view.counts, HealthCountsView::default());
     assert_eq!(
@@ -506,7 +509,7 @@ fn every_endpoint_is_drawn_against_the_same_axis() {
         ProbeOutcome::Success(Rtt::from_micros(9_000)),
     );
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
     let slots = view.chart_elapsed_secs.len();
     assert!(slots > 1);
@@ -553,7 +556,7 @@ fn a_stretch_where_nothing_answered_is_a_break_in_the_line() {
         );
     }
 
-    let view = view(&monitor, now + Duration::from_secs(11));
+    let view = view(&mut monitor, now + Duration::from_secs(11));
     let endpoints = flat(&view);
     let drawn = &endpoints[0].chart_rtt_ms;
 
@@ -585,7 +588,7 @@ fn a_chart_slot_shows_the_slowest_round_trip_in_it() {
         );
     }
 
-    let view = view(&monitor, now + Duration::from_secs(2));
+    let view = view(&mut monitor, now + Duration::from_secs(2));
 
     assert!(
         flat(&view)[0].chart_rtt_ms.contains(&Some(90.0)),
@@ -637,7 +640,7 @@ fn a_silent_match_server_gets_a_flow_column_while_its_own_figures_stay_dashes() 
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     let endpoints = flat(&view);
     let endpoint = &endpoints[0];
 
@@ -675,7 +678,7 @@ fn an_endpoint_with_no_flow_events_has_no_flow_column() {
     let ids = registered(&mut monitor, &mut registry, now);
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     assert_eq!(flat(&view)[0].flow, None);
 }
 
@@ -689,13 +692,13 @@ fn an_idle_endpoint_stops_reporting_a_flow_column() {
     play(&mut monitor, udp(1), now, 0, 200);
     let _ = registered(&mut monitor, &mut registry, now);
 
-    let fresh = view(&monitor, now);
+    let fresh = view(&mut monitor, now);
     assert!(flat(&fresh)[0].flow.is_some());
 
     // Liveness moves on the sweep, which is where the tracker ages everything.
     let later = now + Duration::from_secs(60);
     let _ = monitor.sweep(&mut registry, later);
-    let stale = flat(&view(&monitor, later));
+    let stale = flat(&view(&mut monitor, later));
     assert_eq!(stale[0].liveness, nm_app::LivenessView::Idle);
     assert_eq!(stale[0].flow, None);
 }
@@ -722,7 +725,7 @@ fn sending_into_silence_reports_a_stall_rather_than_a_loss_figure() {
     }
     let _ = registered(&mut monitor, &mut registry, now);
 
-    let flow = flat(&view(&monitor, now))[0]
+    let flow = flat(&view(&mut monitor, now))[0]
         .flow
         .expect("the endpoint is still in use");
     let stall = flow.stall_ms.expect("a second of unanswered sending");
@@ -759,7 +762,7 @@ fn the_operating_systems_own_round_trip_reaches_the_page_with_its_age() {
     let _ = registered(&mut monitor, &mut registry, now);
     monitor.note_passive_rtt(&stack_rtt(tcp(1)), now);
 
-    let passive = flat(&view(&monitor, now + Duration::from_secs(12)))[0]
+    let passive = flat(&view(&mut monitor, now + Duration::from_secs(12)))[0]
         .passive_rtt
         .expect("the stack published a round trip for this connection");
 
@@ -788,7 +791,7 @@ fn a_tunnelled_endpoint_is_refused_the_stacks_round_trip() {
     let _ = registered(&mut monitor, &mut registry, now);
     monitor.note_passive_rtt(&stack_rtt(sentinel), now);
 
-    let endpoints = flat(&view(&monitor, now));
+    let endpoints = flat(&view(&mut monitor, now));
     let endpoint = &endpoints[0];
     assert!(endpoint.tunnelled);
     assert_eq!(
@@ -804,7 +807,7 @@ fn a_round_trip_for_an_endpoint_nobody_is_watching_is_ignored() {
     let _ = registered(&mut monitor, &mut registry, now);
     monitor.note_passive_rtt(&stack_rtt(tcp(2)), now);
 
-    assert_eq!(flat(&view(&monitor, now))[0].passive_rtt, None);
+    assert_eq!(flat(&view(&mut monitor, now))[0].passive_rtt, None);
 }
 
 #[test]
@@ -819,7 +822,7 @@ fn an_endpoint_that_answers_for_itself_has_no_path_line() {
         ProbeOutcome::Success(Rtt::from_micros(9_000)),
     );
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
     let endpoints = flat(&view);
     assert!(
@@ -827,6 +830,70 @@ fn an_endpoint_that_answers_for_itself_has_no_path_line() {
         "an endpoint that answers needs nothing standing in for it"
     );
     assert!(endpoints[0].chart_rtt_ms.iter().any(Option::is_some));
+}
+
+// ------------------------------------------------- the page stops jumping
+
+#[test]
+fn a_health_change_shows_at_once_and_moves_the_row_only_once_it_holds() {
+    // The failure this exists to fix: a list ordered worst-first re-sorts whenever any
+    // member's health changes, and health near a threshold flickers — so the row someone is
+    // reading swaps places with its neighbour a second after they started reading it.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    monitor.observe(APP, udp(2), None, None, now).unwrap();
+    let ids = registered_by_ip(&mut monitor, &mut registry, now);
+    // Both clean, so the order is the tie-break: 1.1.1.1 then 1.1.1.2.
+    for key in [udp(1), udp(2)] {
+        soak(
+            &mut monitor,
+            ids[&key.address.ip()],
+            now,
+            ProbeOutcome::Success(Rtt::from_micros(9_000)),
+        );
+    }
+    let settled = now + WINDOW;
+    assert_eq!(
+        flat(&view(&mut monitor, settled))[0].address,
+        "1.1.1.1:27015"
+    );
+
+    // The second endpoint starts losing packets. Its badge must say so immediately.
+    for step in 0..8 {
+        monitor.record(
+            ids[&udp(2).address.ip()],
+            ProbeSample::new(settled + Duration::from_secs(step), ProbeOutcome::Timeout),
+        );
+    }
+    let moment = settled + Duration::from_secs(8);
+    let endpoints = flat(&view(&mut monitor, moment));
+    let broken = endpoints
+        .iter()
+        .find(|endpoint| endpoint.address == "1.1.1.2:27015")
+        .expect("still listed");
+    assert_eq!(
+        broken.health,
+        HealthView::Degraded,
+        "the badge is never stale"
+    );
+    assert_eq!(
+        endpoints[0].address, "1.1.1.1:27015",
+        "and the row the user was reading has not moved yet"
+    );
+
+    // Held for long enough, the ordering adopts it.
+    let later = moment + Duration::from_secs(6);
+    for step in 0..6 {
+        monitor.record(
+            ids[&udp(2).address.ip()],
+            ProbeSample::new(moment + Duration::from_secs(step), ProbeOutcome::Timeout),
+        );
+    }
+    assert_eq!(
+        flat(&view(&mut monitor, later))[0].address,
+        "1.1.1.2:27015",
+        "a change that persists does move the row"
+    );
 }
 
 // ------------------------------------------- the first seconds are not findings
@@ -847,7 +914,7 @@ fn a_new_endpoint_warms_up_instead_of_reporting_its_first_few_samples() {
     );
 
     let early = now + Duration::from_secs(u64::from(ENOUGH));
-    let endpoints = flat(&view(&monitor, early));
+    let endpoints = flat(&view(&mut monitor, early));
     let endpoint = &endpoints[0];
 
     let remaining = endpoint
@@ -884,7 +951,7 @@ fn the_warm_up_ends() {
         ProbeOutcome::Success(Rtt::from_micros(9_000)),
     );
 
-    let endpoints = flat(&view(&monitor, now + WINDOW));
+    let endpoints = flat(&view(&mut monitor, now + WINDOW));
     assert_eq!(endpoints[0].warmup_secs_remaining, None);
     assert!(endpoints[0].jitter_ms.is_some());
     assert!(endpoints[0].loss_pct.is_some());
@@ -923,7 +990,7 @@ fn a_warm_up_never_hides_something_already_certain() {
     );
 
     let early = now + Duration::from_secs(u64::from(ENOUGH));
-    let endpoints = flat(&view(&monitor, early));
+    let endpoints = flat(&view(&mut monitor, early));
 
     assert!(
         endpoints
@@ -960,8 +1027,8 @@ fn nothing_is_blamed_on_an_application_that_has_only_just_been_chosen() {
     fill(&mut monitor, ids[0], now, ProbeOutcome::Timeout);
 
     let early = now + Duration::from_secs(u64::from(ENOUGH));
-    let warming = warming(&monitor, early);
-    let settled = view(&monitor, early);
+    let warming = warming(&mut monitor, early);
+    let settled = view(&mut monitor, early);
 
     assert!(warming.warmup_secs_remaining.is_some());
     assert_eq!(
@@ -1006,7 +1073,7 @@ fn the_match_traffic_is_a_group_of_its_own_and_comes_first() {
         ProbeOutcome::Success(Rtt::from_micros(9_000)),
     );
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
 
     assert_eq!(view.groups[0].transport, TransportView::Udp);
     assert_eq!(view.groups[1].transport, TransportView::Tcp);
@@ -1041,7 +1108,7 @@ fn a_group_carries_its_own_distribution_so_a_folded_one_hides_nothing() {
         ProbeOutcome::Success(Rtt::from_micros(9_000)),
     );
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     let supporting = &view.groups[1];
 
     assert_eq!(supporting.counts.unreachable, 1);
@@ -1067,7 +1134,7 @@ fn severity_still_orders_the_endpoints_inside_a_group() {
     );
     fill(&mut monitor, ids[1], now, ProbeOutcome::Timeout);
 
-    let view = view(&monitor, now + Duration::from_secs(u64::from(ENOUGH)));
+    let view = view(&mut monitor, now + Duration::from_secs(u64::from(ENOUGH)));
     let order: Vec<HealthView> = view.groups[0]
         .endpoints
         .iter()

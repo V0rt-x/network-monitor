@@ -56,6 +56,7 @@ use nm_core::history::SampleHistory;
 use nm_core::path::PathTrace;
 use nm_core::sample::ProbeSample;
 use nm_core::series::Grid;
+use nm_core::settle::{Settling, ORDER_HOLD};
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
 use nm_probes::probe::ProbeKind;
@@ -189,6 +190,11 @@ struct Entry {
     /// Only for TCP, and only every so often, so it is kept with the moment it arrived
     /// rather than as a series: the honest way to show it is with its age.
     passive_rtt: Option<PassiveRttSample>,
+    /// This endpoint's health, and the possibly older one the ordering is still using.
+    ///
+    /// [`None`] until the first report is produced, because a health verdict needs the
+    /// window's statistics and those are computed there.
+    settling: Option<Settling>,
 }
 
 /// One round-trip estimate the operating system published, and when we heard it.
@@ -427,6 +433,7 @@ impl AppMonitor {
                 history,
                 flow: metrics,
                 passive_rtt: None,
+                settling: None,
             },
         );
         Ok(())
@@ -994,27 +1001,43 @@ impl AppMonitor {
     }
 
     /// Every endpoint of an application, with its measurements, in a stable order.
-    #[must_use]
-    pub fn endpoints(&self, app: AppId, now: Instant) -> Vec<EndpointReport> {
+    ///
+    /// Takes `&mut self` for one reason: the ordering's hysteresis is a fact about how long
+    /// a state has held, and it can only advance where both the verdict and the clock are
+    /// known — which is here, when a report is produced. Reports are produced on the
+    /// emission beat, so that is exactly the cadence the hold is counted in.
+    pub fn endpoints(&mut self, app: AppId, now: Instant) -> Vec<EndpointReport> {
         let started = self.started_at(app, now);
-        self.tracker
+        // Destructured so the tracker can be read while the entries are written: the
+        // hysteresis lives on the entry, and the endpoint it belongs to lives on the tracker.
+        let Self {
+            tracker,
+            entries,
+            users,
+            thresholds,
+            window,
+            edges,
+            grid,
+            ..
+        } = self;
+        tracker
             .endpoints(app)
             .filter_map(|tracked| {
-                let entry = self.entries.get(&(app, tracked.key()))?;
-                let edge = self.edges.get(&(app, tracked.key()));
-                let path = edge.map(|edge| edge.reading(now, self.window, &self.thresholds));
+                let entry = entries.get_mut(&(app, tracked.key()))?;
+                let edge = edges.get(&(app, tracked.key()));
+                let path = edge.map(|edge| edge.reading(now, *window, thresholds));
                 // The route's own series, drawn beside the round trips and never as one:
                 // it belongs to a router short of the endpoint, and the chart has to say so.
                 let path_series = path
                     .as_ref()
                     .and_then(EdgeReading::reported_hop)
                     .and_then(|hop| edge?.history(hop.address))
-                    .map(|history| self.grid.place(history, started, now));
+                    .map(|history| grid.place(history, started, now));
                 // What the probe engine was actually told to bind to, which is not always
                 // what this application asked for — see `EndpointReport::probe_source`.
                 let probe_source = entry
                     .id
-                    .and_then(|id| self.users.get(&id))
+                    .and_then(|id| users.get(&id))
                     .and_then(|users| users.source);
                 Some(EndpointReport::build(
                     tracked,
@@ -1022,11 +1045,11 @@ impl AppMonitor {
                     probe_source,
                     path,
                     path_series,
-                    &self.grid,
+                    grid,
                     started,
                     now,
-                    self.window,
-                    &self.thresholds,
+                    *window,
+                    thresholds,
                 ))
             })
             .collect()
@@ -1165,8 +1188,16 @@ pub struct EndpointReport {
     pub warmup_remaining: Option<Duration>,
     /// Its statistics over the health window.
     pub stats: WindowStats,
-    /// The verdict those statistics imply.
+    /// The verdict those statistics imply. Always current — nothing on screen is stale.
     pub health: nm_core::health::Health,
+    /// The verdict the *ordering* uses, which is [`EndpointReport::health`] once that state
+    /// has held for a few seconds.
+    ///
+    /// Two uses of one verdict, separated. A list ordered worst-first re-sorts whenever any
+    /// member's health changes, and health near a threshold flickers — so the row someone is
+    /// reading swaps places with its neighbour a second after they started reading it. The
+    /// badge must never lag; the ordering must not chase a flicker. See [`nm_core::settle`].
+    pub order_health: nm_core::health::Health,
     /// Round-trip time in each slot of the application's chart, or [`None`] for a slot with
     /// no answer in it.
     ///
@@ -1204,7 +1235,7 @@ impl EndpointReport {
     #[allow(clippy::too_many_arguments)]
     fn build(
         tracked: &TrackedEndpoint,
-        entry: &Entry,
+        entry: &mut Entry,
         probe_source: Option<IpAddr>,
         path: Option<EdgeReading>,
         path_series: Option<Vec<Option<f64>>>,
@@ -1230,6 +1261,16 @@ impl EndpointReport {
             carrying,
             entry.measurable && !entry.walking_path,
         );
+
+        // What the badge says changes at once; what the *ordering* uses waits for the change
+        // to hold. Health near a threshold flickers — one lost packet crosses a line and the
+        // next window crosses back — and under a plain sort that is the row someone is
+        // reading swapping places with its neighbour every other second.
+        let settling = entry
+            .settling
+            .get_or_insert_with(|| Settling::new(health, now));
+        settling.observe(health, now, ORDER_HOLD);
+        let order_health = settling.settled();
 
         // The samples just after an endpoint is discovered are the least informative it will
         // ever have: no window is full, the fallback chain is still trying kinds, ranking has
@@ -1281,6 +1322,7 @@ impl EndpointReport {
                 age: now.saturating_duration_since(sample.at),
             }),
             health,
+            order_health,
             warmup_remaining,
             stats,
         }

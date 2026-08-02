@@ -1197,3 +1197,28 @@ details.nm-endpointgroup > summary {
   margin: 0;
   line-height: 1.5;
 }
+
+/* --- Holding the page still ---------------------------------------------------------- */
+
+/* A row's height must not change when an optional piece of it arrives, because every row
+   below it moves when it does. Most of that was solved by moving the optional *fields* into
+   the expander; what is left is reserved here.
+
+   The badge strip is the one that flickers: a warm-up badge, a proven filtering, a warning
+   come and go on their own schedule, and an empty strip is zero pixels tall. */
+.nm-endpoint__badges {
+  min-height: 1.6rem;
+  align-items: center;
+}
+
+/* A figure alternating between a number and a dash must not change the line's height. */
+.nm-endpoint__metrics dd {
+  min-height: 1.35rem;
+}
+
+/* The two panels a silent endpoint gets arrive one at a time — the route as soon as a hop
+   answers, the traffic as soon as the operating system counts any — so the pair reserves
+   room for both from the moment either exists. */
+.nm-endpoint__columns > * {
+  align-self: start;
+}

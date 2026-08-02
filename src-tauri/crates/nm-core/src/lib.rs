@@ -50,6 +50,7 @@ pub mod ring;
 pub mod sample;
 pub mod scheduler;
 pub mod series;
+pub mod settle;
 pub mod stats;
 pub mod status;
 pub mod target;

@@ -324,7 +324,7 @@ async fn session(
                     emit_services(app, &services);
                     emit_apps(
                         app,
-                        &apps,
+                        &mut apps,
                         &pools,
                         &baselines,
                         applications,
@@ -410,7 +410,7 @@ async fn session(
                     emit_services(app, &services);
                     emit_apps(
                         app,
-                        &apps,
+                        &mut apps,
                         &pools,
                         &baselines,
                         applications,
@@ -715,7 +715,7 @@ fn emit_services(app: &AppHandle<Wry>, monitor: &ServiceMonitor) {
 #[allow(clippy::too_many_arguments)]
 fn emit_apps(
     app: &AppHandle<Wry>,
-    apps: &AppMonitor,
+    apps: &mut AppMonitor,
     pools: &PoolMonitor,
     baselines: &BaselineMonitor,
     applications: &Applications,

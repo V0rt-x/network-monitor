@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { EndpointGroupView, FlowStatusView } from '../../shared/ipc';
 import { Distribution } from './Distribution';
 import { EndpointRow } from './EndpointRow';
+import { holdPlace } from './holdPlace';
 import { groupHintKey, groupKey } from './labels';
 
 interface EndpointGroupProps {
@@ -16,7 +17,9 @@ interface EndpointGroupProps {
   /** The endpoint currently raised on the chart, by hover or by pinning. */
   readonly highlighted: string | null;
   readonly pinned: string | null;
-  readonly onPin: (endpoint: string) => void;
+  /** Where the pinned endpoint sat when it was pinned, so it can be held there. */
+  readonly pinnedAt: number | null;
+  readonly onPin: (endpoint: string, index: number) => void;
   readonly onHover: (endpoint: string | null) => void;
 }
 
@@ -47,15 +50,24 @@ export const EndpointGroup = ({
   colourOf,
   highlighted,
   pinned,
+  pinnedAt,
   onPin,
   onHover,
 }: EndpointGroupProps) => {
   const { t } = useTranslation();
 
   const isMatchTraffic = group.transport === 'udp';
+  // Rust's severity order, with the reader's own pin honoured on top of it. Everything else
+  // that reorders a list mid-read — an endpoint discovered, one forgotten, a change in
+  // another row — is what the pin exists to survive.
+  const shown = holdPlace(
+    group.endpoints,
+    group.endpoints.find((endpoint) => endpoint.key === pinned) ?? null,
+    pinnedAt,
+  );
   const rows = (
     <ul className="nm-appcard__endpoints">
-      {group.endpoints.map((endpoint) => (
+      {shown.map((endpoint, index) => (
         <EndpointRow
           key={endpoint.key}
           endpoint={endpoint}
@@ -65,7 +77,8 @@ export const EndpointGroup = ({
           dimmed={highlighted !== null && highlighted !== endpoint.key}
           pinned={pinned === endpoint.key}
           onPin={() => {
-            onPin(endpoint.key);
+            // The place it is being pinned *at*, so pinning itself never moves it.
+            onPin(endpoint.key, index);
           }}
           onHover={onHover}
         />

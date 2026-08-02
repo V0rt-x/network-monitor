@@ -1203,17 +1203,26 @@ impl AppView {
             }),
         });
 
-        let mut endpoints: Vec<EndpointView> = reports
-            .iter()
-            .map(|report| EndpointView::of(report, interfaces))
-            .collect();
+        // Ordered by the *settled* health rather than the shown one. Health near a threshold
+        // flickers — one lost packet crosses a line and the next window crosses back — and
+        // sorting on that swaps the row someone is reading with its neighbour every other
+        // second. The badge still changes at once, so nothing on screen is ever stale; only
+        // the order waits for the change to hold. See `nm_core::settle`.
+        //
+        // Sorted as reports rather than as views so the settled state never has to cross the
+        // IPC boundary: it explains an ordering the UI does not compute.
+        let mut ordered: Vec<&EndpointReport> = reports.iter().collect();
         // Address breaks ties so the list does not reshuffle under the user's cursor every
         // time two endpoints agree about their health.
-        endpoints.sort_by(|left, right| {
-            severity(left.health)
-                .cmp(&severity(right.health))
+        ordered.sort_by(|left, right| {
+            severity(left.order_health.into())
+                .cmp(&severity(right.order_health.into()))
                 .then_with(|| left.key.cmp(&right.key))
         });
+        let endpoints: Vec<EndpointView> = ordered
+            .into_iter()
+            .map(|report| EndpointView::of(report, interfaces))
+            .collect();
         // Partitioned after sorting, so each group keeps the one severity order rather than
         // being sorted twice by two copies of the same rule.
         let (udp, tcp): (Vec<EndpointView>, Vec<EndpointView>) = endpoints
