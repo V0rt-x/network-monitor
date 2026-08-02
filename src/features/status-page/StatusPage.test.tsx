@@ -133,7 +133,7 @@ describe('StatusPage', () => {
 
     expect(
       screen.getByText(
-        'One check, oldest on the left. A full strip is the last 24 checks — about 18 min at this cadence.',
+        'One check, oldest on the left. A full strip is the last 24 checks — about 18 min, which is also the window every mean and loss below covers.',
       ),
     ).toBeInTheDocument();
 

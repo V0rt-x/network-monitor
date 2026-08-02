@@ -40,7 +40,7 @@ const service = (overrides: Partial<ServiceView> = {}): ServiceView => ({
 
 describe('ServiceCard', () => {
   it('names the service, its verdict and when it was last checked', () => {
-    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
 
     expect(screen.getByRole('heading', { name: 'Steam' })).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
@@ -52,7 +52,6 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ verdict: 'unknown', rttMs: null, lastCheckedSecs: null })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -65,11 +64,7 @@ describe('ServiceCard', () => {
     // A status page whose data quietly stopped looks exactly like one reporting calm, so
     // the age has to become a warning rather than just a larger number.
     const { container } = render(
-      <ServiceCard
-        service={service({ lastCheckedSecs: 200 })}
-        checkIntervalSecs={45}
-        windowSecs={1080}
-      />,
+      <ServiceCard service={service({ lastCheckedSecs: 200 })} checkIntervalSecs={45} />,
     );
 
     expect(container.querySelector('.nm-service__stale')).not.toBeNull();
@@ -78,11 +73,7 @@ describe('ServiceCard', () => {
 
   it('does not call a fresh check stale', () => {
     const { container } = render(
-      <ServiceCard
-        service={service({ lastCheckedSecs: 44 })}
-        checkIntervalSecs={45}
-        windowSecs={1080}
-      />,
+      <ServiceCard service={service({ lastCheckedSecs: 44 })} checkIntervalSecs={45} />,
     );
 
     expect(container.querySelector('.nm-service__stale')).toBeNull();
@@ -116,7 +107,6 @@ describe('ServiceCard', () => {
           ],
         })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -126,7 +116,7 @@ describe('ServiceCard', () => {
   });
 
   it('does not repeat the headline on the only endpoint underneath it', () => {
-    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
     expect(screen.getAllByText('OK')).toHaveLength(1);
   });
 
@@ -137,7 +127,6 @@ describe('ServiceCard', () => {
           endpoints: [endpoint({ checks: checks(['answered', 'lost', 'slow', 'filtered']) })],
         })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -152,21 +141,32 @@ describe('ServiceCard', () => {
     expect(within(strip).getByText('Probe filtered')).toBeInTheDocument();
   });
 
-  it('says what each figure is and over what, rather than leaving them to be guessed', () => {
+  it('says what each figure is, rather than leaving them to be guessed', () => {
     // The complaint this answers: the card showed "Latest", "Mean", "Loss" and a bare
-    // number, with nothing saying what a check was, which round trip the headline meant, or
-    // what span the averages covered. "Latest" in particular invites the reader to average
-    // the strip beside it by eye, which is exactly the wrong reading.
-    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+    // number, with nothing saying what a check was or which round trip the headline meant.
+    // "Latest" in particular invites the reader to average the strip beside it by eye,
+    // which is exactly the wrong reading. The span they cover is stated once on the page,
+    // in the legend, rather than on both figures of every card.
+    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
 
     expect(screen.getByText('Ping, median')).toBeVisible();
     expect(screen.getByText('Ping, last check')).toBeVisible();
-    expect(screen.getByText('Ping, mean (18 min)')).toBeVisible();
-    expect(screen.getByText('Loss (18 min)')).toBeVisible();
+    expect(screen.getByText('Ping, mean')).toBeVisible();
+    expect(screen.getByText('Loss')).toBeVisible();
+  });
+
+  it('says nothing under a strip nobody is pointing at', () => {
+    // Twenty-three copies of "point at a cell to read when it happened" was the largest
+    // block of prose in the product, and it explained rather than reported. The reading
+    // appears when it is asked for; how to ask is on the legend's ⓘ, once.
+    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('');
+    expect(screen.queryByText(/move through the strip/)).not.toBeInTheDocument();
   });
 
   it('gives every figure on the card an explanation reachable without a mouse', () => {
-    render(<ServiceCard service={service()} checkIntervalSecs={45} windowSecs={1080} />);
+    render(<ServiceCard service={service()} checkIntervalSecs={45} />);
 
     for (const figure of ['Ping, median', 'Ping, last check', 'Ping, mean', 'Loss']) {
       expect(screen.getByRole('button', { name: `What ${figure} means` })).toBeInTheDocument();
@@ -180,7 +180,6 @@ describe('ServiceCard', () => {
           endpoints: [endpoint({ checks: checks(['answered', 'lost', 'answered']) })],
         })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -205,7 +204,6 @@ describe('ServiceCard', () => {
           endpoints: [endpoint({ checks: checks(['lost', 'slow', 'answered']) })],
         })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -230,7 +228,6 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ checks: [] })] })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -242,7 +239,6 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ tunnelled: true })] })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -254,7 +250,6 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ resolvedAddress: null, measurable: false })] })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 
@@ -266,7 +261,6 @@ describe('ServiceCard', () => {
       <ServiceCard
         service={service({ endpoints: [endpoint({ lossPct: null, rttMs: null })] })}
         checkIntervalSecs={45}
-        windowSecs={1080}
       />,
     );
 

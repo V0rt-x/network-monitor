@@ -66,9 +66,13 @@ export const CheckTimeline = ({ checks, label }: CheckTimelineProps) => {
   // an invented "0 s ago".
   const aged =
     at?.ageSecs === null || at?.ageSecs === undefined ? null : agedKey(Math.abs(at.ageSecs));
+  // Empty until the reader asks. A standing instruction under every strip is twenty-three
+  // copies of the same sentence on one page, which is the prose the page exists not to
+  // carry; how to use the strip is on the legend's ⓘ, once. The element stays so that a
+  // reading appearing does not push the card's figures down.
   const readout =
     at === undefined
-      ? t('status.timeline.readoutIdle')
+      ? ''
       : [
           t('status.timeline.position', { index: (reading ?? 0) + 1, count: checks.length }),
           aged === null

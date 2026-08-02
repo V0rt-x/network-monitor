@@ -424,9 +424,8 @@
     },
     "timeline": {
       "heading": "What one cell is",
-      "note": "One check, oldest on the left. A full strip is the last {{count}} checks — about {{minutes}} min at this cadence.",
+      "note": "One check, oldest on the left. A full strip is the last {{count}} checks — about {{minutes}} min, which is also the window every mean and loss below covers.",
       "legendLabel": "What a cell can say",
-      "readoutIdle": "Point at a cell, or move through the strip with the arrow keys, to read when it happened.",
       "position": "Check {{index}} of {{count}}",
       "agedSeconds": "{{seconds}} s ago",
       "agedMinutes": "{{minutes}} min ago",
@@ -435,8 +434,8 @@
     "metric": {
       "median": "Ping, median",
       "latest": "Ping, last check",
-      "mean": "Ping, mean ({{minutes}} min)",
-      "loss": "Loss ({{minutes}} min)"
+      "mean": "Ping, mean",
+      "loss": "Loss"
     }
   },
   "settings": {

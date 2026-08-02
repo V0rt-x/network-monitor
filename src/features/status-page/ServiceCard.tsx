@@ -9,8 +9,6 @@ import { CheckTimeline } from './CheckTimeline';
 interface ServiceCardProps {
   readonly service: ServiceView;
   readonly checkIntervalSecs: number;
-  /** Span the mean and loss figures cover, so each can say what it is an average over. */
-  readonly windowSecs: number;
 }
 
 /** Which counts are worth showing, and in what order of severity. */
@@ -26,8 +24,6 @@ interface EndpointRowProps {
   readonly endpoint: ServiceEndpointView;
   readonly serviceLabel: string;
   readonly alone: boolean;
-  /** Minutes the mean and loss cover, stated on the figures themselves. */
-  readonly windowMins: number;
 }
 
 /**
@@ -43,7 +39,7 @@ interface EndpointRowProps {
  * an ⓘ. They are the same quantities the applications page shows, under the same names the
  * rest of the networking world uses.
  */
-const EndpointRow = ({ endpoint, serviceLabel, alone, windowMins }: EndpointRowProps) => {
+const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
 
@@ -93,16 +89,19 @@ const EndpointRow = ({ endpoint, serviceLabel, alone, windowMins }: EndpointRowP
           </dt>
           <dd>{formatMs(endpoint.rttMs, locale)}</dd>
         </div>
+        {/* The span these cover is stated once, in the page's legend, rather than on both
+            figures of all twenty-three cards — where it wrapped onto three lines and pushed
+            the numbers out of line with each other. The ⓘ says it too. */}
         <div>
           <dt>
-            {t('status.metric.mean', { minutes: windowMins })}
+            {t('status.metric.mean')}
             <MetricHelp topic="meanRtt" />
           </dt>
           <dd>{formatMs(endpoint.meanRttMs, locale)}</dd>
         </div>
         <div>
           <dt>
-            {t('status.metric.loss', { minutes: windowMins })}
+            {t('status.metric.loss')}
             <MetricHelp topic="loss" />
           </dt>
           <dd>{formatPct(endpoint.lossPct, locale)}</dd>
@@ -125,10 +124,9 @@ const EndpointRow = ({ endpoint, serviceLabel, alone, windowMins }: EndpointRowP
  * disagree: a storefront answering while the gateway does not is the finding, and one
  * amber dot would hide which half is broken.
  */
-export const ServiceCard = ({ service, checkIntervalSecs, windowSecs }: ServiceCardProps) => {
+export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const windowMins = Math.max(1, Math.round(windowSecs / 60));
 
   const counts = DISTRIBUTION.map((entry) => ({
     ...entry,
@@ -187,7 +185,6 @@ export const ServiceCard = ({ service, checkIntervalSecs, windowSecs }: ServiceC
             endpoint={endpoint}
             serviceLabel={service.label}
             alone={service.endpoints.length === 1}
-            windowMins={windowMins}
           />
         ))}
       </ul>

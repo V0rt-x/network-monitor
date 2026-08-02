@@ -96,7 +96,6 @@ export const StatusPage = () => {
                     key={service.id}
                     service={service}
                     checkIntervalSecs={checkIntervalSecs}
-                    windowSecs={windowSecs}
                   />
                 ))}
               </div>
