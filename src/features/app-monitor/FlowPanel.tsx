@@ -62,7 +62,14 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
         )}
       </header>
 
-      <p className="nm-panel__note">{t('apps.passive.note')}</p>
+      {/* One clause of the three this used to carry, and it is the clause that is a
+          *warning*: it says these figures describe something other than what a reader
+          expects. Per the standing rule that never moves. How the measurement is taken, and
+          why it sits beside the route rather than instead of it, moved to the help. */}
+      <p className="nm-panel__note">
+        {t('apps.passive.note')}
+        <MetricHelp topic="passive" />
+      </p>
 
       <dl className="nm-endpoint__metrics">
         <div>

@@ -20,13 +20,16 @@ const flow = (overrides: Partial<FlowView> = {}): FlowView => ({
 });
 
 describe('FlowPanel', () => {
-  it('states what the figures are measured from, and that none of them is a ping', () => {
+  it('keeps saying none of these is a ping, however short the note gets', () => {
     render(<FlowPanel flow={flow()} />);
 
-    expect(screen.getByText(/without sending anything/)).toBeInTheDocument();
     // The rule the whole phase protects: this column and the route column are two
-    // quantities, and neither may be presented as a round trip to the server.
+    // quantities, and neither may be presented as a round trip to the server. It is a
+    // warning — it says the figures describe something other than what a reader expects —
+    // so it is the one clause of this note that never moves off level one. How the
+    // measurement is taken went to the help with the rest.
     expect(screen.getByText(/Nothing here is a ping/)).toBeInTheDocument();
+    expect(screen.queryByText(/without sending anything/)).not.toBeInTheDocument();
     expect(screen.getByText('Updates from the server')).toBeInTheDocument();
     expect(screen.getByText('20.0 a second')).toBeInTheDocument();
   });

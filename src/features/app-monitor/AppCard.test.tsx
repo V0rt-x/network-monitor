@@ -487,7 +487,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/Measuring this application for the first time/)).toBeInTheDocument();
+    expect(screen.getByText(/Warming up · 42 s left/)).toBeInTheDocument();
     expect(screen.getByText('Warming up · 42 s')).toBeInTheDocument();
   });
 
@@ -725,7 +725,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/Nothing discovered yet for this application/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing discovered yet/)).toBeInTheDocument();
   });
 
   it('lets the user stop following the application', async () => {

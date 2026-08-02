@@ -86,23 +86,22 @@
   "apps": {
     "pool": {
       "title": "The game's own reference servers",
-      "absent": "No reference servers for this application yet. Its operator publishes none, and this machine has not seen it connect to any — so the app cannot tell an outage of the game's servers apart from a path you cannot reach.",
+      "absent": "None for this application.",
       "answering": "Answering",
-      "rtt": "Median round trip",
+      "rtt": "Ping, median",
       "members": "Members",
       "membership": "{{seeded}} published, {{learned}} learned",
-      "unproven_one": "{{count}} member has never answered a probe and is not counted — a game's match server answers nothing anyone can send, so its silence proves nothing.",
-      "unproven_other": "{{count}} members have never answered a probe and are not counted — a game's match server answers nothing anyone can send, so their silence proves nothing.",
-      "note": "Several addresses belonging to this game, in different places, probed rarely. All of them silent while your baselines are clean is the only evidence that points at the game rather than at your path."
+      "unproven_one": "{{count}} not counted — never answered a probe",
+      "unproven_other": "{{count}} not counted — never answered a probe"
     },
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
     "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
     "noProbeFigures": "Nothing this app can send is answered here, so there is no ping, jitter or loss to show for it.",
-    "noEndpoints": "Nothing discovered yet for this application. Nothing is wrong: it has not opened a connection since you started watching, and the moment it does it will appear here.",
+    "noEndpoints": "Nothing discovered yet — this application has not opened a connection since you started watching.",
     "warmup": {
       "badge": "Warming up · {{seconds}} s",
-      "application": "Measuring this application for the first time. For the next {{seconds}} s the figures behind steadiness and lost replies are still filling, so they are left blank rather than shown as findings. Anything already certain — nothing getting through, a blocked probe, a freeze — is shown at once."
+      "application": "Warming up · {{seconds}} s left. Figures that need a full window are blank until then; anything already certain is shown at once."
     },
     "window": "Figures cover the last {{seconds}} s",
     "pid": "PID {{pid}}",
@@ -116,13 +115,13 @@
     "chart": {
       "label": "Round-trip time over time for every endpoint of {{name}}",
       "pathSeries": "Route to {{endpoint}}",
-      "note": "Time runs from the moment you started watching this application, and the drawing grows to the right. One line per endpoint, each point the slowest round trip in a {{seconds}} s slot — so a spike is never smoothed away, and the line sits above the average beside it. The scale is logarithmic, so 4 ms and 400 ms are both readable; nothing is clipped. A dashed line is the route to an endpoint that answers nothing: the round-trip time to a router on the way there, not to the endpoint itself. A break in a line is probes that did not come back.",
+      "caption": "Ping over time · one point per {{seconds}} s · log scale",
       "highlight": "Highlight on the chart",
       "failed": "The chart could not be drawn ({{reason}}). Every figure it would show is in the list below."
     },
     "picker": {
       "heading": "Running applications",
-      "hint": "Pick up to {{limit}}. Choosing one monitors the whole application — every process it is running under, and anything it launches. Nothing is read from inside them — only which addresses they talk to.",
+      "hint": "Pick up to {{limit}}.",
       "partOf": "Part of {{name}}",
       "processes": "{{count}} process",
       "processes_other": "{{count}} processes",
@@ -150,7 +149,7 @@
       "udpEmpty": "No match traffic discovered yet — nothing of this kind has been seen leaving this application.",
       "udpUnobservable": "Match traffic cannot be discovered on this machine: per-process flow events are not running, so these connections are invisible to the app. The note above the applications says what to do about it.",
       "tcp": "Supporting connections",
-      "tcpHint": "Sign-in, launchers, content networks and telemetry — not where the game is played, and still where being blocked stops you playing"
+      "tcpHint": "Sign-in, launchers and content networks — not where the game is played"
     },
     "liveness": {
       "active": "In use",
@@ -188,7 +187,7 @@
     },
     "passive": {
       "heading": "The traffic itself",
-      "note": "Measured from the data your game is already exchanging, without sending anything. Nothing here is a ping: no request is timed against its answer. How evenly the data arrives is what you feel as stutter, and it includes whatever pace the server chose — which is why it sits beside the route rather than instead of it.",
+      "note": "Nothing here is a ping: no request is timed against its answer.",
       "updatesPerSec": "{{rate}} a second",
       "updatesUnknown": "Not enough arriving yet to tell",
       "span": "over the last {{seconds}} s",
@@ -306,6 +305,31 @@
         "title": "How it is being measured",
         "short": "Which kind of probe produced the numbers. Different kinds measure slightly different things.",
         "body": "The app tries the cheapest honest probe first and falls back when it is refused. An echo is the plainest round trip. A connection attempt measures a round trip plus the far end deciding to accept it. A handshake probe measures the round trip end to end through a tunnel, where the two cheaper kinds would measure only as far as the tunnel and report a falsely good number. \"Filtering confirmed\" means a kind was proven blocked — a later kind succeeded where it failed — which is knowledge, unlike silence. \"Through a tunnel\" means something on your network redirects this address, so the figure covers the whole tunnelled path rather than a round trip to the server."
+      },
+      "chart": {
+        "title": "The chart",
+        "short": "One line per endpoint over the time you have been watching. A break in a line is probes that did not come back.",
+        "body": "Time runs from the moment you started watching this application, and the drawing grows to the right until it fills the width. There is one line per endpoint, and each point is the *slowest* round trip inside its slot rather than the average — a spike is what you are looking for, so it is never smoothed away, which is also why a line usually sits above the mean in the row beside it. The slots are deliberately wider than the interval an endpoint is probed at: a finer slot would be empty whenever no probe happened to land in it, and an empty slot is drawn as a break, so a healthy endpoint would appear to be dropping packets. A break therefore means probes that did not come back. The vertical scale is logarithmic, because an application's endpoints span two orders of magnitude — a router inside your provider at a few milliseconds beside a server across an ocean — and on a linear scale one spike flattens every other line against the floor. Nothing is clipped. A dashed line is the route to an endpoint that answers nothing: the round trip to a router on the way there, not to the endpoint itself."
+      },
+      "watching": {
+        "title": "What watching an application means",
+        "short": "Choosing one watches the whole application — its other processes, and anything it launches. Nothing inside them is ever read.",
+        "body": "An application is a set of processes, not the one you clicked: a launcher starts the game, an anti-cheat may restart it, and a desktop app like Discord runs half a dozen helpers. Choosing one therefore watches all of them, and adopts anything they start afterwards, which is what lets you arm the monitor before a match rather than scramble for the picker once it has begun. What is read is which addresses those processes talk to and how much data crosses each one — the operating system's own connection tables and flow events. Nothing is read from inside a process: not its memory, not its traffic's contents, not its protocol. That is a hard limit rather than a current state of the code, and it is why this app is invisible to anti-cheat systems."
+      },
+      "warmup": {
+        "title": "Warming up",
+        "short": "The first seconds of a capture are the least informative it will ever have, so figures that need a full window are left blank until they mean something.",
+        "body": "Right after you pick an application, no window is full: jitter would be computed over a handful of samples, a loss percentage would have a denominator of three, the fallback chain is still trying probe kinds, and the passive figures need several updates before they say anything. Presenting all of that as measurement invites you to act on the worst numbers the session will ever produce, so the app withholds them and says how long is left. A round trip is not withheld — one reply is one real measurement, and the mean of a few is the mean of a few. **Nothing already certain waits.** Proven filtering, nothing getting through, an endpoint alive by its own traffic, a freeze: those are answers, and arriving fast is the point of them."
+      },
+      "passive": {
+        "title": "The traffic itself",
+        "short": "Measured from data your game is already exchanging, without sending anything. Nothing here is a ping.",
+        "body": "These figures cost no packets: the operating system already counts what crosses each connection, so this is the only part of the page that describes the traffic you are actually playing over rather than a substitute for it. Nothing here is a ping, and the distinction matters — no request is timed against its answer. The operating system reports that data arrived, not what it was replying to. How evenly it arrives is what you feel as stutter, and it folds in whatever pace the server chose: a server that skipped a tick and a network that delayed one look identical from here. That is exactly why these sit beside the route rather than instead of it. Their disagreement is the diagnosis — a clean route with ragged arrivals points at the server, a ragged route with even arrivals usually means a router is deprioritising our probes rather than that anything is wrong."
+      },
+      "pool": {
+        "title": "The game's own reference servers",
+        "short": "Other addresses belonging to the same game, probed rarely. All of them silent while your baselines are clean is what points at the game rather than at you.",
+        "body": "One unreachable game server is ambiguous: it could be the server, or the route to it, or you. Several addresses belonging to the same game, sitting in different places and all silent at once while everything else you can reach answers normally, is the only evidence on this page that points at the game's own infrastructure rather than at your path to it. The pool is built from two sources — addresses the game's operator publishes, which ship with the app and change only when it is updated, and addresses this machine has actually seen the game connect to, which are kept locally and expire after a few days because game server addresses rotate. A member that has never answered a probe is not counted: a game's match server answers nothing anyone can send, so its silence proves nothing either way. Most titles publish no reference addresses at all, and an application with none can neither report an outage nor rule one out — which you need to know before reading a verdict that stops at the route."
       },
       "checks": {
         "title": "The check strip",

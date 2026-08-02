@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import '../../i18n';
@@ -19,9 +20,14 @@ const pool = (overrides: Partial<PoolView> = {}): PoolView => ({
 describe('PoolPanel', () => {
   it('says an application has no reference servers rather than hiding the panel', () => {
     // An absent pool can neither report an outage nor rule one out, and the user has to
-    // know that before reading a verdict that stops at the route.
+    // know that before reading a verdict that stops at the route — so the panel stays.
+    // What that costs them is a sentence in the help, not a paragraph on the card.
     render(<PoolPanel pool={null} />);
-    expect(screen.getByText(/No reference servers for this application yet/u)).toBeInTheDocument();
+
+    expect(screen.getByText('None for this application.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: "What The game's own reference servers means" }),
+    ).toBeInTheDocument();
   });
 
   it('shows the share answering and where the members came from', () => {
@@ -83,7 +89,9 @@ describe('PoolPanel', () => {
       />,
     );
 
-    expect(screen.getByText(/4 members have never answered a probe/u)).toBeInTheDocument();
+    // The count stays on the card because it changes what the percentage above it means;
+    // *why* a silent member proves nothing is the ⓘ's answer rather than a paragraph's.
+    expect(screen.getByText('4 not counted — never answered a probe')).toBeInTheDocument();
   });
 
   it('says nothing about unproven members when there are none', () => {
@@ -91,8 +99,20 @@ describe('PoolPanel', () => {
     expect(screen.queryByText(/never answered a probe/u)).not.toBeInTheDocument();
   });
 
-  it('explains what the pool is evidence for', () => {
+  it('explains what the pool is evidence for when asked, not before', async () => {
+    // The paragraph saying what the pool proves was competing with the three figures it
+    // qualifies. It is a real explanation and it is not a warning, so it went a level down.
     render(<PoolPanel pool={pool()} />);
-    expect(screen.getByText(/points at the game rather than at your path/u)).toBeInTheDocument();
+
+    expect(
+      screen.queryByText(/points at the game rather than at your path/u),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: "What The game's own reference servers means" }),
+    );
+    expect(await screen.findByRole('note')).toHaveTextContent(
+      /All of them silent while your baselines are clean/,
+    );
   });
 });

@@ -32,6 +32,14 @@ export const HELP_TOPICS = [
   'serviceRtt',
   'latestCheck',
   'meanRtt',
+  // The prose the applications page used to carry. Each of these was a paragraph competing
+  // with the figures beside it; what a reader needs on the page is a name and a number, and
+  // what a reader who *asks* needs is here.
+  'chart',
+  'watching',
+  'warmup',
+  'passive',
+  'pool',
 ] as const;
 
 /** One thing the page can explain. */

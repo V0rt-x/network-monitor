@@ -221,6 +221,52 @@ describe('AppMonitorPage', () => {
     ).toHaveLength(0);
   });
 
+  it('carries no running prose at level one, and every warning it had', async () => {
+    // The audit of item 4, pinned in the same spirit as the closed-row test: prose grows
+    // back one sentence at a time. What is asserted is not a word count but a list — every
+    // paragraph that was competing with a figure is gone from the page and reachable in the
+    // help, and everything the standing rule protects as a *warning* is untouched.
+    const emitter = captureEmitter();
+    render(<AppMonitorPage />);
+    const emit = emitter();
+
+    // A machine without the one-time tracing setup, which is the *default* on Windows: no
+    // UDP endpoints exist to be found, so the match-traffic group is empty and has to say
+    // why rather than read as a game that plays over nothing.
+    act(() => {
+      emit?.({
+        ...ENDPOINTS,
+        flowStatus: 'notPermitted',
+        apps: ENDPOINTS.apps.map((app) => ({
+          ...app,
+          groups: app.groups.map((group) =>
+            group.transport === 'udp' ? { ...group, endpoints: [] } : group,
+          ),
+        })),
+      });
+    });
+    await screen.findByRole('heading', { name: 'game.exe' });
+
+    // Moved down a level: the chart's six sentences of drawing decisions, what choosing an
+    // application does, and how the passive figures are taken.
+    for (const moved of [
+      /each point the slowest round trip/,
+      /Choosing one monitors the whole application/,
+      /Measured from the data your game is already exchanging/,
+      /and the moment it does it will appear here/,
+    ]) {
+      expect(screen.queryByText(moved)).not.toBeInTheDocument();
+    }
+
+    // Never demoted, whatever their length: a machine that cannot see UDP at all, and a
+    // group that is empty because of it. Both are things the user must act on.
+    const [flow] = screen
+      .getAllByRole('status')
+      .filter((element) => element.classList.contains('nm-apps__flow'));
+    expect(flow).toHaveTextContent(/UDP endpoints and traffic counters are missing/);
+    expect(screen.getByText(/Match traffic cannot be discovered on this machine/)).toBeVisible();
+  });
+
   it('reports a dead event channel instead of looking like nothing was chosen', async () => {
     subscribeToAppEndpoints.mockRejectedValue(new Error('no listener'));
     render(<AppMonitorPage />);

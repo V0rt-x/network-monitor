@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { healthKey, healthModifier } from '../dashboard/labels';
 import { formatCount, formatMs, formatPct } from '../../shared/format';
 import type { PoolView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 
 interface PoolPanelProps {
   readonly pool: PoolView | null;
@@ -29,7 +30,10 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
     return (
       <section className="nm-pool nm-panel">
         <header className="nm-panel__header">
-          <h4 className="nm-panel__title">{t('apps.pool.title')}</h4>
+          <h4 className="nm-panel__title">
+            {t('apps.pool.title')}
+            <MetricHelp topic="pool" />
+          </h4>
         </header>
         <p className="nm-panel__note">{t('apps.pool.absent')}</p>
       </section>
@@ -39,7 +43,10 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
   return (
     <section className="nm-pool nm-panel">
       <header className="nm-panel__header">
-        <h4 className="nm-panel__title">{t('apps.pool.title')}</h4>
+        <h4 className="nm-panel__title">
+          {t('apps.pool.title')}
+          <MetricHelp topic="pool" />
+        </h4>
         <span className={`nm-health ${healthModifier(pool.health)}`}>
           {t(healthKey(pool.health))}
         </span>
@@ -65,10 +72,11 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
         </div>
       </dl>
 
+      {/* The count stays on the page because it changes what the percentage above it means;
+          why a silent member proves nothing is the ⓘ's answer, not a paragraph's. */}
       {pool.unproven > 0 && (
         <p className="nm-panel__note">{t('apps.pool.unproven', { count: pool.unproven })}</p>
       )}
-      <p className="nm-panel__note">{t('apps.pool.note')}</p>
     </section>
   );
 };

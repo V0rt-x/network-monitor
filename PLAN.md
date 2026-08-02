@@ -1598,7 +1598,7 @@ dash.
       loss carry the span they cover; and the card's headline was a bare number with nothing
       saying which round trip it was, so it is labelled *Ping, median* and says why a median.
       Four help topics were added for them, since the ⓘ and the help read from one list.
-- [ ] **4. The Applications page carries too much prose.** *Fourth: it is a real complaint about
+- [x] **4. The Applications page carries too much prose.** *Fourth: it is a real complaint about
       the busiest page in the product, and it is deliberately behind 1–3 because the text that
       survives it should be written in the vocabulary those items settle.*
       Level one is supposed to be a name, a word of state and three figures; the page also
@@ -1618,6 +1618,24 @@ dash.
         6.5's closed-row test, because prose grows back one sentence at a time.
       – The help page absorbs what moves, which means it gains sections rather than lines — see
         item 5, which is renaming it anyway.
+      — the audit, with each block's destination:
+      *To the help, behind an ⓘ*: the chart note (six sentences of drawing decisions, replaced
+      by a caption saying what the axes are — `chart`); what choosing an application actually
+      does and that nothing inside a process is ever read (`watching`); how the passive figures
+      are taken (`passive`); what the reference pool proves and why an unproven member is not
+      counted (`pool`); what a warm-up withholds and what it never withholds (`warmup`).
+      *Shortened in place*: the warm-up line, the empty-application line, the supporting-group
+      hint, the absent-pool line, the unproven-member count.
+      *Untouched, per the standing rule*: the flow-status banner, the egress conflict, the
+      unobservable match-traffic group, the route panel's "this is not the round trip to the
+      server", and the one clause of the passive note that is a warning — *nothing here is a
+      ping*. A warning is never demoted whatever its length, and three of these are long.
+      **The route panel's note was the interesting call.** It is three lines of prose and it
+      stays, because it says the figure beside it describes something other than what the
+      reader thinks — which is precisely the case the standing rule keeps at level one.
+      A test asserts the surviving level-one text: each moved paragraph absent from the page,
+      each warning present. Not a word count — a list, in the same spirit as 6.5's closed-row
+      test, because prose grows back one sentence at a time.
 - [ ] **5. Merge the dashboard and the service status page; rename the help page.** *Fifth: two
       structural changes to navigation, taken together because they are one edit to the same
       five tabs, and taken after the text items because merging two pages of text is cheaper

@@ -8,6 +8,7 @@ import { Distribution } from './Distribution';
 import { EndpointChart } from './EndpointChart';
 import { EndpointColours } from './endpointColours';
 import { EndpointGroup } from './EndpointGroup';
+import { MetricHelp } from '../help/MetricHelp';
 import { PoolPanel } from './PoolPanel';
 
 interface AppCardProps {
@@ -150,6 +151,7 @@ export const AppCard = ({
       {app.warmupSecsRemaining !== null && (
         <p className="nm-appcard__warmup nm-state--pending">
           {t('apps.warmup.application', { seconds: Math.ceil(app.warmupSecsRemaining) })}
+          <MetricHelp topic="warmup" />
         </p>
       )}
 
@@ -172,8 +174,13 @@ export const AppCard = ({
             onSelect={pin}
             label={t('apps.chart.label', { name: app.name })}
           />
+          {/* A caption, not a paragraph. Six sentences of drawing decisions — the log
+              scale, the slot width, the slot maxima, what a break means — used to sit here
+              competing with the chart they described; they are the help's job, and what a
+              reader needs beside the picture is what the axes are. */}
           <p className="nm-appcard__chartnote">
-            {t('apps.chart.note', { seconds: chartStepSecs })}
+            {t('apps.chart.caption', { seconds: chartStepSecs })}
+            <MetricHelp topic="chart" />
           </p>
         </>
       )}

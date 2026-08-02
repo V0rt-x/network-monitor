@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatCount } from '../../shared/format';
+import { MetricHelp } from '../help/MetricHelp';
 import { applicationProblemKey } from './labels';
 import { useApplicationList } from './useApplicationList';
 
@@ -81,7 +82,14 @@ export const ApplicationPicker = ({
   return (
     <section className="nm-picker">
       <header className="nm-picker__header">
-        <h3 className="nm-picker__title">{t('apps.picker.heading')}</h3>
+        <h3 className="nm-picker__title">
+          {t('apps.picker.heading')}
+          {/* What choosing an application actually does — that it takes the whole process
+              group and anything it launches, and that nothing inside a process is ever
+              read — was three sentences here. It is a real answer to a real question and
+              it is not a warning, so it moved a level down rather than off the page. */}
+          <MetricHelp topic="watching" />
+        </h3>
         <button
           type="button"
           className="nm-button nm-button--quiet"
