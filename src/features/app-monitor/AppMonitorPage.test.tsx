@@ -78,6 +78,7 @@ const ENDPOINTS: AppEndpoints = {
               path: null,
               flow: null,
               passiveRtt: null,
+              age: { secs: 300, kind: 'watched' },
               warmupSecsRemaining: null,
               chartRttMs: [],
               chartPathMs: [],

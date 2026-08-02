@@ -1,12 +1,13 @@
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
+import { spanOf } from '../../shared/duration';
 import { formatBytes, formatMs, formatPct } from '../../shared/format';
 import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { FlowPanel } from './FlowPanel';
-import { livenessKey, probingKey, transportKey } from './labels';
+import { ageKindKey, livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
 import { WhyNotYourPing } from './WhyNotYourPing';
 
@@ -97,6 +98,9 @@ export const EndpointRow = ({
 }: EndpointRowProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
+  // Absent stays absent here too: a span the core did not send is left off the row rather
+  // than written as "0 s", which would say the endpoint had just appeared.
+  const age = endpoint.age.secs === null ? null : spanOf(endpoint.age.secs);
 
   const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
     .filter(Boolean)
@@ -141,6 +145,17 @@ export const EndpointRow = ({
           <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
         </button>
         <span className="nm-endpoint__transport">{t(transportKey(endpoint.transport))}</span>
+        {/* How long it has been there, which is what tells a new endpoint from one that has
+            been carrying the match all along. One figure at level one under a neutral word:
+            it is two different facts depending on the transport, and the expander below
+            names which — a single label meaning whichever was available would answer the
+            question with a number nobody could interpret. */}
+        {age !== null && (
+          <span className="nm-endpoint__age">
+            {t('apps.age.label')} {t(age.key, age.params)}
+            <MetricHelp topic="age" />
+          </span>
+        )}
       </div>
 
       <div className="nm-endpoint__badges">
@@ -238,6 +253,17 @@ export const EndpointRow = ({
               {endpoint.filteringConfirmed && ` · ${t('dashboard.badge.filteringConfirmed')}`}
             </dd>
           </div>
+          {/* Which of the two facts the header's figure is. They are not interchangeable:
+              a TCP connection has an establishment the operating system dates, and a UDP
+              endpoint has none, so what can be said there is how long we have been
+              watching. The word is here rather than beside the number because the number
+              answers the question either way. */}
+          {age !== null && (
+            <div>
+              <dt>{t(ageKindKey(endpoint.age.kind))}</dt>
+              <dd>{t(age.key, age.params)}</dd>
+            </div>
+          )}
           <div>
             <dt>{t('apps.details.use')}</dt>
             <dd>

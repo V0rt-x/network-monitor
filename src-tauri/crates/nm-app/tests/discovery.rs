@@ -170,6 +170,7 @@ fn a_round_trip_summary_is_keyed_by_the_endpoint_the_probes_use() {
         rtt: Duration::from_micros(24_500),
         min_rtt: Duration::from_millis(21),
         max_rtt: Duration::from_millis(90),
+        established_for: Some(Duration::from_secs(300)),
         observed_at: Duration::from_secs(9),
     };
     let rtt = from_tcp_rtt(&event);
@@ -459,6 +460,7 @@ async fn a_round_trip_summary_reaches_the_session_and_an_unusable_one_does_not()
         rtt: Duration::from_micros(80),
         min_rtt: Duration::from_micros(60),
         max_rtt: Duration::from_micros(120),
+        established_for: Some(Duration::from_secs(60)),
         observed_at: Duration::from_secs(1),
     });
     source.emit_rtt(&TcpRttEvent {
@@ -467,6 +469,7 @@ async fn a_round_trip_summary_reaches_the_session_and_an_unusable_one_does_not()
         rtt: Duration::from_micros(24_500),
         min_rtt: Duration::from_millis(21),
         max_rtt: Duration::from_millis(90),
+        established_for: Some(Duration::from_secs(120)),
         observed_at: Duration::from_secs(2),
     });
 

@@ -34,6 +34,8 @@ export type {
   CoreReadiness,
   CoreStatus,
   DiagnosisView,
+  EndpointAgeKindView,
+  EndpointAgeView,
   EndpointGroupView,
   EndpointView,
   FlowStatusView,

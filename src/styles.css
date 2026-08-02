@@ -692,6 +692,22 @@ details.nm-endpointgroup > summary {
   letter-spacing: 0.04em;
 }
 
+/*
+ * How long the endpoint has been there, beside the transport it uses.
+ *
+ * A neighbour for the warm-up badge and the same question from the other end: one figure
+ * telling a new endpoint from one that has carried the whole match. The word for *which*
+ * age it is lives in the row's expander, because the two facts are not interchangeable.
+ */
+.nm-endpoint__age {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--nm-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .nm-endpoint__badges {
   display: flex;
   flex-wrap: wrap;

@@ -203,9 +203,39 @@ struct PassiveRttSample {
     rtt: Duration,
     min_rtt: Duration,
     max_rtt: Duration,
+    /// How long the connection had been up when the summary was written.
+    established_for: Option<Duration>,
     /// Our own clock, not the event's: this exists to say how stale the figure is, which is
     /// a question about now.
     at: Instant,
+}
+
+/// How long an endpoint has been there, and which fact that is.
+///
+/// **Two facts, two words, never one field that means whichever was available.** A TCP
+/// connection has an establishment and the operating system reports when it happened; a UDP
+/// endpoint has no such thing, because there is no connection to have been established, so
+/// the honest figure is how long this application has been watched talking to it. Both
+/// answer the question the user actually asked — telling a new endpoint from one that has
+/// been there all match — and they are not interchangeable, so the variant travels with the
+/// duration rather than the page being left to guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EndpointAge {
+    /// The operating system's own answer: how long the connection has been established.
+    ///
+    /// Aged forward from the last summary rather than reported as of it. A summary arrives
+    /// every few tens of seconds at best, so quoting its figure unchanged would make a
+    /// connection appear to stop ageing between events; the elapsed time since we folded it
+    /// in is local and exact, and it is added here rather than mixed into the event's own
+    /// clock, which the type system keeps separate.
+    Established(Duration),
+    /// How long this application has been watched talking to the endpoint.
+    ///
+    /// What UDP can honestly say, and what any endpoint can say before a summary has
+    /// arrived. It is a fact about our observation, not about the connection, and it is
+    /// named that way wherever it is shown.
+    Watched(Duration),
 }
 
 /// The applications sharing one probe target.
@@ -460,6 +490,7 @@ impl AppMonitor {
                 rtt: rtt.rtt,
                 min_rtt: rtt.min_rtt,
                 max_rtt: rtt.max_rtt,
+                established_for: rtt.established_for,
                 at: now,
             });
         }
@@ -1189,6 +1220,12 @@ pub struct EndpointReport {
     /// tunnelled endpoint (where it would measure the tunnel), and wherever the operating
     /// system has published nothing.
     pub passive_rtt: Option<PassiveRttReading>,
+    /// How long it has been there, and which of the two facts that is.
+    ///
+    /// Answers what the user actually asked for — telling a new endpoint from one that has
+    /// been there all match — and it is never one field meaning whichever was available:
+    /// see [`EndpointAge`].
+    pub age: EndpointAge,
     /// How much of the window behind the derived figures has yet to fill.
     ///
     /// [`None`] once it has. While it is [`Some`], jitter, loss and the traffic drop-off are
@@ -1313,6 +1350,21 @@ impl EndpointReport {
             }
         }
 
+        // The operating system's answer where it has one, ours otherwise. Ours is always
+        // available and always true — we really have been watching since then — so the
+        // absence of a summary costs the reader a better fact rather than the figure.
+        let age = entry
+            .passive_rtt
+            .and_then(|sample| {
+                sample
+                    .established_for
+                    .map(|established| established + now.saturating_duration_since(sample.at))
+            })
+            .map_or_else(
+                || EndpointAge::Watched(now.saturating_duration_since(tracked.first_seen())),
+                EndpointAge::Established,
+            );
+
         Self {
             key: tracked.key(),
             chart_rtt_ms: grid.place(&entry.history, started, now),
@@ -1342,6 +1394,7 @@ impl EndpointReport {
                 // rather than an enormous age.
                 age: now.saturating_duration_since(sample.at),
             }),
+            age,
             health,
             order_health,
             warmup_remaining,

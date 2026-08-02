@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 use nm_app::apps::AppMonitor;
 use nm_app::discovery::PassiveRtt;
 use nm_app::{
-    AppProcessView, AppView, EndpointView, HealthCountsView, HealthView, ProbeKindView,
-    TransportView,
+    AppProcessView, AppView, EndpointAgeKindView, EndpointView, HealthCountsView, HealthView,
+    ProbeKindView, TransportView,
 };
 use nm_core::address::AddressPolicy;
 use nm_core::diagnosis::BaselineEvidence;
@@ -749,6 +749,7 @@ fn stack_rtt(endpoint: EndpointKey) -> PassiveRtt {
         rtt: Duration::from_micros(24_500),
         min_rtt: Duration::from_millis(21),
         max_rtt: Duration::from_millis(90),
+        established_for: Some(Duration::from_secs(600)),
     }
 }
 
@@ -774,6 +775,62 @@ fn the_operating_systems_own_round_trip_reaches_the_page_with_its_age() {
         "the age is what stops a stale figure reading as live: {}",
         passive.age_secs
     );
+}
+
+#[test]
+fn a_tcp_connection_reports_how_long_it_has_been_established() {
+    // What the user asked for: telling a new endpoint from one that has been there all
+    // match. TCP has a real answer and the operating system already sends it beside the
+    // round trip — it was simply never parsed.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, tcp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+    monitor.note_passive_rtt(&stack_rtt(tcp(1)), now);
+
+    let age = flat(&view(&mut monitor, now + Duration::from_secs(30)))[0].age;
+
+    assert_eq!(age.kind, EndpointAgeKindView::Established);
+    assert!(
+        (age.secs - 630.0).abs() < 0.5,
+        "aged forward from the summary rather than frozen at it: {}",
+        age.secs
+    );
+}
+
+#[test]
+fn a_udp_endpoint_reports_how_long_it_has_been_watched_instead() {
+    // **Two facts, two words.** UDP has no establishment to report, so borrowing the word
+    // would be a claim about a connection that does not exist. What can honestly be said is
+    // how long this application has been watched talking to it.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+
+    let age = flat(&view(&mut monitor, now + Duration::from_secs(45)))[0].age;
+
+    assert_eq!(age.kind, EndpointAgeKindView::Watched);
+    assert!((age.secs - 45.0).abs() < 0.5, "{}", age.secs);
+}
+
+#[test]
+fn a_connection_the_system_never_dated_falls_back_to_being_watched() {
+    // The field has moved between Windows versions before. Losing it costs the reader the
+    // better fact, never the figure — and never quietly: the kind says which one they got.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, tcp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+    monitor.note_passive_rtt(
+        &PassiveRtt {
+            established_for: None,
+            ..stack_rtt(tcp(1))
+        },
+        now,
+    );
+
+    let age = flat(&view(&mut monitor, now + Duration::from_secs(20)))[0].age;
+
+    assert_eq!(age.kind, EndpointAgeKindView::Watched);
+    assert!((age.secs - 20.0).abs() < 0.5, "{}", age.secs);
 }
 
 #[test]

@@ -362,6 +362,14 @@ fn dispatch_summary(
         return;
     };
 
+    // Optional on purpose, unlike the three above. The round trip is what this event is
+    // consumed for; an age is a decoration beside it, and a field that moved between
+    // Windows versions must not cost the measurement.
+    let established_for = parser
+        .try_parse::<u32>("ConnectionTimeMs")
+        .ok()
+        .map(|ms| Duration::from_millis(u64::from(ms)));
+
     let event = TcpRttEvent {
         // The blob's own port is what the connection used; `LocalPort` is a later addition
         // to the event and repeats it. Where the blob is unported — a shape this provider
@@ -372,6 +380,7 @@ fn dispatch_summary(
         rtt: Duration::from_micros(u64::from(rtt)),
         min_rtt: Duration::from_micros(u64::from(min_rtt)),
         max_rtt: Duration::from_micros(u64::from(max_rtt)),
+        established_for,
         observed_at: super::event_time(record.raw_timestamp()),
     };
 

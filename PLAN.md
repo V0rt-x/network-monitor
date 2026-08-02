@@ -1702,7 +1702,7 @@ dash.
       would otherwise return the flat refusal, which is exactly the conclusion the toggle
       exists to prevent; the message now points at the toggle instead, and a test pins it.
       Search matches the executable as well as the label, so knowing the file name is enough.
-- [ ] **7. Age in the connection's header, and the honest word for it.** *Seventh: new
+- [x] **7. Age in the connection's header, and the honest word for it.** *Seventh: new
       information rather than a correction, and the user asked for it in exactly those terms —
       "how long it has been established, or failing that how long we have been watching it".*
       – **TCP has a real answer and it is already arriving.** The flow-metrics spike recorded
@@ -1723,6 +1723,20 @@ dash.
       – What the user actually asked for is served either way: telling a new endpoint from one
         that has been there all match. It also gives the warm-up badge a natural neighbour.
       – Level one gets one figure; which of the two facts it is, is stated in the expander.
+      — `EndpointAge` is a two-variant enum in Rust rather than a duration and a flag, so
+      there is no shape in which the page could receive a number without the claim attached.
+      `ConnectionTimeMs` cost one `try_parse` on an event already being decoded — and it is
+      **optional where the round trip is not**: the field has moved between Windows versions
+      before, and losing an age must never cost the measurement beside it. Where it is absent
+      the endpoint falls back to *watched*, which is always available and always true.
+      **Aged forward rather than reported as of the summary.** A summary arrives every few
+      tens of seconds at best, so quoting its figure unchanged would make a connection appear
+      to stop ageing between events. The elapsed time added is local and exact; `FlowInstant`
+      is never mixed with `Instant`, which the type system forbids anyway.
+      Three tests in Rust — established, watched, and a connection the system never dated —
+      and two in the page, one per word. `spanOf` is a tested pure function of its own, so a
+      long session reads `8 h 12 min` rather than the `492 min` the chart axis learned about
+      the hard way, and every unit stays an i18next key.
 - [ ] **8. More services on the status page, starting with Ubisoft.** *Eighth: pure data, no
       code, and it can land at any time — it is late only because it competes with nothing.*
       Eleven services ship today. Missing and named by the user: **Ubisoft Connect**. Others

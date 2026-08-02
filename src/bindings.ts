@@ -367,6 +367,35 @@ export type DiagnosisView = {
 };
 
 /**
+ *  Which of the two ages an endpoint's figure is.
+ * 
+ *  **Not interchangeable, and the page must say which.** A TCP connection has an
+ *  establishment and the operating system reports when it happened; a UDP endpoint has no
+ *  such thing, so what can honestly be said is how long this application has been watched
+ *  talking to it. One field meaning whichever was available would answer the user's question
+ *  — is this endpoint new, or has it been there all match — with a number nobody could
+ *  interpret.
+ */
+export type EndpointAgeKindView = 
+/**  How long the connection has been established, as the transport stack reports it. */
+"established" | 
+/**  How long this application has been watched talking to the endpoint. */
+"watched";
+
+/**
+ *  How long an endpoint has been there.
+ * 
+ *  One figure at level one, with which fact it is named a level down — the two are different
+ *  claims and a reader who wants to know which is being made can ask.
+ */
+export type EndpointAgeView = {
+	/**  The duration itself, in seconds. */
+	secs: number | null,
+	/**  Which of the two facts it is. */
+	kind: EndpointAgeKindView,
+};
+
+/**
  *  One transport's worth of an application's endpoints.
  * 
  *  **The match traffic first, the supporting connections below.** During a game the
@@ -547,6 +576,8 @@ export type EndpointView = {
 	 *  published yet.
 	 */
 	passiveRtt: PassiveRttView | null,
+	/**  How long the endpoint has been there, and which fact that is. */
+	age: EndpointAgeView,
 	/**
 	 *  Round-trip time in each slot of the application's chart, or `null` for a slot with
 	 *  no answer in it.

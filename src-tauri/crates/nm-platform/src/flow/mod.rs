@@ -98,6 +98,17 @@ pub struct TcpRttEvent {
     pub min_rtt: Duration,
     /// The slowest it has seen on this connection.
     pub max_rtt: Duration,
+    /// How long the connection had been established when the summary was written.
+    ///
+    /// The transport stack's own answer, which nothing else here can supply: a connection
+    /// has an establishment and the operating system knows when it happened. [`None`] where
+    /// the field is absent — this event's shape has moved between Windows versions before,
+    /// and losing an age must never cost the round trip beside it.
+    ///
+    /// **UDP has no equivalent and must not borrow it.** There is no connection to have
+    /// been established, so the honest figure there is how long the application has been
+    /// watched talking to the endpoint, which is a different fact under a different name.
+    pub established_for: Option<Duration>,
     /// When the operating system says it measured this — see [`FlowEvent::observed_at`].
     pub observed_at: Duration,
 }

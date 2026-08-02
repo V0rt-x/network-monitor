@@ -35,6 +35,7 @@ export const HELP_TOPICS = [
   // The prose the applications page used to carry. Each of these was a paragraph competing
   // with the figures beside it; what a reader needs on the page is a name and a number, and
   // what a reader who *asks* needs is here.
+  'age',
   'chart',
   'watching',
   'warmup',

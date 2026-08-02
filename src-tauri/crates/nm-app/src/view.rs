@@ -27,7 +27,7 @@ use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::apps::{EndpointReport, PassiveRttReading};
+use crate::apps::{EndpointAge, EndpointReport, PassiveRttReading};
 use crate::baselines::BaselineGroup;
 use crate::discovery::FlowStatus;
 use crate::services::ServiceGroup;
@@ -796,6 +796,51 @@ impl From<&PassiveRttReading> for PassiveRttView {
     }
 }
 
+/// Which of the two ages an endpoint's figure is.
+///
+/// **Not interchangeable, and the page must say which.** A TCP connection has an
+/// establishment and the operating system reports when it happened; a UDP endpoint has no
+/// such thing, so what can honestly be said is how long this application has been watched
+/// talking to it. One field meaning whichever was available would answer the user's question
+/// — is this endpoint new, or has it been there all match — with a number nobody could
+/// interpret.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum EndpointAgeKindView {
+    /// How long the connection has been established, as the transport stack reports it.
+    Established,
+    /// How long this application has been watched talking to the endpoint.
+    Watched,
+}
+
+/// How long an endpoint has been there.
+///
+/// One figure at level one, with which fact it is named a level down — the two are different
+/// claims and a reader who wants to know which is being made can ask.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EndpointAgeView {
+    /// The duration itself, in seconds.
+    pub secs: f64,
+    /// Which of the two facts it is.
+    pub kind: EndpointAgeKindView,
+}
+
+impl From<EndpointAge> for EndpointAgeView {
+    fn from(age: EndpointAge) -> Self {
+        match age {
+            EndpointAge::Established(secs) => Self {
+                secs: secs.as_secs_f64(),
+                kind: EndpointAgeKindView::Established,
+            },
+            EndpointAge::Watched(secs) => Self {
+                secs: secs.as_secs_f64(),
+                kind: EndpointAgeKindView::Watched,
+            },
+        }
+    }
+}
+
 /// One endpoint of one monitored application.
 ///
 /// Per endpoint and never rolled up. Within one application some endpoints stay clean
@@ -923,6 +968,8 @@ pub struct EndpointView {
     /// trip to the user's own router, a fake-*good* figure — and wherever nothing has been
     /// published yet.
     pub passive_rtt: Option<PassiveRttView>,
+    /// How long the endpoint has been there, and which fact that is.
+    pub age: EndpointAgeView,
     /// Round-trip time in each slot of the application's chart, or `null` for a slot with
     /// no answer in it.
     ///
@@ -1015,6 +1062,7 @@ impl EndpointView {
             path: report.path.as_ref().map(PathView::from),
             flow: report.flow.as_ref().map(FlowView::from),
             passive_rtt: report.passive_rtt.as_ref().map(PassiveRttView::from),
+            age: report.age.into(),
             chart_rtt_ms: report.chart_rtt_ms.clone(),
             chart_path_ms: report.chart_path_ms.clone(),
         }

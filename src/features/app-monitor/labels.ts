@@ -1,5 +1,6 @@
 import type {
   ApplicationListProblem,
+  EndpointAgeKindView,
   FlowStatusView,
   LivenessView,
   PathPositionView,
@@ -123,6 +124,23 @@ export const pathQualityModifier = (quality: PathQualityView) => {
     case 'uncorroborated':
     case 'notMeasuredYet':
       return 'nm-health--unknown' as const;
+  }
+};
+
+/**
+ * Which of the two ages the header is showing, named at level two.
+ *
+ * They are different claims: a TCP connection has an establishment the operating system
+ * dates, and a UDP endpoint has none, so what can honestly be said there is how long this
+ * application has been watched talking to it. Two facts, two words — never one field meaning
+ * whichever was available.
+ */
+export const ageKindKey = (kind: EndpointAgeKindView) => {
+  switch (kind) {
+    case 'established':
+      return 'apps.age.established' as const;
+    case 'watched':
+      return 'apps.age.watched' as const;
   }
 };
 

@@ -56,6 +56,7 @@ const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   path: null,
   flow: null,
   passiveRtt: null,
+  age: { secs: 300, kind: 'watched' },
   warmupSecsRemaining: null,
   chartRttMs: [24, null, 25],
   chartPathMs: [null, null, null],
@@ -646,6 +647,56 @@ describe('AppCard', () => {
     expect(
       screen.getByText('Data exchanged (30 s)').parentElement?.parentElement,
     ).toHaveTextContent('630 kB');
+  });
+
+  it('says how old a connection is, and which kind of old that is', () => {
+    // What the user asked for: telling a new endpoint from one that has been there all
+    // match. Two facts under two words — a TCP connection has an establishment the system
+    // dates, a UDP endpoint has none — with the figure at level one and the word for it a
+    // level down, so a reader can never mistake one claim for the other.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              transport: 'tcp',
+              key: 'tcp/1.1.1.2:443',
+              address: '1.1.1.2:443',
+              // Degraded so the supporting-connections group is unfolded: whether it starts
+              // folded is a separate rule with its own test, and this one is about the age.
+              health: 'degraded',
+              age: { secs: 5_400, kind: 'established' },
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Age 1 h 30 min/)).toBeVisible();
+    expect(screen.getByText('Connection established')).toBeInTheDocument();
+    expect(screen.queryByText('Watched by this app')).not.toBeInTheDocument();
+  });
+
+  it('never borrows the word "established" for a UDP endpoint', () => {
+    // There is no connection to have been established, so the only honest figure is how
+    // long this application has been watched talking to the address.
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ age: { secs: 45, kind: 'watched' } })] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Age 45 s/)).toBeVisible();
+    expect(screen.getByText('Watched by this app')).toBeInTheDocument();
+    expect(screen.queryByText('Connection established')).not.toBeInTheDocument();
   });
 
   it("shows the operating system's own round trip with its age, never as a live figure", () => {

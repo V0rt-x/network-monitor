@@ -5,6 +5,11 @@
     "minimize": "Minimize to tray",
     "quit": "Quit"
   },
+  "span": {
+    "seconds": "{{seconds}} s",
+    "minutes": "{{minutes}} min",
+    "hours": "{{hours}} h {{minutes}} min"
+  },
   "nav": {
     "label": "Sections",
     "network": "Network",
@@ -169,6 +174,11 @@
     "badge": {
       "egressConflict": "Probe may not follow this app's route"
     },
+    "age": {
+      "label": "Age",
+      "established": "Connection established",
+      "watched": "Watched by this app"
+    },
     "metric": {
       "rtt": "Ping (RTT)",
       "jitter": "Jitter",
@@ -313,6 +323,11 @@
         "title": "How it is being measured",
         "short": "Which kind of probe produced the numbers. Different kinds measure slightly different things.",
         "body": "The app tries the cheapest honest probe first and falls back when it is refused. An echo is the plainest round trip. A connection attempt measures a round trip plus the far end deciding to accept it. A handshake probe measures the round trip end to end through a tunnel, where the two cheaper kinds would measure only as far as the tunnel and report a falsely good number. \"Filtering confirmed\" means a kind was proven blocked — a later kind succeeded where it failed — which is knowledge, unlike silence. \"Through a tunnel\" means something on your network redirects this address, so the figure covers the whole tunnelled path rather than a round trip to the server."
+      },
+      "age": {
+        "title": "Age",
+        "short": "How long this endpoint has been there — which tells one that has just appeared from one that has carried the whole match.",
+        "body": "This is one figure standing for two different facts, and the row's own details say which of them you are looking at. For a TCP connection the operating system knows when it was established and reports it, so the age is the connection's own — a real fact about the connection rather than about this app. UDP has no such thing: there is no connection to have been established, only datagrams going back and forth, so what can honestly be said is how long this application has been watched talking to that address. The two are never merged into one claim, because they answer differently — a match server watched for two minutes may have been carrying traffic for an hour before you started the monitor. What both are good for is the same thing: telling an endpoint that has just appeared from one that has been there all along, which is usually the difference between something changing and something that was always this way."
       },
       "chart": {
         "title": "The chart",

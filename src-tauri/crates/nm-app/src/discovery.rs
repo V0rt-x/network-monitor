@@ -118,6 +118,11 @@ pub struct PassiveRtt {
     pub min_rtt: Duration,
     /// The slowest it has seen on this connection.
     pub max_rtt: Duration,
+    /// How long the connection had been established when the summary was written.
+    ///
+    /// The only source of this fact in the whole product: TCP has an establishment and the
+    /// operating system knows when it happened. [`None`] where the field was absent.
+    pub established_for: Option<Duration>,
 }
 
 /// One thing discovery has to report.
@@ -145,6 +150,7 @@ pub fn from_tcp_rtt(event: &TcpRttEvent) -> PassiveRtt {
         rtt: event.rtt,
         min_rtt: event.min_rtt,
         max_rtt: event.max_rtt,
+        established_for: event.established_for,
     }
 }
 
