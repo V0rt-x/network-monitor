@@ -17,11 +17,13 @@ interface FlowPanelProps {
  * operating system, at no cost in packets, and the only figure here that describes the
  * user's real traffic rather than a substitute for it.
  *
- * **Nothing here is a ping and the panel says so.** No request is timed against its answer:
- * the operating system reports that datagrams arrived, not what they were replying to. The
- * spread of their arrivals is what a player feels as stutter, and it folds in the server's
- * own send cadence — a server that skips a tick and a network that delays one look
- * identical from here.
+ * **Nothing here is a ping, and the figures' own names are what say so.** No request is timed
+ * against its answer: the operating system reports that datagrams arrived, not what they were
+ * replying to. Not one label here is a round trip, which is the honest way to make that point
+ * on a page that carries no explanations; the sentence that used to make it lives in the ⓘ on
+ * this panel's heading. The spread of arrivals is what a player feels as stutter, and it folds
+ * in the server's own send cadence — a server that skips a tick and a network that delays one
+ * look identical from here.
  *
  * That is exactly why the two columns sit side by side rather than being merged. Their
  * disagreement is the diagnosis: a clean route beside ragged arrivals is the server's
@@ -51,7 +53,13 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
   return (
     <section className="nm-flow">
       <header className="nm-panel__header">
-        <h4 className="nm-panel__title">{t('apps.passive.heading')}</h4>
+        {/* The ⓘ moved onto the heading with the paragraph it replaces: that nothing here is
+            a ping, and why these figures sit beside the route rather than instead of it, is
+            a question about the whole panel rather than about any one figure in it. */}
+        <h4 className="nm-panel__title">
+          {t('apps.passive.heading')}
+          <MetricHelp topic="passive" />
+        </h4>
         {/* Kept prominent rather than demoted: a freeze is the one thing here a player
             recognises immediately, and it is the strongest evidence the panel can show. */}
         {flow.stallMs !== null && (
@@ -61,15 +69,6 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
           </span>
         )}
       </header>
-
-      {/* One clause of the three this used to carry, and it is the clause that is a
-          *warning*: it says these figures describe something other than what a reader
-          expects. Per the standing rule that never moves. How the measurement is taken, and
-          why it sits beside the route rather than instead of it, moved to the help. */}
-      <p className="nm-panel__note">
-        {t('apps.passive.note')}
-        <MetricHelp topic="passive" />
-      </p>
 
       <dl className="nm-endpoint__metrics">
         <div>

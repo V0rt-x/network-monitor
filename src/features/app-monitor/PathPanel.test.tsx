@@ -17,15 +17,23 @@ const path = (overrides: Partial<PathView> = {}): PathView => ({
 });
 
 describe('PathPanel', () => {
-  it('leads with one number, and never calls it the server', () => {
+  it('makes its claim in the figure’s own name rather than in a paragraph', () => {
+    // The Phase 5 protection, after the page stopped carrying explanations: the number is
+    // presented as a *router's*, and that is said by the label a reader cannot skip rather
+    // than by prose underneath, which they can. The sentence itself is one keystroke away.
     render(<PathPanel path={path()} />);
 
-    // The whole point: the number is presented as a router's, with the gap stated. The hop
-    // count and where the route stops are a level down, in the row's own expander — they
-    // qualify the figure rather than being what a player reads.
     expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
-    expect(screen.getByText(/deepest router that does answer on the way/)).toBeInTheDocument();
-    expect(screen.getByText(/not the round trip to the server/i)).toBeInTheDocument();
+    expect(screen.getByText('The route towards it')).toBeInTheDocument();
+    // No explanatory prose survives on the panel.
+    expect(
+      screen.queryByText(/deepest router that does answer on the way/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/not the round trip to the server/i)).not.toBeInTheDocument();
+    // And it is still explained, on demand, without a mouse.
+    expect(
+      screen.getByRole('button', { name: 'What The route towards it means' }),
+    ).toBeInTheDocument();
   });
 
   it('never uses the word "ping" for a figure that is not one', () => {

@@ -1797,7 +1797,38 @@ dash.
   the Applications page, the never-and-not-yet distinction of item 2, and that the word "ping"
   appears on no route figure.
 
-**Phase 6.6 status: all nine items are built and tested; nothing here has been seen running.**
+### Amendment from use (2026-08-02, after running the build): the page carries no explanations
+
+Stated by the user on seeing the running build against a live Apex Legends session, pointing
+at the sentence item 2 had just added to the match server's row — *"Nothing this app can send
+is answered here, so there is no ping, jitter or loss to show for it."* — and generalising it
+into a doctrine: **the everyday UI is clean; whoever wants detail finds it in a tooltip or in
+the help.**
+
+- [x] The sentence is gone, and with it the two remaining explanatory paragraphs of the same
+      kind: the route panel's *"This endpoint answers nothing we can send…"* and the flow
+      panel's *"Nothing here is a ping…"*. What replaces them is nothing at all on the page.
+      **The claim each one made now lives in the name of the figure it was about**, which is
+      the part of the change worth recording rather than the deletions. The route panel is
+      honest because its figure is called *round trip to that router* and its heading *the
+      route towards it*; the flow panel is honest because **not one of its four labels is a
+      round trip**. A name cannot be skipped by a reader in a hurry; a paragraph underneath
+      can, and the reader who skips it is exactly the one it was written for.
+      The ⓘ moved onto both panel headings, since what it explains is the panel rather than
+      any one figure in it, and the route figure's own ⓘ went with it — two disclosures
+      carrying the same words are a second thing to read, not a second thing to learn. The
+      route panel's jitter and loss gained the ⓘ they never had.
+      **`CLAUDE.md` is amended in the same commit**, as item 1's reversal was: the doctrine is
+      written above the three levels because it governs them, and the never-demote rule is
+      sharpened with the test it was missing — *a warning is something to act on*. "This
+      figure is measured differently from what you expect" is an explanation, not a warning,
+      which is precisely how three paragraphs had been justified at level one.
+      The tests changed shape with the rule rather than being deleted: PathPanel now asserts
+      that the claim is in the labels **and that no prose survives**, and FlowPanel asserts
+      that the words "round trip" appear nowhere in it — a stronger guarantee than the
+      sentence it replaces, because it fails if any future figure there is named one.
+
+**Phase 6.6 status: all nine items are built and tested, and the build has now been run.**
 
 The three tests the criterion names all exist, and so do the ones the items asked for on their
 own account: the never-and-not-yet distinction in Rust and in the page, the route panel's whole
@@ -1806,19 +1837,32 @@ legend and its keyboard readout, the picker's hidden count and its refusal to an
 when the filter is why, both words for a connection's age, and every figure on the Network page
 having an explanation reachable without a mouse.
 
-Two things are **not** verified, and the split is the same one Phases 4, 5 and 6.5 recorded:
+**What the live run settled**, on 2026-08-02 against Apex Legends mid-session — the first time
+anything from this phase was seen rather than asserted:
 
-- **No live session has been run against this build.** Item 8's hosts were connected to from
-  this machine before being committed — that check is done and its two surprises are written
-  down — but nothing else here has been exercised outside jsdom. In particular, whether the
-  merged Network page reads as one page rather than as two stacked ones is a claim about a
-  layout, and the picker's filter is only as good as what the bundled catalogue happens to
-  know about the games on a real machine.
-- **What the pages look like.** Unchanged from 6.5: jsdom has no canvas, and "a reader who has
-  never used the app can say what every figure measures" is not a property a test can assert.
+- The chart drew nine minutes of eight endpoints on the log axis, and the match server's route
+  was the dashed line among them, exactly as the tests describe it.
+- The match server (`UDP`, carrying traffic) showed **no ping, jitter or loss at all** — item 2
+  working, and the amendment above is what the user said on seeing it.
+- Every renamed figure read correctly: *Ping (RTT) · Jitter · Loss* on the supporting
+  connections, *Arrival jitter* in the flow panel, *Round trip to that router* in the route
+  panel, *Age 3 min* on each header — items 1, 3 and 7 in one screen.
+- The other UDP endpoint was mid-chain — dashes for ping and jitter beside a measured 100 %
+  loss — which is the *not yet* half of item 2 appearing on its own, unprompted.
 
-Both are settled by the same pass — the five-title verification at the end of Phase 7, which
-is now also the first time this page will be read by the person it was rewritten for.
+**Two things it also turned up, neither of them 6.6's work, both worth a look before Phase 7:**
+
+- **The reference pool reads oddly.** "Answering —" beside "Ping, median 122" and "0 published,
+  32 learned", with "8 not counted". A median exists while the share answering does not, which
+  is either right for a reason worth writing down or a gap in `nm_core::pool`.
+- **The verdict may be over-firing.** *"The network is fine and this application's own
+  endpoints are not — the route it takes"* on endpoints sitting at 190–210 ms, which for
+  transatlantic AWS is ordinary rather than degraded. Worth checking whether the degraded
+  threshold is absolute where it should be relative to the group.
+
+Still **not** verified: the merged Network page and the picker were not opened — driving the
+window would have taken focus from a running game — so items 5 and 6 have been seen only in
+tests. That, and the four remaining titles, is the Phase 7 pass.
 
 ## Phase 7 — Polish, persistence, packaging
 

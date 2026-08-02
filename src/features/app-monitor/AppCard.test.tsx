@@ -357,7 +357,9 @@ describe('AppCard', () => {
     // rather than blank.
     expect(screen.getAllByText('Jitter')).toHaveLength(1);
     expect(screen.queryByText('—')).not.toBeInTheDocument();
-    expect(screen.getByText(/no ping, jitter or loss to show/)).toBeInTheDocument();
+    // And nothing explains the gap in prose. The page carries figures and findings; the one
+    // line that says why is a disclosure the reader opens when they want it.
+    expect(screen.queryByText(/no ping, jitter or loss to show/)).not.toBeInTheDocument();
     // And the row says in as many words why this is not the number the game shows. It is
     // the most important string in the application, and this is the row it belongs on.
     expect(screen.getByText('Why this is not the ping your game shows')).toBeInTheDocument();

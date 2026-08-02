@@ -105,7 +105,6 @@
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
     "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
-    "noProbeFigures": "Nothing this app can send is answered here, so there is no ping, jitter or loss to show for it.",
     "noEndpoints": "Nothing discovered yet — this application has not opened a connection since you started watching.",
     "warmup": {
       "badge": "Warming up · {{seconds}} s",
@@ -204,7 +203,6 @@
     },
     "passive": {
       "heading": "The traffic itself",
-      "note": "Nothing here is a ping: no request is timed against its answer.",
       "updatesPerSec": "{{rate}} a second",
       "updatesUnknown": "Not enough arriving yet to tell",
       "span": "over the last {{seconds}} s",
@@ -219,7 +217,6 @@
     },
     "path": {
       "heading": "The route towards it",
-      "note": "This endpoint answers nothing we can send, so these figures belong to the deepest router that does answer on the way there. It is not the round trip to the server: how much further the server sits is unknown.",
       "metric": {
         "rtt": "Round trip to that router"
       },

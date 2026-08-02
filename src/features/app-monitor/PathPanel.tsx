@@ -30,11 +30,16 @@ interface PathPanelProps {
  * echoes addressed to themselves while forwarding traffic perfectly, so a figure that moved
  * at the last hop alone is reported as ambiguous rather than as a degraded path.
  *
- * **It leads with one number**, under a heading that says what that number is a round trip
- * *to*. How many hops are being watched and where the route stops are a level down, in the
- * row's own expander: they qualify the figure rather than being what a player reads. What
- * does not move is the sentence saying this is not the round trip to the server — that is the
- * rule this panel exists to protect.
+ * **It leads with one number, and the claim lives in that number's name.** The heading says
+ * what the panel is about and the label says what the figure is a round trip *to* — a router
+ * on the way, not the server. That is where the Phase 5 protection sits now: in the naming,
+ * which a reader cannot skip, rather than in a paragraph underneath, which they can. The
+ * paragraph is gone under the standing rule that the everyday page carries figures and
+ * findings and never explanations; the same words are one keystroke away in the ⓘ and in the
+ * help, and a test pins that the word "ping" appears nowhere in this panel.
+ *
+ * How many hops are being watched and where the route stops are a level down, in the row's
+ * own expander: they qualify the figure rather than being what a player reads.
  */
 export const PathPanel = ({ path }: PathPanelProps) => {
   const { t, i18n } = useTranslation();
@@ -43,28 +48,36 @@ export const PathPanel = ({ path }: PathPanelProps) => {
   return (
     <section className="nm-path">
       <header className="nm-panel__header">
-        <h4 className="nm-panel__title">{t('apps.path.heading')}</h4>
+        <h4 className="nm-panel__title">
+          {t('apps.path.heading')}
+          <MetricHelp topic="route" />
+        </h4>
         <span className={`nm-health ${pathQualityModifier(path.quality)}`}>
           {t(pathQualityKey(path.quality))}
         </span>
       </header>
 
-      <p className="nm-panel__note">{t('apps.path.note')}</p>
-
+      {/* The panel's one number needs no ⓘ of its own — the heading's is about exactly this
+          figure, and two disclosures with the same words would be a second thing to read
+          rather than a second thing to learn. The jitter and the loss beside it are the same
+          quantities the rest of the app names, and they carry the same explanations. */}
       <dl className="nm-endpoint__metrics">
         <div>
-          <dt>
-            {t('apps.path.metric.rtt')}
-            <MetricHelp topic="route" />
-          </dt>
+          <dt>{t('apps.path.metric.rtt')}</dt>
           <dd>{formatMs(path.rttMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('apps.metric.jitter')}</dt>
+          <dt>
+            {t('apps.metric.jitter')}
+            <MetricHelp topic="jitter" />
+          </dt>
           <dd>{formatMs(path.jitterMs, locale)}</dd>
         </div>
         <div>
-          <dt>{t('apps.metric.loss')}</dt>
+          <dt>
+            {t('apps.metric.loss')}
+            <MetricHelp topic="loss" />
+          </dt>
           <dd>{formatPct(path.lossPct, locale)}</dd>
         </div>
       </dl>

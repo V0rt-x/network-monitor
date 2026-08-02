@@ -124,6 +124,18 @@ audience is a player who knows their game stutters and does not know what jitter
 depth stays reachable for whoever wants it, because a measurement tool that cannot explain
 itself is asking to be trusted on faith, and this audience has no reason to extend that.
 
+- **The page carries figures and findings. It never carries explanations.** *Stated by the
+  user on 2026-08-02, after reading the running build, and it governs the three levels
+  below.* An explanatory sentence at level one is a paragraph competing with the number it
+  describes, and the reader who needed it is the reader least able to tell the two apart. So:
+  a label, a state, a figure, and — where something really is wrong — a warning. Everything
+  that *explains* rather than *reports* belongs in the ⓘ or in the help, without exception and
+  without an argument about length.
+  **The claim a figure makes lives in that figure's own name**, not in prose beneath it: the
+  route panel's honesty is the words *round trip to that router*, and the flow panel's is that
+  not one of its labels is a round trip at all. A name cannot be skipped; a paragraph can.
+  *This is why an endpoint nothing can measure now shows nothing where its figures were,
+  rather than a sentence saying so.*
 - **Level one — the default.** What the thing is, one word of state, and at most three
   figures. Nothing else. **A figure here carries the standard network term** — RTT (or *ping*,
   where it really is the round trip we measured), jitter, loss — because the audience has met
@@ -144,9 +156,11 @@ itself is asking to be trusted on faith, and this audience has no reason to exte
   *and* on focus, and a "Learn more" into the bundled help. **A new metric is not done until
   it has a help topic**: the ⓘ and the help page read from one list, so a tooltip can never
   point at a section that does not exist.
-- **A warning is never demoted.** Anything the user must act on, or that says the figure
-  describes something other than what they think — an egress conflict, a freeze, a proven
-  block — stays at level one whatever its length.
+- **A warning is never demoted, and a warning is not an explanation.** Anything the user must
+  *act on* — an egress conflict, a freeze, a proven block, a tracing session that has stopped
+  — stays at level one whatever its length. The test is whether there is something to do about
+  it. "This figure is measured differently from what you expect" is not a warning; it is an
+  explanation, it goes in the ⓘ, and the figure's own name is what keeps it honest on the page.
 - **Absent stays absent at every level.** A figure whose precondition failed is blank with a
   reason, never zero, and never the nearest available number.
 - Help is **bundled, never a website**: an external link is a network request this product

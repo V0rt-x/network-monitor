@@ -185,11 +185,13 @@ export const EndpointRow = ({
           networking world uses. The plain-language sentence is the ⓘ's job, not the
           label's — a renamed quantity teaches the reader a vocabulary nobody else speaks.
 
-          Absent entirely where no probe will ever fill them in. Rust draws the line between
-          *not yet* and *never*: a chain still trying kinds keeps its dashes, because a
-          figure is coming, while a match server would carry three of them for the whole
-          match — and three dashes where the headline figures belong read as a broken tool
-          rather than as an honest absence. What is known about it is on the card already. */}
+          Absent entirely where no probe will ever fill them in, and absent *silently*. Rust
+          draws the line between *not yet* and *never*: a chain still trying kinds keeps its
+          dashes, because a figure is coming, while a match server would carry three of them
+          for the whole match — and three dashes where the headline figures belong read as a
+          broken tool rather than as an honest absence. Nothing on the row explains the gap
+          in prose: what stands in its place is on the card already, and the one-line
+          disclosure below says why in the reader's own time. */}
       {endpoint.probesMeasureIt && (
         <dl className="nm-endpoint__metrics">
           <div>
@@ -214,12 +216,6 @@ export const EndpointRow = ({
             <dd>{formatPct(endpoint.lossPct, locale)}</dd>
           </div>
         </dl>
-      )}
-      {/* Never silently: a row whose figures are gone says why, in one line, at the level
-          the reader is already on. Which kinds were tried and what the endpoint answered
-          stay in the expander, where they qualify the absence rather than announce it. */}
-      {!endpoint.probesMeasureIt && (
-        <p className="nm-endpoint__nothing">{t('apps.noProbeFigures')}</p>
       )}
 
       {answersNothing && <WhyNotYourPing />}
