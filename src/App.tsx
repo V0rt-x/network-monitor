@@ -2,30 +2,35 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AppMonitorPage } from './features/app-monitor/AppMonitorPage';
-import { DashboardPage } from './features/dashboard/DashboardPage';
 import { HelpProvider } from './features/help/HelpProvider';
 import { HelpPage } from './features/help/HelpPage';
 import type { HelpTopic } from './features/help/topics';
+import { NetworkPage } from './features/network/NetworkPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
-import { StatusPage } from './features/status-page/StatusPage';
 import { hideToTray, quitApp } from './shared/ipc';
 
-/** The pages the app ships. A router would be a dependency for one switch. */
-type Page = 'dashboard' | 'apps' | 'status' | 'help' | 'settings';
+/**
+ * The pages the app ships. A router would be a dependency for one switch.
+ *
+ * Four, not five. The dashboard and the service status page answered one question between
+ * them — is it me, the border, or that service — and answering it meant switching tabs
+ * while holding one page in your head to read the other; they are now the two halves of
+ * *Network*.
+ */
+type Page = 'network' | 'apps' | 'help' | 'settings';
 
 /** Literal keys, so a rename in `common.json` is a compile error rather than a blank tab. */
 const PAGES = [
-  { id: 'dashboard', labelKey: 'nav.dashboard' },
+  { id: 'network', labelKey: 'nav.network' },
   { id: 'apps', labelKey: 'nav.apps' },
-  { id: 'status', labelKey: 'nav.status' },
   { id: 'help', labelKey: 'nav.help' },
   { id: 'settings', labelKey: 'nav.settings' },
 ] as const satisfies readonly { readonly id: Page; readonly labelKey: string }[];
 
 export const App = () => {
   const { t } = useTranslation();
-  const [page, setPage] = useState<Page>('dashboard');
+  const [page, setPage] = useState<Page>('network');
   // Which section the help opens at, when the reader arrived from a metric's own ⓘ.
   const [topic, setTopic] = useState<HelpTopic | null>(null);
   useTrayLabels();
@@ -38,12 +43,10 @@ export const App = () => {
    */
   const pageFor = (current: Page) => {
     switch (current) {
-      case 'dashboard':
-        return <DashboardPage />;
+      case 'network':
+        return <NetworkPage />;
       case 'apps':
         return <AppMonitorPage />;
-      case 'status':
-        return <StatusPage />;
       case 'help':
         return <HelpPage topic={topic} />;
       case 'settings':

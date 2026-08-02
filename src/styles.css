@@ -770,7 +770,33 @@ details.nm-endpointgroup > summary {
 }
 
 /*
- * The service status page.
+ * The Network page: the baselines and the service cards, one above the other.
+ *
+ * They were two tabs, and the question they answer between them — is it me, the border, or
+ * that service — needed both of them at once. The halves are separated by their headings
+ * rather than blended, because they are measured on different cadences by different rules
+ * and each states its own.
+ */
+.nm-network {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.nm-network__half {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nm-network__heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/*
+ * The service half of it.
  *
  * Cards are a grid rather than a list: the question is "which of these is red", which is a
  * scanning task, and a column of full-width rows makes it a scrolling one.
@@ -1259,6 +1285,12 @@ details.nm-endpointgroup > summary {
 .nm-help-page__title {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.nm-help-page__subtitle {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: 0.85rem;
 }
 
 .nm-help-page__intro {

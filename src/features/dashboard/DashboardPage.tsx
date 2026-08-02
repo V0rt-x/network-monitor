@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
 import { VerdictBanner } from '../../shared/VerdictBanner';
-import { CoreStatusPanel } from './CoreStatusPanel';
 import { GroupCard } from './GroupCard';
 import { useNetworkHealth } from './useNetworkHealth';
 
@@ -13,6 +12,12 @@ import { useNetworkHealth } from './useNetworkHealth';
  * points at the way out of the country. Neither column means much on its own, which is why
  * both are always rendered — even before anything has been measured, when both honestly
  * read "not measured yet".
+ *
+ * The upper half of the Network page rather than a tab of its own: the service cards
+ * beneath it are the evidence a reader checks its verdict against, and holding one page in
+ * your head while reading the other was the whole complaint. The core's own status moved to
+ * the bottom of that page with the merge — it is a fact about the app, not about the
+ * network.
  */
 export const DashboardPage = () => {
   const { t } = useTranslation();
@@ -44,8 +49,6 @@ export const DashboardPage = () => {
           </div>
         </>
       )}
-
-      <CoreStatusPanel />
     </div>
   );
 };

@@ -72,12 +72,11 @@ describe('DashboardPage', () => {
     subscribeToNetworkHealth.mockResolvedValue(() => undefined);
   });
 
-  it('says it is still measuring rather than showing an empty page', async () => {
+  it('says it is still measuring rather than showing an empty page', () => {
+    // The core-status panel moved to the bottom of the merged Network page with the tab
+    // merge, so there is no longer an asynchronous neighbour to settle here.
     render(<DashboardPage />);
     expect(screen.getByText('Measuring the network…')).toBeInTheDocument();
-    // Let the core-status panel settle so its state update lands inside this test rather
-    // than leaking into the next one.
-    await screen.findByText('0.1.0');
   });
 
   it('shows both baselines side by side once a snapshot arrives', async () => {

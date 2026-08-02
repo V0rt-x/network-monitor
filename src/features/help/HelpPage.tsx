@@ -48,6 +48,9 @@ export const HelpPage = ({ topic }: HelpPageProps) => {
       <h2 className="nm-help-page__title" ref={heading}>
         {t('help.title')}
       </h2>
+      {/* The tab used to be called "What the numbers mean", which is a sentence rather than
+          a tab. It is a good subtitle, so nothing was lost by moving it here. */}
+      <p className="nm-help-page__subtitle">{t('help.subtitle')}</p>
       <p className="nm-help-page__intro">{t('help.intro')}</p>
 
       {HELP_TOPICS.map((entry) => (

@@ -1636,7 +1636,7 @@ dash.
       A test asserts the surviving level-one text: each moved paragraph absent from the page,
       each warning present. Not a word count — a list, in the same spirit as 6.5's closed-row
       test, because prose grows back one sentence at a time.
-- [ ] **5. Merge the dashboard and the service status page; rename the help page.** *Fifth: two
+- [x] **5. Merge the dashboard and the service status page; rename the help page.** *Fifth: two
       structural changes to navigation, taken together because they are one edit to the same
       five tabs, and taken after the text items because merging two pages of text is cheaper
       once that text is shorter.*
@@ -1657,6 +1657,19 @@ dash.
         becomes **Help**, with that sentence as the page's own subtitle, so nothing is lost and
         the tab reads like a tab. Every ⓘ's "Learn more" keeps working — the topic list is one
         list and the rename touches the label, not the anchors.
+      — `features/network/NetworkPage` composes the two existing pages rather than absorbing
+      them, and that is the whole design: **an arrangement, not a blend.** The two halves are
+      measured on different cadences by different rules, each states its own span on the page,
+      and a merged component that computed one figure over both would have been exactly the
+      smoothing the item forbids. A test asserts both cadence lines survive side by side.
+      The order is the argument's order — verdict, the baselines it was drawn from, the
+      services to check it against. **What the core itself is doing moved to the bottom**: it
+      is a fact about the application rather than about the network, and it was sitting between
+      the two halves that need to be read together.
+      The nav is four tabs, and `Page` is a four-variant union, so a stale `'dashboard'` is a
+      compile error rather than a blank pane. The help tab is **Help** with "What the numbers
+      mean" as the page's subtitle; the anchors are untouched, so every "Learn more" still
+      lands where it did.
 - [ ] **6. The picker offers only applications the app can name.** *Sixth: a real ergonomic win
       with a real risk, which is why it sits behind the items that cannot hide anything.*
       The picker lists every running process grouped by executable name, so it reads like a

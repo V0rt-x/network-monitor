@@ -7,11 +7,14 @@
   },
   "nav": {
     "label": "Sections",
-    "dashboard": "Dashboard",
+    "network": "Network",
     "apps": "Applications",
-    "status": "Service status",
-    "help": "What the numbers mean",
+    "help": "Help",
     "settings": "Settings"
+  },
+  "network": {
+    "baselines": "Your connection and the way out",
+    "services": "Services"
   },
   "tray": {
     "show": "Show Network Monitor",
@@ -241,7 +244,8 @@
     }
   },
   "help": {
-    "title": "What the numbers mean",
+    "title": "Help",
+    "subtitle": "What the numbers mean",
     "intro": "Everything here is measured on this machine and stays on it. Nothing on this page is fetched from anywhere — it ships with the app, so it reads the same whether or not you can reach the internet.",
     "explain": "What {{metric}} means",
     "learnMore": "Learn more",
