@@ -58,7 +58,7 @@ use crate::pools::{LearnedPools, PoolMonitor, PoolSeeds};
 use crate::presets::PresetList;
 use crate::settings::Settings;
 use crate::targets::{self, ResolvedTarget};
-use crate::view::{AppProcessView, AppView};
+use crate::view::AppView;
 use crate::Error;
 
 /// How often a snapshot is pushed to a visible window.
@@ -762,18 +762,19 @@ fn emit_apps(
             let pool = pools
                 .reading(application.id(), now)
                 .map(|report| (report.seeded, report.learned, report.reading));
-            let processes = application
+            // Identifiers only, and never rendered: they are how the picker knows an offer
+            // is already taken. The page shows their count. The executable names that used
+            // to travel with them are gone — `Discord.exe` beside *Discord* is the
+            // product`s implementation showing through.
+            let pids = application
                 .members()
                 .iter()
-                .map(|member| AppProcessView {
-                    pid: member.pid.get(),
-                    name: member.name.clone(),
-                })
+                .map(|member| member.pid.get())
                 .collect();
             AppView::of(
                 application.id().get(),
                 application.label().to_owned(),
-                processes,
+                pids,
                 apps.chart_elapsed_secs(application.id(), now),
                 apps.warmup_remaining(application.id(), now),
                 interfaces,

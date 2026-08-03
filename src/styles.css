@@ -247,6 +247,14 @@ body {
   margin-bottom: var(--nm-space-5);
 }
 
+/*
+ * One geometry between the three things that look like pills.
+ *
+ * `.nm-badge` qualifies a figure, `.nm-health` warns about one and `.nm-count` tallies a set.
+ * They are three different claims and they must not be told apart by *size* — that is what
+ * the border, the colour and the leading numeral are for. Same radius, same padding, same
+ * text size, so a row of them lines up instead of stepping.
+ */
 .nm-badge {
   border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-pill);
@@ -261,37 +269,160 @@ body {
   border-color: var(--nm-degraded);
 }
 
+/*
+ * A state, as a mark rather than as a word.
+ *
+ * On the running build one endpoint's state occupied more width than every figure on the row
+ * combined — `OK`, `Warming up · 46 s` and `Through a tunnel`, three bordered pills, on every
+ * row of every group — repeating what the group heading had already said in words and pushing
+ * the measurements the reader came for off to the right.
+ *
+ * The word is never gone: it is the group's accessible name at all times, it appears on hover
+ * and on focus, and the row's expander writes it out. One tab stop covers the state and its
+ * qualifiers together, because three focusable marks a row is the mistake 6.7 undid.
+ */
+.nm-tokens {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nm-space-1);
+  cursor: default;
+}
+
+.nm-token {
+  width: var(--nm-space-3);
+  height: var(--nm-space-3);
+  flex: none;
+  background: currentcolor;
+}
+
+/*
+ * One palette, three shapes of claim.
+ *
+ * A count chip, a state token and a warning pill are three different statements that share
+ * one set of colours. The class that used to carry the colour also carried a pill's border,
+ * which is exactly how "two endpoints are degraded" came to look like "this is degraded" —
+ * so the colour is a class of its own now and the shape belongs to whoever is making the
+ * claim.
+ */
+.nm-tone--ok {
+  color: var(--nm-ok);
+}
+
+.nm-tone--degraded {
+  color: var(--nm-degraded);
+}
+
+.nm-tone--unreachable {
+  color: var(--nm-unreachable);
+}
+
+.nm-tone--blocked {
+  color: var(--nm-blocked);
+}
+
+/* Alive by its own traffic, with no probe answering: not a fault, not a measurement. */
+.nm-tone--carryingTraffic {
+  color: var(--nm-alive);
+}
+
+.nm-tone--unknown {
+  color: var(--nm-unknown);
+}
+
+/*
+ * Six shapes for six states, because colour is never the only channel here. A reader who
+ * sees no colour at all can still tell a circle from a triangle from a ring.
+ */
+.nm-token--ok {
+  border-radius: var(--nm-radius-pill);
+}
+
+.nm-token--degraded {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+.nm-token--unreachable {
+  border-radius: var(--nm-radius-sm);
+}
+
+.nm-token--blocked {
+  border-radius: var(--nm-radius-sm);
+  transform: rotate(45deg) scale(0.8);
+}
+
+/* A ring: alive by its own traffic, with nothing answering a probe — which is neither a
+   fault nor a measurement, and the hollow centre is exactly that. */
+.nm-token--carryingTraffic {
+  background: none;
+  border: 2px solid currentcolor;
+  border-radius: var(--nm-radius-pill);
+}
+
+.nm-token--unknown {
+  background: none;
+  border: 1px solid currentcolor;
+  border-radius: var(--nm-radius-sm);
+}
+
+/* A qualifier is not a state, and must not read as one: quieter, and a bar rather than a
+   shape from the set above. */
+.nm-token--qualifier {
+  color: var(--nm-text-secondary);
+  width: var(--nm-space-1);
+  height: var(--nm-space-3);
+  border-radius: var(--nm-radius-sm);
+  transform: none;
+  clip-path: none;
+}
+
+.nm-token--tunnelled {
+  background: none;
+  border-left: 2px solid currentcolor;
+  border-right: 2px solid currentcolor;
+}
+
+.nm-token--warmup {
+  background: linear-gradient(to top, currentcolor 45%, transparent 45%);
+}
+
+/* The words, on hover and on focus. Positioned like the explanation panels, and never in
+   the way of the pointer that summoned it. */
+.nm-tokens__names {
+  position: absolute;
+  z-index: 20;
+  top: var(--nm-space-5);
+  left: 0;
+  width: max-content;
+  max-width: min(16rem, calc(100vw - 2 * var(--nm-space-5)));
+  overflow-wrap: anywhere;
+  padding: var(--nm-space-1) var(--nm-space-2);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+  background: var(--nm-surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+  font-size: var(--nm-text-xs);
+  font-weight: 400;
+  color: var(--nm-text);
+  text-transform: none;
+  letter-spacing: normal;
+  pointer-events: none;
+}
+
+/*
+ * A state still said in words: a warning, and only a warning.
+ *
+ * A freeze, an egress conflict, an endpoint nothing can measure. The test for level one is
+ * whether there is something to do about it, and a warning is never demoted whatever a
+ * layout costs — which is why these keep their pill and their sentence while every other
+ * state on the row became a mark.
+ */
 .nm-health {
   border-radius: var(--nm-radius-pill);
   padding: var(--nm-space-1) var(--nm-space-2);
   font-size: var(--nm-text-xs);
   white-space: nowrap;
   border: 1px solid currentcolor;
-}
-
-.nm-health--lg {
-  font-size: var(--nm-text-sm);
-  padding: var(--nm-space-1) var(--nm-space-3);
-}
-
-.nm-health--ok {
-  color: var(--nm-ok);
-}
-
-.nm-health--degraded {
-  color: var(--nm-degraded);
-}
-
-.nm-health--unreachable {
-  color: var(--nm-unreachable);
-}
-
-.nm-health--blocked {
-  color: var(--nm-blocked);
-}
-
-.nm-health--unknown {
-  color: var(--nm-unknown);
 }
 
 .nm-settings {
@@ -347,19 +478,37 @@ body {
   padding-top: var(--nm-space-4);
 }
 
+/*
+ * A container is told apart by its surface, never by a line around it.
+ *
+ * 6.7 gave the page one spacing scale, one type scale and one palette, and the result still
+ * read as a form rather than an instrument: every container was a one-pixel box on a flat
+ * background, so a card, a panel, a table and a details block all weighed the same and
+ * nothing was obviously more important than anything else. Now the page is `--nm-bg`, a card
+ * on it is `--nm-surface`, and a panel nested inside a card drops back to `--nm-bg` — one
+ * step of contrast at each level, and no ink spent on saying where a box ends.
+ *
+ * Elevation was the alternative and was rejected: a shadow on a `#0d1117` canvas is nearly
+ * invisible and costs a repaint on every scroll, while surface-versus-page reads instantly at
+ * any screen brightness — which is what an audience reading this in a dark room mid-match
+ * actually needs.
+ *
+ * **Hairlines survive only inside tables**, where they separate rows, and on the two controls
+ * that need an affordance edge — a button and a form field — and on what floats above the
+ * page, where the edge is what separates an overlay from whatever is under it.
+ */
 .nm-panel {
   background: var(--nm-surface);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-lg);
   padding: var(--nm-space-5) var(--nm-space-5);
 }
 
 .nm-panel__heading {
   margin: 0 0 var(--nm-space-4);
-  font-size: var(--nm-text-md);
-  letter-spacing: 0.02em;
+  font-size: var(--nm-text-sm);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--nm-muted);
+  color: var(--nm-text-secondary);
 }
 
 .nm-facts {
@@ -394,11 +543,14 @@ body {
   gap: var(--nm-space-4);
 }
 
+/* A warning banner, drawn the way the verdict is: a surface with one coloured edge, rather
+   than a box outlined in amber. Same shape, same weight, one thing to learn. */
 .nm-apps__flow {
   margin: 0;
-  padding: var(--nm-space-2) var(--nm-space-3);
-  border: 1px solid var(--nm-degraded);
-  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-3) var(--nm-space-4);
+  border-left: 4px solid var(--nm-degraded);
+  border-radius: var(--nm-radius-lg);
+  background: var(--nm-surface);
   color: var(--nm-degraded);
   font-size: var(--nm-text-sm);
 }
@@ -419,7 +571,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-3);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
   padding: var(--nm-space-4);
@@ -472,7 +623,6 @@ body {
   align-items: flex-start;
   gap: var(--nm-space-3);
   padding: var(--nm-space-5);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
 }
@@ -505,32 +655,6 @@ body {
   font-size: var(--nm-text-sm);
 }
 
-/*
- * The escape hatch beside the search, and the count of what it would reveal.
- *
- * The count is shown rather than implied: a user who cannot find their game has to be able
- * to tell "this app cannot see it" from "the filter is hiding it", and only one of those is
- * true.
- */
-.nm-picker__scope {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--nm-space-1) var(--nm-space-3);
-}
-
-.nm-picker__toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--nm-space-2);
-  font-size: var(--nm-text-sm);
-}
-
-.nm-picker__hidden {
-  color: var(--nm-muted);
-  font-size: var(--nm-text-xs);
-}
-
 .nm-picker__search {
   display: flex;
   flex-direction: column;
@@ -559,16 +683,34 @@ body {
   overflow-y: auto;
 }
 
+/*
+ * Two columns: what it is, and the one thing to do about it.
+ *
+ * Every entry was a wrapping flex line of four independent pieces, so the button landed
+ * under a different word on every row and a single line of content took four rem of height.
+ * A grid puts the action in the same place down the whole list, which is what makes a list
+ * scannable rather than merely present.
+ */
 .nm-picker__entry {
   display: grid;
-  /* Name, identifier, the application that already claimed it, the button. The owner
-     column collapses to nothing when the process is free, which is the common case. */
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--nm-space-3);
   padding: var(--nm-space-1) var(--nm-space-2);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-md);
+}
+
+.nm-picker__entry:hover {
+  background: var(--nm-bg);
+}
+
+/* The name leads, at the page's own size; the count and the owner follow it, quieter. */
+.nm-picker__identity {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--nm-space-1) var(--nm-space-3);
+  min-width: 0;
 }
 
 .nm-picker__owner {
@@ -578,20 +720,22 @@ body {
 }
 
 .nm-picker__name {
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nm-picker__executable,
-.nm-picker__pid,
-.nm-picker__more {
-  color: var(--nm-muted);
+/* The count beside a name is a count of processes, not a figure to compare down the page,
+   so it does not take the chip's larger numeral. */
+.nm-picker__identity .nm-count__value {
   font-size: var(--nm-text-sm);
 }
 
 .nm-picker__more {
   margin: 0;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-sm);
 }
 
 /*
@@ -606,7 +750,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-4);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
   padding: var(--nm-space-4);
@@ -829,8 +972,10 @@ body {
   flex-direction: column;
   gap: var(--nm-space-3);
   padding: var(--nm-space-3);
-  border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-md);
+  /* Nested inside a card, so it steps back to the page's own colour rather than drawing a
+     line: one step of contrast at each level is what makes a hierarchy visible. */
+  background: var(--nm-bg);
 }
 
 .nm-primary__header {
@@ -908,11 +1053,13 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: var(--nm-space-1);
+  padding: var(--nm-space-1) 0;
   white-space: nowrap;
 }
 
+/* One step over its own word, the same relation every figure on the page has to its label. */
 .nm-count__value {
-  font-size: var(--nm-text-lg);
+  font-size: var(--nm-text-md);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -942,9 +1089,16 @@ details.nm-endpointgroup > summary {
   cursor: pointer;
 }
 
+/* A heading is a signpost, not a figure. At the page's own size and bold it competed with
+   the numbers under it; smaller, uppercase and spaced, it labels them instead. Every group
+   heading on every page reads the same way — see `.nm-panel__heading`, `.nm-primary__heading`
+   and `.nm-section__title`. */
 .nm-endpointgroup__title {
   font-weight: 600;
-  font-size: var(--nm-text-md);
+  font-size: var(--nm-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
 }
 
 .nm-distribution--inline {
@@ -1114,11 +1268,15 @@ details.nm-endpointgroup > summary {
   font-size: var(--nm-text-xs);
 }
 
+/* One step larger than its own label, always. The numbers are what a card is for and what a
+   reader's eye should land on first; at the same size as the words around them they were
+   just more text. */
 .nm-metrics dd,
 .nm-endpoint__metrics dd {
   margin: 0;
   /* A figure alternating between a number and a dash must not change the line height. */
   min-height: 1.35rem;
+  font-size: var(--nm-text-md);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1131,10 +1289,6 @@ details.nm-endpointgroup > summary {
   margin: 0;
   color: var(--nm-muted);
   font-size: var(--nm-text-xs);
-}
-
-.nm-health--carryingTraffic {
-  color: var(--nm-alive);
 }
 
 /*
@@ -1163,8 +1317,10 @@ details.nm-endpointgroup > summary {
   display: grid;
   gap: var(--nm-space-2);
   padding: var(--nm-space-2) var(--nm-space-3);
-  border: 1px dashed var(--nm-border);
   border-radius: var(--nm-radius-md);
+  /* Nested inside a card, so it steps back to the page's own colour. It was a dashed
+     hairline, which is the loudest way there is to draw a box nobody needed drawn. */
+  background: var(--nm-bg);
   align-content: start;
 }
 
@@ -1272,8 +1428,7 @@ details.nm-endpointgroup > summary {
  * trip; everything else is one click away.
  */
 .nm-row {
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
+  border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
 }
 
@@ -1355,8 +1510,8 @@ details.nm-endpointgroup > summary {
   flex-direction: column;
   gap: var(--nm-space-1);
   padding: var(--nm-space-2) var(--nm-space-3);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
+  border-radius: var(--nm-radius-lg);
+  background: var(--nm-surface);
 }
 
 .nm-status__legendtitle {
@@ -1498,10 +1653,11 @@ details.nm-endpointgroup > summary {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-1);
-  padding: var(--nm-space-2) var(--nm-space-3);
-  border-radius: var(--nm-radius-md);
-  border: 1px solid var(--nm-border);
-  border-left-width: 4px;
+  padding: var(--nm-space-3) var(--nm-space-4);
+  border-radius: var(--nm-radius-lg);
+  /* The one edge left on a container anywhere, and it is not a box: it is the verdict's
+     own colour, which is the single accent this screen is allowed. */
+  border-left: 4px solid var(--nm-border);
   background: var(--nm-surface);
 }
 
@@ -1577,14 +1733,18 @@ details.nm-endpointgroup > summary {
 }
 
 /*
- * The label *is* the control.
+ * The label *is* the control, and the mark that says so is a hairline that wakes up.
  *
  * There used to be an ⓘ beside it: a second target that names nothing, next to a word that
  * already names the quantity. At twenty connections that produced up to two hundred and
- * sixty identical marks on one page, and a mark repeated two hundred times does not explain
- * a figure — it hides it. A dotted underline is the common sign for "there is more here", it
- * does not read as a link outwards (there are none in this product and never will be), and
- * it costs not one pixel of width.
+ * sixty identical marks on one page, and 6.7 was right to cut them to nine. What 6.7 left
+ * behind was the *style* — a dotted rule under every heading, which reads as a page of links
+ * from 1998, on a product that has no links and never will.
+ *
+ * So: the label keeps its own colour and its own weight, and takes a one-pixel solid
+ * underline in the border grey. Visible when looked for, invisible when scanned past. Hover
+ * and focus raise it to the accent and open the panel, which is the moment it has anything
+ * to say.
  */
 .nm-explains {
   border: 0;
@@ -1593,15 +1753,15 @@ details.nm-endpointgroup > summary {
   font: inherit;
   color: inherit;
   text-align: inherit;
-  text-decoration: underline dotted;
-  text-underline-offset: 0.2em;
-  text-decoration-color: var(--nm-muted);
+  text-decoration: underline solid 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--nm-border);
   cursor: help;
 }
 
 .nm-explains:hover,
 .nm-explains:focus-visible {
-  text-decoration-color: var(--nm-text);
+  text-decoration-color: var(--nm-accent);
 }
 
 /*
@@ -1772,9 +1932,9 @@ details.nm-endpointgroup > summary {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-2);
-  padding: var(--nm-space-3);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-4);
+  border-radius: var(--nm-radius-lg);
+  background: var(--nm-surface);
 }
 
 .nm-help-page__contents ul {
@@ -1853,9 +2013,8 @@ details.nm-endpointgroup > summary {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-2);
-  padding: var(--nm-space-3);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-4);
+  border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
 }
 

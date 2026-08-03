@@ -47,8 +47,10 @@ export const AppMonitorPage = () => {
   const monitored = useMemo(() => {
     const owners = new Map<number, MonitoredBy>();
     for (const app of apps) {
-      for (const process of app.processes) {
-        owners.set(process.pid, { app: app.id, name: app.name });
+      // Identifiers, never rendered: they are the only thing the picker's grouping and
+      // the monitor's have in common, since the monitor also adopts descendants.
+      for (const pid of app.pids) {
+        owners.set(pid, { app: app.id, name: app.name });
       }
     }
     return owners;
@@ -88,7 +90,7 @@ export const AppMonitorPage = () => {
           {/* Nothing here is idle while nothing is chosen, and saying so is what stops the
               empty page reading as an application that is not working. */}
           <p className="nm-apps__emptymeanwhile">{t('apps.empty.meanwhile')}</p>
-          {/* That a dotted underline means a label explains itself is said here and in the
+          {/* That an underline means a label explains itself is said here and in the
               help's introduction — twice in the whole product, rather than once beside each
               of two hundred figures, which is what the mark it replaces amounted to. */}
           <p className="nm-apps__emptymeanwhile">{t('help.affordance')}</p>

@@ -35,15 +35,16 @@ interface AppCardProps {
  * application is the normal case under filtering, not an edge case — its endpoints sit in
  * different networks and a tunnel may cover some of them and not others.
  *
- * The processes it consists of are **counted at level one and enumerated at level two**.
- * A grouping the user cannot inspect is still one they cannot correct, so the list has not
- * gone anywhere — but a browser or an Electron app contributes a dozen-odd entries, and
- * seventeen lines of `name · PID` above the figures is a wall the reader has to get past to
- * reach anything they came for. *Changed on the user's instruction on 2026-08-03, after
- * reading the running build.* The count is the part that is worth a glance: it says how
- * large a group the rule caught, which is what would look wrong if the grouping were.
+ * The processes it consists of are **counted, and never named**. *Changed on the user's
+ * instruction on 2026-08-04, and it amends Phase 4's "a grouping the user cannot inspect is
+ * one they cannot correct".* What survives of that requirement is the count — it says how
+ * large a group the rule caught, which is what would look wrong if the grouping were wrong.
+ * What goes is the per-process identity at every level, expander included: a player picks
+ * *Discord*, and `Discord.exe` beside it and `PID 25572` beside that are the product's
+ * implementation showing through. Rust no longer sends them, so no level of this can show
+ * them.
  *
- * An empty list stays at level one and stays a sentence, because it is a finding rather than
+ * An empty group stays at level one and stays a sentence, because it is a finding rather than
  * a detail: the application was chosen and nothing is running under it, which is exactly what
  * arming the monitor before a match looks like, and a bare "0 processes" would read as a bug.
  *
@@ -157,19 +158,20 @@ export const AppCard = ({
       <header className="nm-appcard__header">
         <div>
           <h3 className="nm-appcard__title">{app.name}</h3>
-          {app.processes.length === 0 ? (
+          {/* A count, and nothing else. The expander used to enumerate `Discord.exe · PID
+              25572` seventeen times over — three restatements of a fact the reader did not
+              ask for, and the product's implementation showing through. The count is the
+              part that is worth a glance, because it is what would look wrong if the
+              grouping were; the identities do not cross the IPC boundary at all now.
+
+              An empty group keeps a sentence rather than reading "0 processes", because it
+              is a finding: the monitor is armed and the game has not started. */}
+          {app.pids.length === 0 ? (
             <p className="nm-appcard__processes nm-state--pending">{t('apps.processes.none')}</p>
           ) : (
-            <details className="nm-appcard__processes">
-              <summary>{t('apps.processes.count', { count: app.processes.length })}</summary>
-              <ul aria-label={t('apps.processes.label')}>
-                {app.processes.map((process) => (
-                  <li key={process.pid}>
-                    {t('apps.processes.entry', { name: process.name, pid: process.pid })}
-                  </li>
-                ))}
-              </ul>
-            </details>
+            <p className="nm-appcard__processes">
+              {t('apps.processes.count', { count: app.pids.length })}
+            </p>
           )}
         </div>
         <button

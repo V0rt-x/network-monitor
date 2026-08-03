@@ -216,7 +216,10 @@ describe('NetworkPage', () => {
 
     expect(countChips(document).length).toBeGreaterThan(0);
     expect(stateBadges(document).length).toBeGreaterThan(0);
+    // And a chip is not shaped like one: the colour is a class of its own, so
+    // never picks up a pill's border by sharing it.
     expect(document.querySelectorAll('.nm-count.nm-health')).toHaveLength(0);
+    expect(document.querySelectorAll('.nm-count.nm-token')).toHaveLength(0);
   });
 
   it('says the core stopped rather than showing a page that looks calm', () => {

@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import type { NetworkRowView } from '../../shared/ipc';
 import { MetricRow } from '../../shared/MetricRow';
+import { StateToken } from '../../shared/StateToken';
 import { useFigures } from '../../shared/useFigures';
 import { Distribution } from '../app-monitor/Distribution';
-import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
+import { probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { CheckTimeline } from '../status-page/CheckTimeline';
 
@@ -66,9 +67,7 @@ export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
     >
       <summary className="nm-row__head">
         <span className="nm-row__label">{row.label}</span>
-        <span className={`nm-health ${healthModifier(row.health)}`}>
-          {t(healthKey(row.health))}
-        </span>
+        <StateToken health={row.health} />
         <span className="nm-row__strip">
           {summary !== undefined && (
             <CheckTimeline
@@ -103,18 +102,26 @@ export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
                   {endpoint.writtenAddress}
                 </span>
                 <div className="nm-endpoint__badges">
+                  {/* The tunnel travels with the state as a qualifier rather than as a pill
+                      of its own: it is not a fault and there is nothing to do about it — it
+                      changes what the figures beside it *mean*, which is the test. With a
+                      VPN running it is on nearly every row on the page. */}
                   {row.endpoints.length > 1 && (
-                    <span className={`nm-health ${healthModifier(endpoint.health)}`}>
-                      {t(healthKey(endpoint.health))}
-                    </span>
+                    <StateToken
+                      health={endpoint.health}
+                      qualifiers={
+                        endpoint.tunnelled
+                          ? [{ kind: 'tunnelled', name: t('dashboard.badge.tunnelled') }]
+                          : []
+                      }
+                    />
                   )}
                   {endpoint.probeKind !== null && (
                     <span className="nm-badge">{t(probeKindKey(endpoint.probeKind))}</span>
                   )}
-                  {/* Not a caveat on one figure: it is the reason the figures beside it were
-                      measured a different way, and with a VPN running it is on nearly every
-                      row on the page. */}
-                  {endpoint.tunnelled && (
+                  {/* A row with one endpoint carries no state token, so the tunnel has to be
+                      said here or not at all. */}
+                  {row.endpoints.length === 1 && endpoint.tunnelled && (
                     <span className="nm-badge">
                       <MetricHelp topic="tunnel">{t('dashboard.badge.tunnelled')}</MetricHelp>
                     </span>

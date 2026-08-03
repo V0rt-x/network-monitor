@@ -49,6 +49,15 @@ const SHOWN = 40;
  * exactly what this product exists to stop them having to know. Rust does the grouping, by
  * the same rules the monitor uses.
  *
+ * **Named applications only, and Rust decides which those are.** There used to be a "show
+ * everything running" checkbox and a line reading "89 processes hidden — nothing here knows
+ * a name for them": the product explaining its own catalogue to someone who wants to click
+ * their game. `list_applications` now returns only what the bundled index has a name for, so
+ * the payload shrinks with the list rather than the UI filtering a list it was sent anyway.
+ * *Variant C, chosen by the user on 2026-08-04 after the cost was stated* — an application
+ * the index has no name for is unwatchable, and the fix is an entry in a release rather than
+ * anything the user can do. Phase 7's five-title pass is where that risk gets measured.
+ *
  * Unfiltered by network activity on purpose: a game the user wants to watch *before* it
  * connects is exactly the case where the first endpoints are worth catching.
  *
@@ -81,9 +90,6 @@ export const ApplicationPicker = ({
   const locale = i18n.language;
   const { state, refresh } = useApplicationList();
   const [search, setSearch] = useState('');
-  // Off by default: a machine runs several hundred processes and a handful of them are
-  // things anyone would watch. It is not optional, though — see the count below it.
-  const [showAll, setShowAll] = useState(false);
 
   // Memoized rather than read inline so the filter below does not re-run on every render
   // of an unchanged list — this component re-renders on every keystroke.
@@ -91,26 +97,14 @@ export const ApplicationPicker = ({
     () => (state.kind === 'listed' ? state.list.applications : []),
     [state],
   );
-  // Rust decides which offers have a name; this only chooses whether to render the rest.
-  const offered = useMemo(
-    () => (showAll ? applications : applications.filter((application) => application.named)),
-    [applications, showAll],
-  );
-  const hidden = applications.length - offered.length;
   const matches = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const found =
       needle === ''
-        ? offered
-        : offered.filter(
-            (application) =>
-              application.label.toLowerCase().includes(needle) ||
-              // The file name too: a user who knows what the executable is called finds it
-              // without having to turn the filter off first.
-              application.executable.toLowerCase().includes(needle),
-          );
+        ? applications
+        : applications.filter((application) => application.label.toLowerCase().includes(needle));
     return found.slice(0, SHOWN);
-  }, [offered, search]);
+  }, [applications, search]);
 
   const full = watching.length >= limit;
 
@@ -179,29 +173,6 @@ export const ApplicationPicker = ({
           not need above their figures. */}
       <p className="nm-picker__hint">{t('apps.picker.chooseHint', { limit })}</p>
 
-      {/* The escape hatch, and it is not optional. The bundled catalogue is large and not
-          complete: a title too new for it, a regional client, or anything Discord's index
-          never indexed would otherwise be unwatchable, and "the app cannot see my game" is
-          a worse failure than a long list. The count of what is hidden is shown rather than
-          implied, so nobody has to guess whether the filter is why they cannot find it. */}
-      <div className="nm-picker__scope">
-        <label className="nm-picker__toggle">
-          <input
-            type="checkbox"
-            checked={showAll}
-            onChange={(event) => {
-              setShowAll(event.target.checked);
-            }}
-          />
-          <span>{t('apps.picker.showAll')}</span>
-        </label>
-        {!showAll && hidden > 0 && (
-          <span className="nm-picker__hidden">
-            {t('apps.picker.hidden', { count: hidden, formatted: formatCount(hidden, locale) })}
-          </span>
-        )}
-      </div>
-
       <label className="nm-picker__search">
         <span>{t('apps.picker.searchLabel')}</span>
         <input
@@ -229,15 +200,17 @@ export const ApplicationPicker = ({
         </p>
       )}
 
-      {/* "No match" must not be the answer when the filter is why: a user searching for a
-          game the catalogue has never heard of would otherwise conclude the app cannot see
-          it, which is precisely the failure the toggle exists to prevent. */}
       {state.kind === 'listed' && state.list.problem === null && matches.length === 0 && (
-        <p className="nm-state--pending">
-          {!showAll && hidden > 0 ? t('apps.picker.noMatchesFiltered') : t('apps.picker.noMatches')}
-        </p>
+        <p className="nm-state--pending">{t('apps.picker.noMatches')}</p>
       )}
 
+      {/*
+       * A grid, one row per application, aligned down the list.
+       *
+       * Every entry was a wrapping flex line, so the action button landed under a different
+       * word on every row and one line of content took four rem of height. Identity on the
+       * left, one action on the right, and the count as a chip rather than as a sentence.
+       */}
       <ul className="nm-picker__list">
         {matches.map((application) => {
           // Any of its processes being monitored means the application is. The picker's
@@ -249,24 +222,25 @@ export const ApplicationPicker = ({
             .find((found) => found !== undefined);
           return (
             <li key={application.key} className="nm-picker__entry">
-              <span className="nm-picker__name">{application.label}</span>
-              {/* The file name beside the proper noun, whenever the bundled list supplied
-                  one. A name is a claim about which program this is, and a user who cannot
-                  see what it was matched against cannot tell a right name on the wrong
-                  program from a right one. */}
-              {application.label !== application.executable && (
-                <span className="nm-picker__executable">{application.executable}</span>
-              )}
-              <span className="nm-picker__pid">
-                {application.pids.length === 1
-                  ? t('apps.pid', { pid: application.seedPid })
-                  : t('apps.picker.processes', { count: application.pids.length })}
-              </span>
-              {owner !== undefined && (
-                <span className="nm-picker__owner">
-                  {t('apps.picker.partOf', { name: owner.name })}
+              <span className="nm-picker__identity">
+                <span className="nm-picker__name">{application.label}</span>
+                {/* How large a group the rule caught, which is the one thing about the
+                    grouping worth a glance. Which processes they are is the product's
+                    implementation showing through, and Rust no longer sends it. */}
+                <span className="nm-count">
+                  <span className="nm-count__value">
+                    {formatCount(application.pids.length, locale)}
+                  </span>{' '}
+                  <span className="nm-count__state">
+                    {t('apps.picker.processWord', { count: application.pids.length })}
+                  </span>
                 </span>
-              )}
+                {owner !== undefined && (
+                  <span className="nm-picker__owner">
+                    {t('apps.picker.partOf', { name: owner.name })}
+                  </span>
+                )}
+              </span>
               <button
                 type="button"
                 className="nm-button"

@@ -129,13 +129,13 @@ export const pathPositionKey = (position: PathPositionView) => {
 export const pathQualityModifier = (quality: PathQualityView) => {
   switch (quality) {
     case 'ok':
-      return 'nm-health--ok' as const;
+      return 'nm-tone--ok' as const;
     case 'degraded':
     case 'lost':
-      return 'nm-health--degraded' as const;
+      return 'nm-tone--degraded' as const;
     case 'uncorroborated':
     case 'notMeasuredYet':
-      return 'nm-health--unknown' as const;
+      return 'nm-tone--unknown' as const;
   }
 };
 

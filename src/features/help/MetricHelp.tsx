@@ -31,8 +31,10 @@ interface MetricHelpProps {
  * names the quantity. The rule this implements was written in the singular — "an ⓘ on every
  * figure" — and silently assumed one figure on screen; on an application with twenty
  * connections it produced up to two hundred and sixty identical marks, and a mark repeated
- * two hundred times does not explain a figure, it hides it. A dotted underline says the same
- * thing, costs no width, and creates no second stop for a keyboard.
+ * two hundred times does not explain a figure, it hides it. A hairline underline says the same
+ * thing, costs no width, and creates no second stop for a keyboard — solid rather than
+ * dotted, because a dotted rule under every heading reads as a page of links from 1998 in a
+ * product that has no links at all.
  *
  * That the underline means something is stated once, in the help's own introduction and in
  * the empty state — once, rather than two hundred times.

@@ -75,9 +75,14 @@ export const settingsProblemKey = (problem: SettingsProblem) => {
 };
 
 /**
- * CSS modifier for a health state.
+ * The colour a health state is drawn in — and only the colour.
  *
- * Colour is a second channel, never the only one — every state also carries its translated
- * word, so the dashboard stays readable without colour vision.
+ * Deliberately not a shape and not a border: a count chip, a state token and a warning pill
+ * are three different claims that share one palette, and the class that used to carry the
+ * colour also carried a pill's border, which is how a count of endpoints in a state came to
+ * look exactly like the state of one endpoint.
+ *
+ * Colour stays a second channel and never the only one: a token's *shape* differs too, a
+ * count chip says its state in words, and a warning is a sentence.
  */
-export const healthModifier = (health: HealthView) => `nm-health--${health}` as const;
+export const healthModifier = (health: HealthView) => `nm-tone--${health}` as const;

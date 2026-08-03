@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { spanOf } from '../../shared/duration';
 import type { EndpointView } from '../../shared/ipc';
 import { useFigures } from '../../shared/useFigures';
-import { probeKindKey } from '../dashboard/labels';
+import { healthKey, probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { FlowPanel } from './FlowPanel';
 import { ageKindKey, livenessKey, probingKey } from './labels';
 import { PathPanel } from './PathPanel';
+import { useQualifiers } from './qualifiers';
 
 /**
  * How the application's own traffic leaves the machine.
@@ -63,6 +64,7 @@ export const EndpointDetails = ({
 }: EndpointDetailsProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
+  const qualifiers = useQualifiers(endpoint);
   // Absent stays absent here too: a span the core did not send is left off rather than
   // written as "0 s", which would say the endpoint had just appeared.
   const age = endpoint.age.secs === null ? null : spanOf(endpoint.age.secs);
@@ -81,6 +83,17 @@ export const EndpointDetails = ({
       )}
 
       <dl className="nm-endpoint__detail-list">
+        {/* The state in words, which is the third place it is reachable from — beside the
+            token's accessible name and the words it shows on hover and on focus. The token
+            says which of six states it is at a glance; this says it without one. */}
+        <div>
+          <dt>{t('apps.details.state')}</dt>
+          <dd>
+            {[t(healthKey(endpoint.health)), ...qualifiers.map((qualifier) => qualifier.name)].join(
+              ' · ',
+            )}
+          </dd>
+        </div>
         <div>
           <dt>
             <MetricHelp topic="probeKind">{t('apps.details.probeKind')}</MetricHelp>

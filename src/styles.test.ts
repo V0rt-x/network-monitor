@@ -152,6 +152,61 @@ describe('the design system', () => {
     }
   });
 
+  it('tells containers apart by their surface, never by a line around them', () => {
+    // Every container was a one-pixel box on a flat background, so a card, a panel, a table
+    // and a details block all weighed the same and nothing was obviously more important
+    // than anything else — which is why the page read as a form rather than an instrument.
+    for (const container of [
+      '.nm-panel',
+      '.nm-picker',
+      '.nm-apps__empty',
+      '.nm-appcard',
+      '.nm-primary',
+      '.nm-row',
+      '.nm-verdict',
+      '.nm-status__legend',
+      '.nm-help-page__contents',
+      '.nm-help-page__section',
+      '.nm-path,\n.nm-flow',
+    ]) {
+      const rule = BODY.slice(BODY.indexOf(`${container} {`));
+      const block = rule.slice(0, rule.indexOf('}'));
+      expect(`${container}: ${block}`).toMatch(/background: var\(--nm-(bg|surface)\)/);
+      // A `border-left` is allowed and is exactly one thing: the verdict's own colour.
+      expect(`${container}: ${block}`).not.toMatch(/\bborder:/);
+    }
+  });
+
+  it('leaves a hairline only where one is doing work', () => {
+    // Table rows, the two controls that need an affordance edge, the segmented navigation,
+    // and what floats over the page — where the edge is what separates an overlay from
+    // whatever is under it.
+    const allowed = new Set([
+      '.nm-nav',
+      '.nm-button',
+      '.nm-badge',
+      '.nm-tokens__names',
+      '.nm-charttip',
+      '.nm-help__panel',
+      ".nm-field select, .nm-field input[type='range']",
+      '.nm-picker__search input',
+      '.nm-help-page__filter input',
+      // Not an edge round a box: it is how two of the six state tokens are *shaped*, and a
+      // ring and an outline are the two shapes that cannot be drawn any other way.
+      '.nm-token--carryingTraffic',
+      '.nm-token--unknown',
+      '.nm-token--tunnelled',
+    ]);
+    for (const { selector, value } of declarations('border')) {
+      // `border: 0` is a rule *removing* one, which is the opposite of the thing under test.
+      if (value === '0') continue;
+      if (selector.includes('table') || selector.endsWith('th') || selector.endsWith('td')) {
+        continue;
+      }
+      expect(allowed).toContain(selector);
+    }
+  });
+
   it('says where the focus is, for everything that can take it', () => {
     expect(BODY).toContain(
       ':where(button, a, input, select, textarea, summary, [tabindex]):focus-visible',

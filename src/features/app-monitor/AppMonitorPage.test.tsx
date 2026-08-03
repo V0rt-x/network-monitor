@@ -31,7 +31,7 @@ const ENDPOINTS: AppEndpoints = {
     {
       id: 1,
       name: 'game.exe',
-      processes: [{ pid: 4242, name: 'game.exe' }],
+      pids: [4242],
       counts: { ok: 1, degraded: 0, unreachable: 1, blocked: 0, carryingTraffic: 0, unknown: 0 },
       diagnosis: {
         verdict: 'routeToThisApplication',
@@ -232,10 +232,7 @@ describe('AppMonitorPage', () => {
         ...ENDPOINTS,
         apps: ENDPOINTS.apps.map((app) => ({
           ...app,
-          processes: [
-            { pid: 4242, name: 'game.exe' },
-            { pid: 4300, name: 'title.exe' },
-          ],
+          pids: [4242, 4300],
         })),
       });
     });

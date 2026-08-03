@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { EndpointView } from '../../shared/ipc';
+import { StateToken } from '../../shared/StateToken';
 import { useFigures } from '../../shared/useFigures';
-import { healthKey, healthModifier } from '../dashboard/labels';
 import type { SwatchShape } from './endpointColours';
 import { EndpointBadges } from './EndpointBadges';
+import { useQualifiers } from './qualifiers';
 import { EndpointDetails } from './EndpointDetails';
 import { networkName } from './networkName';
 
@@ -77,6 +78,7 @@ export const EndpointRow = ({
 }: EndpointRowProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
+  const qualifiers = useQualifiers(endpoint);
   const [open, setOpen] = useState(false);
 
   const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
@@ -135,11 +137,14 @@ export const EndpointRow = ({
           {endpoint.network === null ? '' : networkName(endpoint.network, t)}
         </td>
 
+        {/* A mark, not three pills. `OK`, `Warming up · 46 s` and `Through a tunnel` used to
+            occupy more width than every figure on the row combined, repeating in words what
+            the group heading's count chips had already said. The words are one hover, one
+            focus or one expander away, and in the accessible name at all times. The warnings
+            beside it keep their sentences, because a warning is never demoted. */}
         <td className="nm-endpoint__state">
           <span className="nm-endpoint__states">
-            <span className={`nm-health ${healthModifier(endpoint.health)}`}>
-              {t(healthKey(endpoint.health))}
-            </span>
+            <StateToken health={endpoint.health} qualifiers={qualifiers} />
             <EndpointBadges endpoint={endpoint} />
           </span>
         </td>

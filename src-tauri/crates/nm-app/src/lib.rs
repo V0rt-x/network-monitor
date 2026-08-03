@@ -50,11 +50,11 @@ pub use error::Error;
 pub use events::{AppEndpoints, CoreHeartbeat, NetworkSnapshot};
 pub use shell::TrayLabels;
 pub use view::{
-    AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
-    CheckMarkView, CheckView, EndpointAgeKindView, EndpointAgeView, EndpointGroupView,
-    EndpointView, FlowStatusView, FlowView, HealthCountsView, HealthView, LivenessView,
-    NetworkRowView, NetworkSectionView, PassiveRttView, ProbeKindView, ProbingView,
-    RowEndpointView, TransportView, VerdictView,
+    AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView, CheckMarkView,
+    CheckView, EndpointAgeKindView, EndpointAgeView, EndpointGroupView, EndpointView,
+    FlowStatusView, FlowView, HealthCountsView, HealthView, LivenessView, NetworkRowView,
+    NetworkSectionView, PassiveRttView, ProbeKindView, ProbingView, RowEndpointView, TransportView,
+    VerdictView,
 };
 
 use std::path::PathBuf;

@@ -99,14 +99,6 @@ export type AppEndpoints = {
 	apps: AppView[],
 };
 
-/**  One process an application currently consists of. */
-export type AppProcessView = {
-	/**  Its identifier. */
-	pid: number,
-	/**  Its executable file name. */
-	name: string,
-};
-
 /**  One monitored application and everything it is talking to. */
 export type AppView = {
 	/**
@@ -121,14 +113,25 @@ export type AppView = {
 	/**  What to call it: the preset's name for it, or the chosen executable's file name. */
 	name: string,
 	/**
-	 *  The processes it currently consists of.
+	 *  The processes it currently consists of, as identifiers and nothing else.
 	 * 
-	 *  Shown rather than summarised: a grouping the user cannot inspect is one they cannot
-	 *  correct. An empty list is a real state and says so — the application was chosen and
-	 *  nothing is running under it yet, which is exactly what arming the monitor before a
-	 *  match looks like.
+	 *  **Never rendered.** This is how the picker knows an offer is already taken — the
+	 *  monitored application may hold a different process of the same group than the one
+	 *  that seeded it, so the two groupings meet at the identifiers and nowhere else. What
+	 *  the page shows is the *count*: it says how large a group the rule caught, which is
+	 *  the part that would look wrong if the grouping were wrong, and it is what survives of
+	 *  Phase 4's "a grouping the user cannot inspect is one they cannot correct".
+	 * 
+	 *  The executable names that used to travel beside them are gone entirely. A player
+	 *  picks *Discord*, and `Discord.exe` beside it and `PID 25572` beside that are the
+	 *  product's implementation showing through — restatements of a fact they did not ask
+	 *  for.
+	 * 
+	 *  Empty is a real state and the page says so in a sentence — the application was chosen
+	 *  and nothing is running under it yet, which is exactly what arming the monitor before
+	 *  a match looks like, and a bare "0 processes" would read as a bug.
 	 */
-	processes: AppProcessView[],
+	pids: number[],
 	/**
 	 *  How many of its endpoints are in each state.
 	 * 
@@ -219,27 +222,16 @@ export type ApplicationChoiceView = {
 	 *  refreshes so a list the user is clicking in does not reshuffle.
 	 */
 	key: string,
-	/**  What to call it: the bundled name for it, or the executable's file name. */
+	/**
+	 *  What to call it: the name the bundled index has for its executable.
+	 * 
+	 *  The executable it was formed from is deliberately **not** sent. A player picks
+	 *  *Discord*, and `Discord.exe` beside it is the product's implementation showing
+	 *  through — a restatement of a fact they did not ask for. Only offers the index has a
+	 *  name for are listed at all, so there is no case left where the file name is the only
+	 *  thing an offer could be called.
+	 */
 	label: string,
-	/**
-	 *  The executable the offer was formed from.
-	 * 
-	 *  Shown beside the label wherever the two differ. A name from the bundled list is a
-	 *  claim about which program this is, and a user who cannot see what it was matched
-	 *  against cannot tell a right name on the wrong program from a right one.
-	 */
-	executable: string,
-	/**
-	 *  Whether the label came from the bundled lists rather than being the file name.
-	 * 
-	 *  The picker offers the named ones and puts the rest behind a toggle: a machine runs
-	 *  several hundred processes and a handful of them are things anyone would watch, so an
-	 *  unfiltered list reads like a task manager. It is a fact about what the app ships and
-	 *  never a claim about the program — a title too new for the bundled catalogue is
-	 *  perfectly watchable, which is why the toggle is not optional and why the page states
-	 *  how many rows it is hiding rather than implying it.
-	 */
-	named: boolean,
 	/**
 	 *  The process monitoring would be seeded from.
 	 * 

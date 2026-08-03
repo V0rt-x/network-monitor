@@ -111,7 +111,7 @@ export const HelpPage = ({ topic, onBack }: HelpPageProps) => {
 
       <p className="nm-help-page__intro">{t('help.intro')}</p>
       {/* Said once, here and in the empty state, rather than two hundred times on the page a
-          reader is looking at: a dotted underline is what marks a label as explainable. */}
+          reader is looking at: an underline is what marks a label as explainable. */}
       <p className="nm-help-page__intro">{t('help.affordance')}</p>
 
       <div className="nm-field nm-help-page__filter">

@@ -19,8 +19,8 @@ use nm_app::apps::AppMonitor;
 use nm_app::asn::NetworkNames;
 use nm_app::discovery::PassiveRtt;
 use nm_app::{
-    AppProcessView, AppView, EndpointAgeKindView, EndpointView, HealthCountsView, HealthView,
-    ProbeKindView, TransportView,
+    AppView, EndpointAgeKindView, EndpointView, HealthCountsView, HealthView, ProbeKindView,
+    TransportView,
 };
 use nm_core::address::AddressPolicy;
 use nm_core::asn::AsnTable;
@@ -213,10 +213,7 @@ fn view_named(
     AppView::of(
         APP_ID,
         "game.exe".to_owned(),
-        vec![AppProcessView {
-            pid: PID,
-            name: "game.exe".to_owned(),
-        }],
+        vec![PID],
         axis,
         warmup,
         &adapters(),
@@ -285,12 +282,9 @@ fn an_application_is_a_distribution_and_not_one_colour() {
     assert_eq!(view.id, APP_ID);
     assert_eq!(view.name, "game.exe");
     assert_eq!(
-        view.processes
-            .iter()
-            .map(|process| process.pid)
-            .collect::<Vec<_>>(),
+        view.pids,
         vec![PID],
-        "the processes an application consists of are shown, not summarised"
+        "the identifiers travel so the picker can tell a taken offer; the page shows a count"
     );
 }
 

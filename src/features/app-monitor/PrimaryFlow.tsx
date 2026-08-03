@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { EndpointView } from '../../shared/ipc';
+import { StateToken } from '../../shared/StateToken';
 import { useFigures } from '../../shared/useFigures';
-import { healthKey, healthModifier } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { EndpointBadges } from './EndpointBadges';
+import { useQualifiers } from './qualifiers';
 import { EndpointDetails } from './EndpointDetails';
 import { FlowPanel } from './FlowPanel';
 import { networkName } from './networkName';
@@ -35,6 +36,7 @@ interface PrimaryFlowProps {
 export const PrimaryFlow = ({ endpoint, trafficWindowSecs }: PrimaryFlowProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
+  const qualifiers = useQualifiers(endpoint);
   const [open, setOpen] = useState(false);
 
   return (
@@ -48,9 +50,7 @@ export const PrimaryFlow = ({ endpoint, trafficWindowSecs }: PrimaryFlowProps) =
         {endpoint.network !== null && (
           <span className="nm-endpoint__network">{networkName(endpoint.network, t)}</span>
         )}
-        <span className={`nm-health ${healthModifier(endpoint.health)}`}>
-          {t(healthKey(endpoint.health))}
-        </span>
+        <StateToken health={endpoint.health} qualifiers={qualifiers} />
         <EndpointBadges endpoint={endpoint} />
       </header>
 

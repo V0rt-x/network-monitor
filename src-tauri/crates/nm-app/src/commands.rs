@@ -211,13 +211,22 @@ pub fn list_applications() -> ApplicationListView {
     // A failure here costs the awkward titles their grouping and nothing else; the
     // executable name still groups everything. Refusing to list anything would be worse.
     let presets = PresetList::bundled().unwrap_or_else(|_| PresetList::empty());
+    // Only what the bundled index has a name for, and the filtering happens *here* rather
+    // than in the UI so the payload shrinks with the list. "Show everything running" plus
+    // "89 processes hidden — nothing here knows a name for them" was the product explaining
+    // its own catalogue to someone who wants to click their game.
+    //
+    // The cost is recorded rather than implied: an application the index has no name for is
+    // unwatchable, and the fix is an entry in `assets/apps/labels.json` in a release rather
+    // than anything the user can do. The index holds thousands of executables, so what this
+    // really risks is a title newer than the release or a regional client — which is what
+    // Phase 7's five-title pass is there to measure.
     let applications = applications::candidates(&presets, &processes)
         .into_iter()
+        .filter(|candidate| candidate.named)
         .map(|candidate| ApplicationChoiceView {
             key: candidate.key,
             label: candidate.label,
-            executable: candidate.executable,
-            named: candidate.named,
             seed_pid: candidate.seed.get(),
             pids: candidate.processes.iter().map(|pid| pid.get()).collect(),
         })

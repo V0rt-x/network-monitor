@@ -2311,7 +2311,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P0 — defects (no decision needed, and the page looks broken until they land)
 
-- [ ] **1. The connection table's rows have ragged heights.** `.nm-endpoint__identity` and
+- [x] **1. The connection table's rows have ragged heights.** `.nm-endpoint__identity` and
       `.nm-endpoint__state` are `display: flex` **on a `<td>`**, which takes those cells out of
       table layout: they stop sharing the row's baseline box, so each draws its own bottom
       border at its own height and the horizontal rule steps in the middle of the row — visible
@@ -2320,18 +2320,18 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       wrapper; one `min-height` on the row so that a row carrying badges and a row carrying
       none are the same height. `styles.test.ts` asserts no `<td>` rule in the stylesheet
       declares `display: flex`.
-- [ ] **2. Explanations overflow their panel, and the panel overflows the window.**
+- [x] **2. Explanations overflow their panel, and the panel overflows the window.**
       `.nm-help__panel` states a width and lets a long sentence run past it, and 6.7's flip
       handles the right edge only — a panel opened low on the page still leaves the bottom.
       The panel takes `max-width: min(26rem, calc(100vw - 2 * var(--nm-space-5)))`,
       `overflow-wrap: anywhere`, and a vertical flip on the same measured-before-paint rule as
       the horizontal one. The chart's tooltip gets the same treatment, since it is positioned
       by the same hand-rolled arithmetic.
-- [ ] **3. The chart's horizontal rules go.** They are the loudest ink on the page and they
+- [x] **3. The chart's horizontal rules go.** They are the loudest ink on the page and they
       carry nothing: the y axis is logarithmic, so the rules do not even sit at round
       distances. What survives is the axis labels, the tick marks, and the crosshair — which
       is the thing a reader actually uses to place a value, and it is already there.
-- [ ] **4. A group with no connections is not drawn.** An application with only TCP shows an
+- [x] **4. A group with no connections is not drawn.** An application with only TCP shows an
       empty `UDP flows` heading with a count chip beside it, which reads as "your game has no
       match traffic" about an application that never had any. A group with no rows is absent;
       where both are absent the card keeps its existing "nothing connected yet" state, which is
@@ -2339,21 +2339,21 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P1 — the shell has two exits, not four
 
-- [ ] **5. `Minimize to tray` leaves the header.** The window's own close button already hides
+- [x] **5. `Minimize to tray` leaves the header.** The window's own close button already hides
       to the tray (`lib.rs` prevents the close and hides, once the tray has its menu), so the
       button is a second control for something every desktop user does with the X — and it sits
       in the header of every screen to do it.
-- [ ] **6. `Quit` leaves Settings.** It moved there in 6.7 item 31 to get it away from
+- [x] **6. `Quit` leaves Settings.** It moved there in 6.7 item 31 to get it away from
       `Minimize`; with `Minimize` gone the pair is gone, and quitting belongs to the tray, which
       is where an application that lives in the tray is quit from. The hint that explained the
       difference (`settings.quitHint`) goes with it.
-- [ ] **7. The tray reads `Open` and `Quit`.** Two words, both verbs, no explanation — the tray
+- [x] **7. The tray reads `Open` and `Quit`.** Two words, both verbs, no explanation — the tray
       is not a surface that can carry one. `tray.show` becomes "Open"; `tray.quit` stays.
       **Together items 5–7 leave exactly two exits**, and they must both be true after the
       change: the window's close button hides to the tray, and the tray's `Quit` ends the
       monitoring. A test asserts the tray labels command is still called on mount and on a
       language change — that call is what makes closing the window a hide rather than a quit.
-- [ ] **8. The navigation becomes a segmented control.** *Variant A, chosen by the user on
+- [x] **8. The navigation becomes a segmented control.** *Variant A, chosen by the user on
       2026-08-04.* Each tab is a bordered, filled control today, so four adjacent buttons compete
       with each other and with the two in the corner. One container with one background and one
       hairline border, the tabs inside carrying no chrome of their own, the active one filled
@@ -2363,7 +2363,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P2 — the page stops underlining itself
 
-- [ ] **9. The dotted underline becomes a hairline that wakes up.** *Variant A, chosen by the
+- [x] **9. The dotted underline becomes a hairline that wakes up.** *Variant A, chosen by the
       user on 2026-08-04.* 6.7 moved the explanation onto the label and cut the marks from ~260
       to 9, which was the right move; the *style* is what was left over, and a dotted rule under
       every heading reads as a page of links from 1998. The label keeps its own colour and
@@ -2372,7 +2372,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       panel. Visible when looked for, invisible when scanned past. The one sentence that says
       what the mark means stays where it is — the empty state and the help introduction — and is
       still said once rather than on every label.
-- [ ] **10. Every state becomes a token; the word is one interaction away.** *Variant B, chosen
+- [x] **10. Every state becomes a token; the word is one interaction away.** *Variant B, chosen
       by the user on 2026-08-04.* On the screenshot one endpoint's state occupies more width
       than every figure on the row combined: `OK`, `Warming up · 46 s` and `Through a tunnel`,
       three bordered pills, on every row of every group. Each state becomes a token — a glyph
@@ -2391,7 +2391,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       something to do about it.
       A test asserts every state token carries its word as an accessible name, and that the
       distribution chips still render the state names as text.
-- [ ] **11. No process identifiers and no executable names anywhere in the UI.** They are the
+- [x] **11. No process identifiers and no executable names anywhere in the UI.** They are the
       product's implementation showing through: a player picks *Discord*, and `Discord.exe`
       beside it, `PID 25572` beside that, and `Part of Google Chrome` beside that are three
       restatements of a fact they did not ask for.
@@ -2402,7 +2402,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       **One case is not decoration and must survive**: an application the bundled catalogue has
       no name for has nothing else to be called, and there its file name **is** its name, shown
       as the name rather than beside one. That case's reachability is item 15's decision.
-- [ ] **12. Containers are told apart by surface, not by border.** *Variant A, chosen by the
+- [x] **12. Containers are told apart by surface, not by border.** *Variant A, chosen by the
       user on 2026-08-04.* 6.7 gave the page one spacing scale, one type scale and one palette,
       and the result still reads as a form rather than an instrument: every container is a 1 px
       box on a flat background, so a card, a panel, a table and a details block all weigh the
@@ -2460,7 +2460,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P4 — the picker
 
-- [ ] **15. The picker offers named applications only.** *Variant C, chosen by the user on
+- [x] **15. The picker offers named applications only.** *Variant C, chosen by the user on
       2026-08-04, after the cost was stated.* "Show everything running" plus "89 processes
       hidden — nothing here knows a name for them" is the product explaining its own catalogue
       to someone who wants to click their game. The checkbox, the hidden-count, and the two
@@ -2474,7 +2474,7 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       the release, or a regional client. **The five-title pass in Phase 7 is where that risk
       gets measured**: if any of the five is missing from the index, the index is what gets
       fixed, and if more than one is, this decision comes back.
-- [ ] **16. The picker's layout is a grid.** Every row is a wrapping flex line today, so the
+- [x] **16. The picker's layout is a grid.** Every row is a wrapping flex line today, so the
       action button lands under a different word on every row, the name and the file name have
       the same weight, and the entry is 4 rem tall for one line of content (the user's second
       screenshot). It becomes a two-column grid — identity on the left, one action on the right,

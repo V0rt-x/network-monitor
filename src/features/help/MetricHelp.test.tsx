@@ -18,7 +18,7 @@ describe('MetricHelp', () => {
     // The rule this implements was written in the singular — "an ⓘ on every figure" — and
     // silently assumed one figure on screen. At twenty connections it produced up to two
     // hundred and sixty identical marks, and a mark repeated two hundred times does not
-    // explain a figure, it hides it. The word already names the quantity; a dotted underline
+    // explain a figure, it hides it. The word already names the quantity; a hairline underline
     // says there is more to it, costs no width, and adds no second target for a keyboard.
     render(<MetricHelp topic="jitter">Jitter</MetricHelp>);
 

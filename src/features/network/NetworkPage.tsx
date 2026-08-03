@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
 
+import { StateToken } from '../../shared/StateToken';
 import { VerdictBanner } from '../../shared/VerdictBanner';
 import { useFigures } from '../../shared/useFigures';
 import { Distribution } from '../app-monitor/Distribution';
 import { CoreStatusPanel } from '../dashboard/CoreStatusPanel';
-import { healthKey, healthModifier } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { CHECK_MARKS, checkMarkKey, checkModifier } from '../status-page/labels';
 import { sectionKey } from './labels';
@@ -97,9 +97,7 @@ export const NetworkPage = () => {
                 </MetricHelp>
               </span>
             )}
-            <span className={`nm-health ${healthModifier(section.verdict)}`}>
-              {t(healthKey(section.verdict))}
-            </span>
+            <StateToken health={section.verdict} />
             <span className="nm-section__rtt">
               <span className="nm-section__rttlabel">
                 <MetricHelp topic="medianRtt">{t('status.metric.median')}</MetricHelp>

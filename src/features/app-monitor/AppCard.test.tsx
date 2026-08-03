@@ -107,7 +107,7 @@ const app = ({
 }: Partial<Omit<AppView, 'groups'>> & { endpoints?: EndpointView[] } = {}): AppView => ({
   id: 1,
   name: 'game.exe',
-  processes: [{ pid: 4242, name: 'game.exe' }],
+  pids: [4242],
   counts: { ok: 1, degraded: 0, unreachable: 0, blocked: 0, carryingTraffic: 0, unknown: 0 },
   diagnosis: {
     verdict: 'clear',
@@ -146,20 +146,15 @@ describe('AppCard', () => {
     expect(screen.getByText('1 process')).toBeInTheDocument();
   });
 
-  it('counts the processes at level one instead of listing them', async () => {
-    // A browser or an Electron app contributes a dozen-odd entries, and that many lines of
-    // `name · PID` above the figures is a wall the reader has to get past to reach what they
-    // came for. The count is the part worth a glance: it says how large a group the rule
-    // caught, which is what would look wrong if the grouping were wrong.
+  it('counts the processes and names none of them, at any level', () => {
+    // The count says how large a group the rule caught, which is what would look wrong if
+    // the grouping were wrong — and it is all that survives of Phase 4's "a grouping the
+    // user cannot inspect is one they cannot correct". `launcher.exe · PID 100` is the
+    // product's implementation showing through, and Rust does not send it any more, so
+    // there is no level of this card that could show it.
     render(
       <AppCard
-        app={app({
-          name: 'Example Game',
-          processes: [
-            { pid: 100, name: 'launcher.exe' },
-            { pid: 300, name: 'title.exe' },
-          ],
-        })}
+        app={app({ name: 'Example Game', pids: [100, 300] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
         flowStatus="active"
@@ -168,22 +163,17 @@ describe('AppCard', () => {
     );
 
     expect(screen.getByText('2 processes')).toBeVisible();
-    expect(screen.getByText('launcher.exe · PID 100')).not.toBeVisible();
-
-    // But a grouping the user cannot inspect is still one they cannot correct, so the list
-    // is one click away rather than gone: a launcher, the title it started and an anti-cheat
-    // shim are one application, and they can still see so.
-    await userEvent.click(screen.getByText('2 processes'));
-
-    expect(screen.getByText('launcher.exe · PID 100')).toBeVisible();
-    expect(screen.getByText('title.exe · PID 300')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/PID|\.exe/);
+    // Not an expander either: there is nothing behind it to open.
+    expect(document.querySelector('.nm-appcard__processes')?.tagName).toBe('P');
   });
 
   it('says an armed application has nothing running rather than showing an empty list', () => {
-    // The user picked it before starting the game. Silence here would read as a bug.
+    // The user picked it before starting the game. Silence here would read as a bug, and so
+    // would a bare "0 processes".
     render(
       <AppCard
-        app={app({ processes: [] })}
+        app={app({ pids: [] })}
         trafficWindowSecs={30}
         chartStepSecs={3}
         flowStatus="active"
@@ -584,14 +574,16 @@ describe('AppCard', () => {
     );
 
     // The caveats live a level down, where they qualify the figure instead of competing
-    // with it — except the egress conflict, which is a warning and stays on the row, and
-    // the tunnel, which is not a caveat on one figure but the reason every figure on the
-    // row was measured a different way.
-    expect(screen.getByText('Through a tunnel')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'What Through a tunnel means' })).toBeInTheDocument();
+    // with it. The tunnel is not one of them — it is the reason every figure on the row was
+    // measured a different way — so it travels with the state as a qualifier, named in the
+    // token's accessible name at all times. The egress conflict is a *warning*, and a
+    // warning is never demoted: it keeps its words on the row.
+    expect(stateBadges(document)).toContain('OK · Through a tunnel');
     expect(screen.getByText("Probe may not follow this app's route")).toBeVisible();
 
     await openRow('1.1.1.1:27015');
+    // And the state in words, which is the third place it is reachable from.
+    expect(screen.getByText('OK · Through a tunnel')).toBeVisible();
     expect(screen.getByText(/TLS · Filtering confirmed/)).toBeVisible();
     expect(
       screen.getByText(/This app's traffic leaves via Ethernet \(192\.0\.2\.10\)/),
@@ -667,8 +659,10 @@ describe('AppCard', () => {
       />,
     );
 
+    // The application's own warm-up is a sentence at level one; the endpoint's travels with
+    // its state token as a qualifier, and the token names it.
     expect(screen.getByText(/Warming up · 42 s left/)).toBeInTheDocument();
-    expect(screen.getByText('Warming up · 42 s')).toBeInTheDocument();
+    expect(stateBadges(document)).toContain('OK · Warming up · 42 s');
   });
 
   it('shows nothing about a warm-up once it is over', () => {
@@ -1299,11 +1293,35 @@ describe('AppCard, at level three', () => {
       />,
     );
 
-    // The tunnel badge is the one that legitimately repeats — it is a *reason* the figures
-    // beside it were measured differently, not a figure — and it explains itself on the
-    // badge's own word rather than by adding a mark. Every other explanation is a heading.
-    const headings = screen.getAllByRole('button', { name: /^What .* means$/ }).length - 20;
-    expect(headings).toBe(few - 3);
+    // Exactly equal now, with nothing subtracted. The tunnel badge used to be the one
+    // legitimate repeat — a *reason* the figures beside it were measured differently — and
+    // it has become a qualifier on the row's state token, which carries no explanation of
+    // its own. Every explanation left on the card belongs to a heading.
+    expect(explanations()).toBe(few);
+  });
+
+  it('adds no tab stop per figure, and one per row for the state', () => {
+    // The counterpart to the rule above. 6.7 cut two hundred and sixty ⓘ marks to nine by
+    // moving the explanation onto the label; a state token that was focusable *per mark*
+    // would have put the marks straight back — three a row, forty-eight on a table of
+    // sixteen. The state and its qualifiers are one focusable group between them.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:1', tunnelled: true, warmupSecsRemaining: 9 }),
+            endpoint({ key: 'b', address: '1.1.1.2:2', tunnelled: true, warmupSecsRemaining: 9 }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelectorAll('tbody .nm-tokens')).toHaveLength(2);
+    expect(document.querySelectorAll('tbody .nm-tokens [tabindex]')).toHaveLength(0);
   });
 
   it('puts no explanation in a table cell — only in its column heading', () => {

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { healthKey, healthModifier } from '../dashboard/labels';
+import { StateToken } from '../../shared/StateToken';
 import { useFigures } from '../../shared/useFigures';
 import type { PoolView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
@@ -42,9 +42,7 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
         <h4 className="nm-panel__title">
           <MetricHelp topic="pool">{t('apps.pool.title')}</MetricHelp>
         </h4>
-        <span className={`nm-health ${healthModifier(pool.health)}`}>
-          {t(healthKey(pool.health))}
-        </span>
+        <StateToken health={pool.health} />
       </header>
 
       <dl className="nm-pool__metrics">

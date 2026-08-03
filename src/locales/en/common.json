@@ -130,12 +130,9 @@
       "application": "Warming up · {{seconds}} s left. Figures that need a full window are blank until then; anything already certain is shown at once."
     },
     "window": "Figures cover the last {{seconds}} s",
-    "pid": "PID {{pid}}",
     "start": "Watch",
     "stop": "Stop",
     "processes": {
-      "label": "Processes in this application",
-      "entry": "{{name}} · PID {{pid}}",
       "none": "Nothing is running under this application yet — it will be picked up when it starts",
       "count": "{{count}} process",
       "count_other": "{{count}} processes"
@@ -164,20 +161,16 @@
       "chooseHeading": "Choose what to watch",
       "chooseHint": "Pick up to {{limit}}. Arm the monitor before a match — an application is picked up the moment it starts.",
       "partOf": "Part of {{name}}",
-      "processes": "{{count}} process",
-      "processes_other": "{{count}} processes",
+      "processWord": "process",
+      "processWord_other": "processes",
       "searchLabel": "Search",
-      "searchPlaceholder": "Filter by name or file name",
+      "searchPlaceholder": "Filter by name",
       "refresh": "Refresh",
-      "showAll": "Show everything running",
-      "hidden_one": "{{formatted}} process hidden — nothing here knows a name for it",
-      "hidden_other": "{{formatted}} processes hidden — nothing here knows a name for them",
       "loading": "Reading the application list…",
       "unavailable": "The application list could not be requested",
       "unsupportedPlatform": "This build cannot list applications on this operating system",
       "refused": "The system refused to list running processes",
       "noMatches": "No application matches that name",
-      "noMatchesFiltered": "No named application matches that. Turn on “Show everything running” to search every process.",
       "more": "Showing {{shown}} of {{total}} applications — narrow the search to see the rest"
     },
     "transport": {
@@ -232,6 +225,7 @@
     "details": {
       "summary": "More about this connection",
       "row": "More about {{endpoint}}",
+      "state": "State",
       "probeKind": "How it is being measured",
       "probeKindNone": "Nothing can measure it directly",
       "use": "In use",
@@ -310,7 +304,7 @@
     "intro": "Everything here is measured on this machine and stays on it. Nothing on this page is fetched from anywhere — it ships with the app, so it reads the same whether or not you can reach the internet.",
     "explain": "What {{metric}} means",
     "learnMore": "Learn more",
-    "affordance": "Any label with a dotted underline explains itself — hover it, or move to it with the keyboard.",
+    "affordance": "Any underlined label explains itself — hover it, or move to it with the keyboard.",
     "contents": "Contents",
     "filter": "Filter topics",
     "filterPlaceholder": "Type a word from a label",

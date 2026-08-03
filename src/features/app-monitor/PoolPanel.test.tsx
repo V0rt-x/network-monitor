@@ -65,13 +65,14 @@ describe('PoolPanel', () => {
     );
 
     expect(screen.getAllByText('—')).toHaveLength(2);
-    expect(screen.getByText('Probe blocked')).toBeInTheDocument();
+    // The state is a mark now; its word is the mark's accessible name at all times.
+    expect(screen.getByLabelText('Probe blocked')).toBeInTheDocument();
   });
 
   it('reports a partial outage as a partial one', () => {
     render(<PoolPanel pool={pool({ health: 'degraded', answeringPct: 50 })} />);
 
-    expect(screen.getByText('Degraded')).toBeInTheDocument();
+    expect(screen.getByLabelText('Degraded')).toBeInTheDocument();
     expect(screen.getByText('50 %')).toBeInTheDocument();
   });
 

@@ -21,7 +21,6 @@ import type {
  */
 export type {
   AppEndpoints,
-  AppProcessView,
   ApplicationChoiceView,
   ApplicationListProblem,
   ApplicationListView,
