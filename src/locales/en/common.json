@@ -99,7 +99,7 @@
   "apps": {
     "pool": {
       "title": "The game's own reference servers",
-      "absent": "None for this application.",
+      "none": "No reference servers published for this application",
       "answering": "Answering",
       "rtt": "Ping, median",
       "members": "Members",
@@ -109,7 +109,12 @@
     },
     "waiting": "Waiting for the core…",
     "unavailable": "The core stopped sending application measurements",
-    "noneChosen": "No application is being monitored. Choose one above to see what it is talking to.",
+    "empty": {
+      "heading": "Pick the game you want to watch",
+      "body": "While it runs, this page shows every server it talks to, how the route to each one behaves, and what its own traffic looks like. Nothing is read from inside the game.",
+      "action": "Choose an application",
+      "meanwhile": "Your network is already being measured — see Network."
+    },
     "noEndpoints": "Nothing discovered yet — this application has not opened a connection since you started watching.",
     "warmup": {
       "badge": "Warming up · {{seconds}} s",
@@ -117,7 +122,7 @@
     },
     "window": "Figures cover the last {{seconds}} s",
     "pid": "PID {{pid}}",
-    "start": "Monitor",
+    "start": "Watch",
     "stop": "Stop",
     "processes": {
       "label": "Processes in this application",
@@ -137,7 +142,12 @@
     },
     "picker": {
       "heading": "Running applications",
-      "hint": "Pick up to {{limit}}.",
+      "watching": "Watching {{names}} · {{count}} of {{limit}}",
+      "watchingNone": "Nothing is being watched yet",
+      "change": "Change…",
+      "done": "Done",
+      "chooseHeading": "Choose what to watch",
+      "chooseHint": "Pick up to {{limit}}. Arm the monitor before a match — an application is picked up the moment it starts.",
       "partOf": "Part of {{name}}",
       "processes": "{{count}} process",
       "processes_other": "{{count}} processes",
@@ -204,7 +214,7 @@
       "network": "Whose network it is"
     },
     "whyPing": {
-      "summary": "Why this is not the ping your game shows",
+      "summary": "Why none of this is the ping your game shows",
       "timed": "Your game measures a packet only it can answer — its own, in its own language, timed inside the game.",
       "refused": "This app never reads a game's traffic. Doing that means a capture driver, the game's memory, or its wire format, and all three are refused: they are what anti-cheat systems look for, and none of them is safe for you.",
       "instead": "So you get two honest numbers instead: the route towards the server, and the traffic itself. When they disagree, that disagreement is the answer — a clean route with ragged arrivals is the server's problem, not yours."

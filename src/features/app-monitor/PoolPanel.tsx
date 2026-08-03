@@ -17,10 +17,12 @@ interface PoolPanelProps {
  * headline: "four of eight answering" is a fact, and the sentence built on it lives in the
  * verdict banner where it can be qualified.
  *
- * A missing pool is stated rather than hidden. Most titles publish no reference address, so
- * an application with nothing to compare against is the ordinary case — and an absent pool
- * can neither report an outage nor rule one out, which the user has to know before reading
- * a verdict that stops at the route.
+ * A missing pool is stated rather than hidden — **but as one muted line, not as a panel.**
+ * Most titles publish no reference address, so an application with nothing to compare
+ * against is the ordinary case, and a bordered, headed section whose entire content is
+ * "None for this application" spends a block of the card on the commonest outcome there is.
+ * The fact still has to be said: an absent pool can neither report an outage nor rule one
+ * out, which the user has to know before reading a verdict that stops at the route.
  */
 export const PoolPanel = ({ pool }: PoolPanelProps) => {
   const { t } = useTranslation();
@@ -28,15 +30,10 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
 
   if (pool === null) {
     return (
-      <section className="nm-pool nm-panel">
-        <header className="nm-panel__header">
-          <h4 className="nm-panel__title">
-            {t('apps.pool.title')}
-            <MetricHelp topic="pool" />
-          </h4>
-        </header>
-        <p className="nm-panel__note">{t('apps.pool.absent')}</p>
-      </section>
+      <p className="nm-pool__absent">
+        {t('apps.pool.none')}
+        <MetricHelp topic="pool" />
+      </p>
     );
   }
 

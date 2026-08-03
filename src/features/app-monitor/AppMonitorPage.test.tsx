@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
@@ -124,11 +125,18 @@ describe('AppMonitorPage', () => {
   it('waits for the core rather than showing an empty page', async () => {
     render(<AppMonitorPage />);
     expect(screen.getByText('Waiting for the core…')).toBeInTheDocument();
+    // And the first-run screen is not shown yet. Waiting for the core is not the same fact
+    // as nothing being watched, and telling a returning user their applications were gone
+    // for the first second of every launch would be a lie with a very short life.
+    expect(screen.queryByText('Pick the game you want to watch')).not.toBeInTheDocument();
     // Let the picker settle so its state update lands inside this test.
-    await screen.findByText('Running applications');
+    await screen.findByText(/Nothing is being watched yet/);
   });
 
-  it('says nothing is chosen once the core answers with no applications', async () => {
+  it('answers "what do I press" once the core reports nothing being watched', async () => {
+    // The first run was an expanded picker and one grey sentence — no heading, no statement
+    // of what is about to happen, no primary action. The audience installs this because a
+    // game stutters.
     const emitter = captureEmitter();
     render(<AppMonitorPage />);
     const emit = emitter();
@@ -137,7 +145,33 @@ describe('AppMonitorPage', () => {
       emit?.({ ...ENDPOINTS, apps: [] });
     });
 
-    expect(await screen.findByText(/No application is being monitored/)).toBeInTheDocument();
+    expect(await screen.findByText('Pick the game you want to watch')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose an application' })).toBeInTheDocument();
+    // And it says the rest of the app is not idle meanwhile, which is what stops an empty
+    // page reading as an application that is not working.
+    expect(screen.getByText(/Your network is already being measured/)).toBeInTheDocument();
+    // The picker is open, because with nothing chosen there is nothing else to do.
+    expect(screen.getByText('Choose what to watch')).toBeInTheDocument();
+  });
+
+  it('folds the picker away once something is being watched', async () => {
+    // It is a setup tool — heading, refresh, hint, scope checkbox, filter and up to forty
+    // scrolling rows — and it was mounted permanently above the measurements.
+    const emitter = captureEmitter();
+    render(<AppMonitorPage />);
+    const emit = emitter();
+
+    act(() => {
+      emit?.(ENDPOINTS);
+    });
+
+    expect(await screen.findByText(/Watching game.exe · 1 of 5/)).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Choose what to watch')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change…' }));
+
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
   });
 
   it('shows each monitored application with its endpoints', async () => {
@@ -205,9 +239,13 @@ describe('AppMonitorPage', () => {
       });
     });
 
+    // The picker folds once something is being watched, so this is what a reader who asks
+    // to change it sees.
+    await userEvent.click(await screen.findByRole('button', { name: 'Change…' }));
+
     expect(await screen.findAllByText('Part of game.exe')).toHaveLength(2);
     // And the one nothing claimed can still be chosen.
-    expect(screen.getAllByRole('button', { name: 'Monitor' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Watch' })).toHaveLength(1);
   });
 
   it('explains a missing tracing session instead of showing an application as quiet', async () => {

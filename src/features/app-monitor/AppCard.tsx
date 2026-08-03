@@ -10,6 +10,7 @@ import { EndpointColours } from './endpointColours';
 import { EndpointGroup } from './EndpointGroup';
 import { MetricHelp } from '../help/MetricHelp';
 import { PoolPanel } from './PoolPanel';
+import { WhyNotYourPing } from './WhyNotYourPing';
 
 interface AppCardProps {
   readonly app: AppView;
@@ -73,6 +74,14 @@ export const AppCard = ({
   // is the odd one out" is a question about all of them at once. The grouping reaches it as
   // emphasis — the match traffic at full weight — and never as an omission.
   const endpoints = useMemo(() => app.groups.flatMap((group) => group.endpoints), [app.groups]);
+
+  // Whether anything here answers nothing our probes can send. That is the normal state of a
+  // game's match server rather than a fault — nothing listens on a game port but the game —
+  // and it is the case the whole product exists for, so the card says once why what it shows
+  // instead is not the number the game shows.
+  const answersNothing = endpoints.some(
+    (endpoint) => !endpoint.probesMeasureIt && (endpoint.path !== null || endpoint.flow !== null),
+  );
 
   /**
    * Pins an endpoint where it currently sits, or unpins it.
@@ -193,6 +202,11 @@ export const AppCard = ({
             {t('apps.chart.caption', { seconds: chartStepSecs })}
             <MetricHelp topic="chart" />
           </p>
+          {/* Once per card, under the chart it is about — not once per silent endpoint.
+              It is the same three-point disclosure every time, and a game has several
+              silent endpoints, so it appeared six times on one card saying the same thing.
+              A reader who has had the explanation does not need it again six rows later. */}
+          {answersNothing && <WhyNotYourPing />}
         </div>
       )}
 

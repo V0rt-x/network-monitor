@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { forgetApp, monitorApp } from '../../shared/ipc';
@@ -28,9 +28,18 @@ const MAX_APPS = 5;
 export const AppMonitorPage = () => {
   const { t } = useTranslation();
   const state = useAppEndpoints();
+  // Whether the reader asked to change what is being watched. The picker is also open
+  // whenever nothing is: then it is the only thing on the page there is to do.
+  const [changing, setChanging] = useState(false);
+  const search = useRef<HTMLInputElement>(null);
 
   const endpoints = state.kind === 'measuring' ? state.endpoints : null;
   const apps = useMemo(() => endpoints?.apps ?? [], [endpoints]);
+  const watching = useMemo(() => apps.map((app) => app.name), [apps]);
+  // Waiting for the core is not "nothing is being watched": showing the first-run screen
+  // for the first second of every launch would tell a returning user their applications
+  // were gone.
+  const nothingWatched = endpoints !== null && apps.length === 0;
 
   // Every process of every monitored application, so the picker can mark one the user
   // never clicked — an application is a set of processes, and the ones it adopted are as
@@ -59,10 +68,36 @@ export const AppMonitorPage = () => {
         </p>
       )}
 
+      {/* The first run used to be an expanded picker and one grey sentence — no heading, no
+          statement of what is about to happen, no primary action. For an audience installing
+          this because a game stutters, the first screen has to answer "what do I press". */}
+      {nothingWatched && (
+        <section className="nm-apps__empty">
+          <h2 className="nm-apps__emptyheading">{t('apps.empty.heading')}</h2>
+          <p className="nm-apps__emptybody">{t('apps.empty.body')}</p>
+          <button
+            type="button"
+            className="nm-button"
+            onClick={() => {
+              setChanging(true);
+              search.current?.focus();
+            }}
+          >
+            {t('apps.empty.action')}
+          </button>
+          {/* Nothing here is idle while nothing is chosen, and saying so is what stops the
+              empty page reading as an application that is not working. */}
+          <p className="nm-apps__emptymeanwhile">{t('apps.empty.meanwhile')}</p>
+        </section>
+      )}
+
       <ApplicationPicker
         monitored={monitored}
-        count={apps.length}
+        watching={watching}
         limit={MAX_APPS}
+        open={changing || nothingWatched}
+        onOpenChange={setChanging}
+        searchRef={search}
         onMonitor={(seedPid) => {
           void monitorApp(seedPid);
         }}
@@ -72,10 +107,6 @@ export const AppMonitorPage = () => {
       />
 
       {state.kind === 'waiting' && <p className="nm-state--pending">{t('apps.waiting')}</p>}
-
-      {endpoints !== null && apps.length === 0 && (
-        <p className="nm-state--pending">{t('apps.noneChosen')}</p>
-      )}
 
       {endpoints !== null && apps.length > 0 && (
         <>

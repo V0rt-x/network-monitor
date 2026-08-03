@@ -50,8 +50,11 @@ const nothing = new Map<number, MonitoredBy>();
 const picker = (props: Partial<Parameters<typeof ApplicationPicker>[0]> = {}) => (
   <ApplicationPicker
     monitored={nothing}
-    count={0}
+    watching={[]}
     limit={5}
+    // Open is the state most of these tests are about; the folded line has its own.
+    open
+    onOpenChange={vi.fn()}
     onMonitor={vi.fn()}
     onForget={vi.fn()}
     {...props}
@@ -148,7 +151,7 @@ describe('ApplicationPicker', () => {
     render(picker({ onMonitor }));
     await screen.findByText('Discord');
 
-    const [first] = screen.getAllByRole('button', { name: 'Monitor' });
+    const [first] = screen.getAllByRole('button', { name: 'Watch' });
     if (!first) throw new Error('the picker rendered no monitorable application');
     await userEvent.click(first);
 
@@ -159,17 +162,17 @@ describe('ApplicationPicker', () => {
     // The picker's grouping and the monitor's need not agree exactly — the monitor also
     // adopts descendants — so an overlap anywhere means the application is taken.
     const monitored = new Map<number, MonitoredBy>([[104, { app: 7, name: 'Discord' }]]);
-    render(picker({ monitored, count: 1 }));
+    render(picker({ monitored, watching: ['game.exe'] }));
     await screen.findByText('Discord');
 
     expect(screen.getByText('Part of Discord')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Monitor' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Watch' })).toHaveLength(1);
   });
 
   it('stops the application rather than the process', async () => {
     const onForget = vi.fn();
     const monitored = new Map<number, MonitoredBy>([[200, { app: 7, name: 'game.exe' }]]);
-    render(picker({ monitored, count: 1, onForget }));
+    render(picker({ monitored, watching: ['game.exe'], onForget }));
     await screen.findByText('game.exe');
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
@@ -179,10 +182,10 @@ describe('ApplicationPicker', () => {
 
   it('refuses further choices at the cap rather than letting a click fail silently', async () => {
     const monitored = new Map<number, MonitoredBy>([[200, { app: 7, name: 'game.exe' }]]);
-    render(picker({ monitored, count: 1, limit: 1 }));
+    render(picker({ monitored, watching: ['game.exe'], limit: 1 }));
     await screen.findByText('Discord');
 
-    for (const button of screen.getAllByRole('button', { name: 'Monitor' })) {
+    for (const button of screen.getAllByRole('button', { name: 'Watch' })) {
       expect(button).toBeDisabled();
     }
     // The one already chosen can still be released.
@@ -195,10 +198,10 @@ describe('ApplicationPicker', () => {
     const monitored = new Map<number, MonitoredBy>(
       [100, 101, 102, 103, 104, 105].map((pid) => [pid, { app: 7, name: 'Discord' }]),
     );
-    render(picker({ monitored, count: 1, limit: 2 }));
+    render(picker({ monitored, watching: ['game.exe'], limit: 2 }));
     await screen.findByText('Discord');
 
-    for (const button of screen.getAllByRole('button', { name: 'Monitor' })) {
+    for (const button of screen.getAllByRole('button', { name: 'Watch' })) {
       expect(button).toBeEnabled();
     }
   });

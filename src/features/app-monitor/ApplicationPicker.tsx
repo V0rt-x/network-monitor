@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -23,10 +24,15 @@ interface ApplicationPickerProps {
    * grouping the monitor made, and they meet at the processes.
    */
   readonly monitored: ReadonlyMap<number, MonitoredBy>;
-  /** How many applications are being monitored. */
-  readonly count: number;
+  /** What is being watched, in the order the cards are in, for the folded line. */
+  readonly watching: readonly string[];
   /** How many applications may be monitored at once. */
   readonly limit: number;
+  /** Whether the list, the filter and the scope toggle are on screen. */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  /** So the empty state's own action can put the cursor where the choosing happens. */
+  readonly searchRef?: Ref<HTMLInputElement>;
   readonly onMonitor: (seedPid: number) => void;
   readonly onForget: (app: number) => void;
 }
@@ -49,11 +55,25 @@ const SHOWN = 40;
  * The list is fetched when this mounts and when the user asks again — never on a timer. It
  * is stale the instant it is taken, so polling would spend budget to be no fresher, and
  * Rust re-checks the process when monitoring actually starts.
+ *
+ * **It folds away once something is being watched.** This is a setup tool, not a surface to
+ * watch — a heading, a refresh, a hint, a scope checkbox, a count, a filter and up to forty
+ * scrolling rows — and it was mounted permanently above the measurements, taking the whole
+ * first screen. Folded it is one line naming what is being watched. Open is the state it
+ * starts in when nothing has been chosen yet, because then there is nothing else on the page
+ * and choosing is the only thing to do.
+ *
+ * The hint about arming the monitor before a match belongs to the open state for the same
+ * reason: it is worth reading once, on the first run, rather than sitting above the figures
+ * for the rest of the application's life.
  */
 export const ApplicationPicker = ({
   monitored,
-  count,
+  watching,
   limit,
+  open,
+  onOpenChange,
+  searchRef,
   onMonitor,
   onForget,
 }: ApplicationPickerProps) => {
@@ -92,30 +112,72 @@ export const ApplicationPicker = ({
     return found.slice(0, SHOWN);
   }, [offered, search]);
 
-  const full = count >= limit;
+  const full = watching.length >= limit;
+
+  // Folded: one line saying what is being watched, and the way back in. Everything below is
+  // the setup tool, and a setup tool does not belong above the measurements.
+  if (!open) {
+    return (
+      <section className="nm-picker nm-picker--folded">
+        <p className="nm-picker__watching">
+          {watching.length === 0
+            ? t('apps.picker.watchingNone')
+            : t('apps.picker.watching', {
+                names: watching.join(', '),
+                count: watching.length,
+                limit,
+              })}
+          <MetricHelp topic="watching" />
+        </p>
+        <button
+          type="button"
+          className="nm-button"
+          onClick={() => {
+            onOpenChange(true);
+          }}
+        >
+          {t('apps.picker.change')}
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="nm-picker">
       <header className="nm-picker__header">
         <h3 className="nm-picker__title">
-          {t('apps.picker.heading')}
+          {t('apps.picker.chooseHeading')}
           {/* What choosing an application actually does — that it takes the whole process
               group and anything it launches, and that nothing inside a process is ever
               read — was three sentences here. It is a real answer to a real question and
               it is not a warning, so it moved a level down rather than off the page. */}
           <MetricHelp topic="watching" />
         </h3>
-        <button
-          type="button"
-          className="nm-button nm-button--quiet"
-          onClick={refresh}
-          disabled={state.kind === 'loading'}
-        >
-          {t('apps.picker.refresh')}
-        </button>
+        <div className="nm-picker__actions">
+          <button
+            type="button"
+            className="nm-button nm-button--quiet"
+            onClick={refresh}
+            disabled={state.kind === 'loading'}
+          >
+            {t('apps.picker.refresh')}
+          </button>
+          <button
+            type="button"
+            className="nm-button"
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
+            {t('apps.picker.done')}
+          </button>
+        </div>
       </header>
 
-      <p className="nm-picker__hint">{t('apps.picker.hint', { limit })}</p>
+      {/* Shown only while the picker is open, which for most sessions means once. It is the
+          one thing worth knowing before choosing and the one thing a returning user does
+          not need above their figures. */}
+      <p className="nm-picker__hint">{t('apps.picker.chooseHint', { limit })}</p>
 
       {/* The escape hatch, and it is not optional. The bundled catalogue is large and not
           complete: a title too new for it, a regional client, or anything Discord's index
@@ -144,6 +206,7 @@ export const ApplicationPicker = ({
         <span>{t('apps.picker.searchLabel')}</span>
         <input
           type="search"
+          ref={searchRef}
           value={search}
           placeholder={t('apps.picker.searchPlaceholder')}
           onChange={(event) => {

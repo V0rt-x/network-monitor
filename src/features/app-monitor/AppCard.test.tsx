@@ -424,9 +424,55 @@ describe('AppCard', () => {
     // And nothing explains the gap in prose. The page carries figures and findings; the one
     // line that says why is a disclosure the reader opens when they want it.
     expect(screen.queryByText(/no ping, jitter or loss to show/)).not.toBeInTheDocument();
-    // And the row says in as many words why this is not the number the game shows. It is
-    // the most important string in the application, and this is the row it belongs on.
-    expect(screen.getByText('Why this is not the ping your game shows')).toBeInTheDocument();
+    // And the card says in as many words why this is not the number the game shows. It is
+    // the most important string in the application.
+    expect(screen.getByText('Why none of this is the ping your game shows')).toBeInTheDocument();
+  });
+
+  it('says why none of this is the game’s ping once, not once per silent endpoint', () => {
+    // It is the same three-point disclosure every time, and a game has several silent
+    // endpoints — so it appeared once per row, six times, saying the same thing. A reader
+    // who has had the explanation does not need it again six rows later.
+    const silent = (key: string, address: string): Partial<EndpointView> => ({
+      key,
+      address,
+      health: 'carryingTraffic',
+      probeKind: null,
+      probesMeasureIt: false,
+      rttMs: null,
+      jitterMs: null,
+      lossPct: null,
+      flow: {
+        spanSecs: 10,
+        sentBytesPerSec: 1280,
+        receivedBytesPerSec: 20480,
+        updatesPerSec: 20,
+        arrivalMeanMs: 50,
+        arrivalJitterMs: 1.4,
+        arrivalP95Ms: 52,
+        arrivalMaxMs: 119,
+        stallMs: null,
+        receiveShortfallPct: null,
+      },
+    });
+
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint(silent('a', '1.1.1.1:27015')),
+            endpoint(silent('b', '1.1.1.2:27015')),
+            endpoint(silent('c', '1.1.1.3:27015')),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('Why none of this is the ping your game shows')).toHaveLength(1);
   });
 
   it('keeps the dashes of an endpoint whose figures have not arrived yet', () => {

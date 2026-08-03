@@ -507,6 +507,68 @@ body {
   gap: var(--nm-space-4);
 }
 
+.nm-picker__actions {
+  display: flex;
+  gap: var(--nm-space-2);
+}
+
+/*
+ * Folded: one line naming what is being watched, and the way back in.
+ *
+ * A setup tool with its own heading, refresh, hint, scope checkbox, filter and a scrolling
+ * list of up to forty rows was mounted permanently above the measurements, taking the whole
+ * first screen away from the thing the page is for.
+ */
+.nm-picker--folded {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nm-space-4);
+  padding: var(--nm-space-2) var(--nm-space-4);
+}
+
+.nm-picker__watching {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The first run.
+ *
+ * It was an expanded picker and one grey sentence — no heading, no statement of what is
+ * about to happen, no primary action. For an audience installing this because a game
+ * stutters, the first screen has to answer "what do I press".
+ */
+.nm-apps__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nm-space-3);
+  padding: var(--nm-space-5);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-lg);
+  background: var(--nm-surface);
+}
+
+.nm-apps__emptyheading {
+  margin: 0;
+  font-size: var(--nm-text-lg);
+}
+
+.nm-apps__emptybody {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--nm-text-secondary);
+}
+
+.nm-apps__emptymeanwhile {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-sm);
+}
+
 .nm-picker__title {
   margin: 0;
   font-size: var(--nm-text-md);
@@ -1287,6 +1349,14 @@ details.nm-endpointgroup > summary {
 
 .nm-verdict--gameServersUnreachable {
   border-left-color: var(--nm-blocked);
+}
+
+/* The commonest outcome there is, said in one muted line rather than in a bordered,
+   headed panel whose entire content would be that nothing was published. */
+.nm-pool__absent {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-sm);
 }
 
 .nm-pool__metrics {

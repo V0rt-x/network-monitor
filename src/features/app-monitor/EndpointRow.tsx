@@ -10,7 +10,6 @@ import { FlowPanel } from './FlowPanel';
 import { networkName } from './networkName';
 import { ageKindKey, livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
-import { WhyNotYourPing } from './WhyNotYourPing';
 
 /**
  * How the application's own traffic leaves the machine.
@@ -106,13 +105,6 @@ export const EndpointRow = ({
   const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
     .filter(Boolean)
     .join(' ');
-
-  // Nothing our probes can send reaches this endpoint, and nothing ever will. That is the
-  // normal state of a game's match server rather than a fault, and it is the case the whole
-  // product exists for — so where something else does speak for the endpoint, the row says in
-  // as many words why what it shows is not the number the game shows.
-  const answersNothing =
-    !endpoint.probesMeasureIt && (endpoint.path !== null || endpoint.flow !== null);
 
   return (
     <li
@@ -239,8 +231,6 @@ export const EndpointRow = ({
           </div>
         </dl>
       )}
-
-      {answersNothing && <WhyNotYourPing />}
 
       {/* Two columns, never one. The route is a round trip to a router short of the
           endpoint; the flow is the arrival pattern of the traffic itself. Merging them

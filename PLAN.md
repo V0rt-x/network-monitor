@@ -2094,12 +2094,12 @@ move down a level, and each item below names the level they land on.
 - [x] **14. Verdicts get help topics.** The one place in the app that states a conclusion has
       no explanation of any kind. `verdict` and `verdictEvidence`, plus the disclosure on the
       banner's own heading.
-- [ ] **15. `WhyNotYourPing` once per card**, not once per silent endpoint. For a game that is
+- [x] **15. `WhyNotYourPing` once per card**, not once per silent endpoint. For a game that is
       the same three-point disclosure repeated on every row.
-- [ ] **16. The reference-pool panel appears only when there is a pool.** A bordered, headed
+- [x] **16. The reference-pool panel appears only when there is a pool.** A bordered, headed
       panel whose whole content is "None for this application." is the ordinary case for most
       titles; it becomes one muted line.
-- [ ] **17. The picker folds away, and there is a first-run state.** A setup tool with its own
+- [x] **17. The picker folds away, and there is a first-run state.** A setup tool with its own
       search, checkbox and 16 rem scrolling list is mounted permanently above the monitoring
       surface. Folded it is one line naming what is being watched; the empty state gets a
       heading, a sentence and a primary action instead of one grey line.

@@ -18,13 +18,19 @@ const pool = (overrides: Partial<PoolView> = {}): PoolView => ({
 });
 
 describe('PoolPanel', () => {
-  it('says an application has no reference servers rather than hiding the panel', () => {
+  it('says an application has no reference servers in one line, not in a panel', () => {
     // An absent pool can neither report an outage nor rule one out, and the user has to
-    // know that before reading a verdict that stops at the route — so the panel stays.
-    // What that costs them is a sentence in the help, not a paragraph on the card.
+    // know that before reading a verdict that stops at the route — so the fact stays.
+    //
+    // A bordered, headed section whose entire content is "None for this application" is
+    // what it used to be, and that is the ordinary case for most titles: a block of the
+    // card spent on the commonest outcome there is.
     render(<PoolPanel pool={null} />);
 
-    expect(screen.getByText('None for this application.')).toBeInTheDocument();
+    expect(screen.getByText(/No reference servers published/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: "The game's own reference servers" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: "What The game's own reference servers means" }),
     ).toBeInTheDocument();
