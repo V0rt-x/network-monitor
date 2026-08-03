@@ -11,6 +11,7 @@ import { EndpointColours } from './endpointColours';
 import { EndpointGroup } from './EndpointGroup';
 import { MetricHelp } from '../help/MetricHelp';
 import { PoolPanel } from './PoolPanel';
+import { PrimaryFlow } from './PrimaryFlow';
 import { WhyNotYourPing } from './WhyNotYourPing';
 
 interface AppCardProps {
@@ -80,6 +81,8 @@ export const AppCard = ({
   // game's match server rather than a fault — nothing listens on a game port but the game —
   // and it is the case the whole product exists for, so the card says once why what it shows
   // instead is not the number the game shows.
+  const primary = endpoints.find((endpoint) => endpoint.key === app.primaryEndpoint);
+
   const answersNothing = endpoints.some(
     (endpoint) => !endpoint.probesMeasureIt && (endpoint.path !== null || endpoint.flow !== null),
   );
@@ -194,11 +197,16 @@ export const AppCard = ({
       <VerdictBanner diagnosis={app.diagnosis} subject={app.name} />
       <PoolPanel pool={app.pool} />
 
-      <Distribution
-        counts={app.counts}
-        label={t('apps.distribution.application')}
-        className="nm-appcard__distribution"
-      />
+      <Distribution counts={app.counts} label={t('apps.distribution.application')} />
+
+      {/* The card leads with the endpoint the user came for, where the measurement supports
+          naming one. Where two flows are close enough that it would not, Rust says so and the
+          card leads with the table alone rather than picking a winner by a tiebreak. */}
+      {primary === undefined ? (
+        <p className="nm-primary__none">{t('apps.primary.none')}</p>
+      ) : (
+        <PrimaryFlow endpoint={primary} trafficWindowSecs={trafficWindowSecs} />
+      )}
 
       {/* The chart and its caption are one block with a tighter gap of its own, so the card's
           own rhythm does not push a caption away from the picture it captions. */}
@@ -239,6 +247,7 @@ export const AppCard = ({
           flowStatus={flowStatus}
           trafficWindowSecs={trafficWindowSecs}
           colourOf={(endpoint) => colours.current.of(endpoint)}
+          shapeOf={(endpoint) => colours.current.shapeOf(endpoint)}
           highlighted={highlighted}
           pinned={pinned?.key ?? null}
           pinnedAt={pinned?.at ?? null}

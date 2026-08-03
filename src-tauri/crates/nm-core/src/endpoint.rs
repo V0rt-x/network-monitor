@@ -523,6 +523,63 @@ impl EndpointTracker {
     }
 }
 
+/// How far ahead of its nearest rival a flow has to be to be called the busiest.
+///
+/// Twice. Two endpoints within a factor of two of each other are two things the application
+/// is doing, and naming one of them "the busiest flow" would be a claim the numbers do not
+/// support — which is exactly the kind of role guess the view layer refuses to make.
+const BUSIEST_MARGIN: u64 = 2;
+
+/// The endpoint carrying materially more of an application's traffic than any other.
+///
+/// The card leads with the endpoint the user came for, and this is the only honest way to
+/// find it. The view layer will not label an endpoint by role, on the grounds that
+/// everything except the transport and the volume of traffic would be a guess — and the
+/// volume is precisely what is *measured*. So the busiest flow is a fact, and "the one the
+/// game is played over" remains a guess nobody makes.
+///
+/// [`None`] in three cases, and each is a different kind of "no":
+///
+/// - **Nothing is counted.** Without per-process flow events every endpoint reports
+///   [`None`] bytes, and picking one would rank by nothing at all.
+/// - **Nothing has moved.** Every counted endpoint at zero has no busiest member.
+/// - **Two are close.** Within a factor of two, calling one of them the busiest would be a
+///   claim the measurement does not make. The card then leads with the table alone.
+///
+/// Ties and near-ties are decided against declaring a winner rather than by a tiebreak,
+/// because a tiebreak would pick a different endpoint from one window to the next and move
+/// the top of the card while it was being read.
+#[must_use]
+pub fn busiest<'a, I, T>(endpoints: I, bytes_of: impl Fn(&T) -> Option<u64>) -> Option<&'a T>
+where
+    I: IntoIterator<Item = &'a T>,
+{
+    let mut best: Option<(&'a T, u64)> = None;
+    let mut runner_up: u64 = 0;
+    for endpoint in endpoints {
+        let Some(bytes) = bytes_of(endpoint) else {
+            continue;
+        };
+        match best {
+            Some((_, leader)) if bytes <= leader => runner_up = runner_up.max(bytes),
+            Some((_, leader)) => {
+                runner_up = leader;
+                best = Some((endpoint, bytes));
+            }
+            None => best = Some((endpoint, bytes)),
+        }
+    }
+
+    let (leader, bytes) = best?;
+    // Strictly more than double, so exactly double is still too close to call. Where the
+    // margin sits is a judgement; which way it errs is not — this product declines to claim
+    // rather than claiming with a caveat.
+    if bytes == 0 || bytes <= runner_up.saturating_mul(BUSIEST_MARGIN) {
+        return None;
+    }
+    Some(leader)
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
@@ -1015,5 +1072,97 @@ mod tests {
         let endpoint = tracker.endpoints(APP).next().unwrap();
         assert_eq!(endpoint.first_seen(), start);
         assert_eq!(endpoint.last_seen(), start + Duration::from_secs(5));
+    }
+}
+
+#[cfg(test)]
+mod busiest_tests {
+    use super::busiest;
+
+    /// One endpoint, as this rule needs to see it: a name and what it carried.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Flow(&'static str, Option<u64>);
+
+    fn pick(flows: &[Flow]) -> Option<&Flow> {
+        busiest(flows.iter(), |flow| flow.1)
+    }
+
+    #[test]
+    fn names_the_endpoint_carrying_materially_more_than_any_other() {
+        let flows = [
+            Flow("match", Some(4_000_000)),
+            Flow("launcher", Some(9_000)),
+        ];
+        assert_eq!(pick(&flows), Some(&flows[0]));
+    }
+
+    #[test]
+    fn refuses_to_choose_between_two_flows_of_similar_size() {
+        // A card that led with one of two comparable flows would be making a claim the
+        // measurement does not support, which is the role guess the view layer refuses.
+        let flows = [Flow("voice", Some(120_000)), Flow("video", Some(90_000))];
+        assert_eq!(pick(&flows), None);
+    }
+
+    #[test]
+    fn treats_exactly_double_as_too_close_to_call() {
+        // The margin is strict: twice is where "materially more" starts, not where it is
+        // already reached.
+        let flows = [Flow("a", Some(200)), Flow("b", Some(100))];
+        assert_eq!(pick(&flows), None);
+
+        let clear = [Flow("a", Some(201)), Flow("b", Some(100))];
+        assert_eq!(pick(&clear), Some(&clear[0]));
+    }
+
+    #[test]
+    fn has_no_answer_where_nothing_counts_bytes() {
+        // A Windows machine without the one-time tracing setup counts nothing at all, and
+        // ranking by nothing would put an arbitrary endpoint at the top of the card.
+        let flows = [Flow("a", None), Flow("b", None)];
+        assert_eq!(pick(&flows), None);
+    }
+
+    #[test]
+    fn ignores_the_endpoints_nothing_counted_rather_than_scoring_them_zero() {
+        // Unknown is not "measured no traffic": an endpoint whose bytes are unknown must
+        // neither win nor be treated as a rival that keeps a real winner from being named.
+        let flows = [Flow("counted", Some(500_000)), Flow("unknown", None)];
+        assert_eq!(pick(&flows), Some(&flows[0]));
+    }
+
+    #[test]
+    fn has_no_answer_where_everything_measured_is_idle() {
+        // Measured zero, which is a real answer and still not a busiest flow.
+        let flows = [Flow("a", Some(0)), Flow("b", Some(0))];
+        assert_eq!(pick(&flows), None);
+    }
+
+    #[test]
+    fn a_single_endpoint_carrying_traffic_is_the_busiest_one() {
+        let flows = [Flow("only", Some(1_024))];
+        assert_eq!(pick(&flows), Some(&flows[0]));
+    }
+
+    #[test]
+    fn nothing_at_all_is_not_an_error() {
+        let flows: [Flow; 0] = [];
+        assert_eq!(pick(&flows), None);
+    }
+
+    #[test]
+    fn the_order_it_is_given_in_does_not_change_the_answer() {
+        let forwards = [
+            Flow("a", Some(10)),
+            Flow("b", Some(1_000)),
+            Flow("c", Some(20)),
+        ];
+        let backwards = [
+            Flow("c", Some(20)),
+            Flow("b", Some(1_000)),
+            Flow("a", Some(10)),
+        ];
+        assert_eq!(pick(&forwards).map(|flow| flow.0), Some("b"));
+        assert_eq!(pick(&backwards).map(|flow| flow.0), Some("b"));
     }
 }

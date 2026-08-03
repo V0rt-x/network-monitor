@@ -117,9 +117,17 @@ const app = ({
   pool: null,
   warmupSecsRemaining: null,
   chartElapsedSecs: [0, 3, 6],
+  // No busiest flow by default: most of these tests are about the table, and a card leading
+  // with one endpoint would make every query for a figure ambiguous.
+  primaryEndpoint: null,
   groups: groupsOf(endpoints),
   ...overrides,
 });
+
+/** Opens one row's expander, which is where level two lives now. */
+const openRow = async (address: string) => {
+  await userEvent.click(screen.getByRole('button', { name: `More about ${address}` }));
+};
 
 describe('AppCard', () => {
   it('names the application it is following', () => {
@@ -382,7 +390,7 @@ describe('AppCard', () => {
     expect(screen.getByText('OK')).toBeInTheDocument();
   });
 
-  it('keeps the path figure beside a silent endpoint rather than standing in for it', () => {
+  it('keeps the path figure beside a silent endpoint rather than standing in for it', async () => {
     // A match server answers nothing, so it has no round-trip time of its own at all. The
     // route to it is a different quantity, measured against a different machine, and the two
     // must never merge into one number called "ping".
@@ -417,21 +425,26 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('The route towards it')).toBeInTheDocument();
-    expect(screen.getByText('Round trip to that router')).toBeInTheDocument();
-    // No dashes at all where the endpoint's own figures would have been: they are gone,
-    // not blank. Three dashes are what the most important row on the page used to show,
-    // and three dashes read as a broken tool rather than as an honest absence.
-    expect(screen.queryByText('Ping (RTT)')).not.toBeInTheDocument();
-    // One jitter on the card, and it belongs to the route — the endpoint's own is gone
-    // rather than blank.
-    expect(screen.getAllByText('Jitter')).toHaveLength(1);
+    // The whole reason the list is a table: on this row the `Ping` cell is *empty* and the
+    // `Route` cell is filled, and the column headings above them say which subject each
+    // belongs to. That states the never-merge rule on every row at once, and it states it
+    // more plainly than the paragraph that used to.
+    const cells = [...document.querySelectorAll('tbody td')].map((cell) => cell.textContent);
+    expect(cells).toContain('84 ms');
+    // Not a dash: three dashes where the headline figures belong read as a broken tool
+    // rather than as an honest absence, and nothing will ever fill them in.
     expect(screen.queryByText('—')).not.toBeInTheDocument();
+    // The route in full is a level down, where it qualifies rather than competes.
+    expect(screen.queryByText('The route towards it')).not.toBeInTheDocument();
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText('The route towards it')).toBeVisible();
+    expect(screen.getByText('Round trip to that router')).toBeVisible();
+
     // And nothing explains the gap in prose. The page carries figures and findings; the one
     // line that says why is a disclosure the reader opens when they want it.
     expect(screen.queryByText(/no ping, jitter or loss to show/)).not.toBeInTheDocument();
-    // And the card says in as many words why this is not the number the game shows. It is
-    // the most important string in the application.
+    // The card says in as many words why this is not the number the game shows. It is the
+    // most important string in the application.
     expect(screen.getByText('Why none of this is the ping your game shows')).toBeInTheDocument();
   });
 
@@ -508,11 +521,13 @@ describe('AppCard', () => {
     );
 
     expect(screen.getByText('Ping (RTT)')).toBeVisible();
+    // Three cells, three dashes: a chain still trying probe kinds has a figure coming, so
+    // the row waits for it in place rather than changing shape and changing back.
     expect(screen.getAllByText('—')).toHaveLength(3);
     expect(screen.queryByText(/no ping, jitter or loss to show/)).not.toBeInTheDocument();
   });
 
-  it('states what an endpoint could not be measured with rather than showing a bare number', () => {
+  it('states what an endpoint could not be measured with rather than showing a bare number', async () => {
     render(
       <AppCard
         app={app({
@@ -536,17 +551,18 @@ describe('AppCard', () => {
     // with it — except the egress conflict, which is a warning and stays on the row, and
     // the tunnel, which is not a caveat on one figure but the reason every figure on the
     // row was measured a different way.
-    expect(screen.getByText(/TLS · Filtering confirmed/)).toBeInTheDocument();
     expect(screen.getByText('Through a tunnel')).toBeVisible();
     expect(screen.getByRole('button', { name: 'What Through a tunnel means' })).toBeInTheDocument();
-    expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
     expect(screen.getByText("Probe may not follow this app's route")).toBeVisible();
+
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText(/TLS · Filtering confirmed/)).toBeVisible();
     expect(
       screen.getByText(/This app's traffic leaves via Ethernet \(192\.0\.2\.10\)/),
-    ).toBeInTheDocument();
+    ).toBeVisible();
   });
 
-  it('shows three figures and no caveats until the reader asks for more', () => {
+  it('shows the four columns and no caveats until the reader asks for more', () => {
     // The whole item is about what is *not* shown by default, and that is exactly the kind
     // of thing that grows back one field at a time.
     render(
@@ -561,18 +577,23 @@ describe('AppCard', () => {
       />,
     );
 
-    for (const shown of ['Ping (RTT)', 'Jitter', 'Loss']) {
+    for (const shown of ['Endpoint', 'Network', 'State', 'Ping (RTT)', 'Jitter', 'Loss', 'Route']) {
       expect(screen.getByText(shown)).toBeVisible();
     }
-    // Present in the document — the expander is a disclosure, not a second request to Rust —
-    // and not on screen until it is opened.
+    // The review's own list of what a closed row must not carry. None of it is rendered at
+    // all: a table of twenty rows each holding a full detail list is real work for a page
+    // that is meant to be scanned.
     for (const hidden of [
       'How it is being measured',
       'Which adapter it leaves by',
       'Data exchanged (30 s)',
       'In use',
+      'How far the route reaches',
+      'The route towards it',
+      'The traffic itself',
+      'Watched by this app',
     ]) {
-      expect(screen.getByText(hidden)).not.toBeVisible();
+      expect(screen.queryByText(hidden)).not.toBeInTheDocument();
     }
   });
 
@@ -587,7 +608,7 @@ describe('AppCard', () => {
       />,
     );
 
-    await userEvent.click(screen.getByText('More about this connection'));
+    await openRow('1.1.1.1:27015');
 
     expect(screen.getByText('How it is being measured')).toBeVisible();
     expect(screen.getByText('Data exchanged (30 s)')).toBeVisible();
@@ -652,7 +673,7 @@ describe('AppCard', () => {
     expect(await screen.findByRole('note')).toBeInTheDocument();
   });
 
-  it('names the adapter, not only the address, so a VPN change is recognisable', () => {
+  it('names the adapter, not only the address, so a VPN change is recognisable', async () => {
     // The core use case: comparing before and after turning an accelerator on. An address
     // is not something a user can check that against; the name they see in Windows is.
     render(
@@ -667,10 +688,11 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeInTheDocument();
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeVisible();
   });
 
-  it('falls back to the bare address when no adapter claims it', () => {
+  it('falls back to the bare address when no adapter claims it', async () => {
     // A tunnel that went down between the adapter snapshot and this emission. A guessed
     // name would be worse than none.
     render(
@@ -683,10 +705,11 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/leaves from 10\.7\.0\.2/)).toBeInTheDocument();
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText(/leaves from 10\.7\.0\.2/)).toBeVisible();
   });
 
-  it('names the route the probe takes when it cannot follow the application', () => {
+  it('names the route the probe takes when it cannot follow the application', async () => {
     // The per-process interceptor case. Saying only "this may be wrong" leaves the user
     // nothing to act on; saying which route the figure describes gives them the answer.
     render(
@@ -709,11 +732,16 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeInTheDocument();
+    // The warning stays at level one whatever else moves down: the figure describes a
+    // different route from the one this application is taking, and a reader who never opens
+    // the expander must still be told.
+    expect(screen.getByText("Probe may not follow this app's route")).toBeVisible();
+
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText(/leaves via Accelerator \(10\.7\.0\.2\)/)).toBeVisible();
     expect(
       screen.getByText(/The probe cannot follow it and leaves via Ethernet \(192\.0\.2\.10\)/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
+    ).toBeVisible();
   });
 
   it('says nothing about a second route when the probe follows the application', () => {
@@ -730,7 +758,7 @@ describe('AppCard', () => {
     expect(screen.queryByText(/The probe cannot follow it/)).not.toBeInTheDocument();
   });
 
-  it('shows a live game server as carrying traffic, never as unreachable', () => {
+  it('shows a live game server as carrying traffic, never as unreachable', async () => {
     // The state a UDP match server is normally in: nothing listens on a game port but the
     // game, so no probe answers, while the traffic proves the server is fine.
     render(
@@ -748,6 +776,10 @@ describe('AppCard', () => {
             endpoint({
               health: 'carryingTraffic',
               recentBytes: 630_000,
+              // Nothing our probes can send reaches it, and nothing ever will — which is
+              // what makes the cells empty rather than dashed.
+              probesMeasureIt: false,
+              probeKind: null,
               rttMs: null,
               jitterMs: null,
               lossPct: null,
@@ -763,13 +795,16 @@ describe('AppCard', () => {
 
     expect(screen.getAllByText('Carrying traffic').length).toBeGreaterThan(0);
     expect(screen.queryByText('Unreachable')).not.toBeInTheDocument();
-    // It claims nothing it did not measure.
-    const rtt = screen.getByText('Ping (RTT)').closest('div');
-    expect(rtt).toHaveTextContent('—');
+    // It claims nothing it did not measure: the cells are empty rather than zeroed, and
+    // rather than dashed, because nothing will ever fill them.
+    const cells = [...document.querySelectorAll('tbody td')].map((cell) => cell.textContent);
+    expect(cells.filter((text) => text === '—')).toHaveLength(0);
+
+    await openRow('1.1.1.1:27015');
     expect(screen.getByText('Data exchanged (30 s)').closest('div')).toHaveTextContent('630 kB');
   });
 
-  it('says how old a connection is, and which kind of old that is', () => {
+  it('says how old a connection is, and which kind of old that is', async () => {
     // What the user asked for: telling a new endpoint from one that has been there all
     // match. Two facts under two words — a TCP connection has an establishment the system
     // dates, a UDP endpoint has none — with the figure at level one and the word for it a
@@ -796,12 +831,16 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/Age 1 h 30 min/)).toBeVisible();
-    expect(screen.getByText('Connection established')).toBeInTheDocument();
+    // The age moved to level two with everything else that qualifies rather than reports:
+    // it tells a new endpoint from one that has carried the whole match, which is a question
+    // a reader asks rather than one the row has to answer unprompted.
+    await openRow('1.1.1.2:443');
+    expect(screen.getByText('Connection established')).toBeVisible();
+    expect(screen.getByText(/1 h 30 min/)).toBeVisible();
     expect(screen.queryByText('Watched by this app')).not.toBeInTheDocument();
   });
 
-  it('never borrows the word "established" for a UDP endpoint', () => {
+  it('never borrows the word "established" for a UDP endpoint', async () => {
     // There is no connection to have been established, so the only honest figure is how
     // long this application has been watched talking to the address.
     render(
@@ -814,12 +853,13 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText(/Age 45 s/)).toBeVisible();
-    expect(screen.getByText('Watched by this app')).toBeInTheDocument();
+    await openRow('1.1.1.1:27015');
+    expect(screen.getByText('Watched by this app')).toBeVisible();
+    expect(screen.getByText('45 s')).toBeVisible();
     expect(screen.queryByText('Connection established')).not.toBeInTheDocument();
   });
 
-  it("shows the operating system's own round trip with its age, never as a live figure", () => {
+  it("shows the operating system's own round trip with its age, never as a live figure", async () => {
     // The one genuine round trip that cost no packet — and it arrives every few tens of
     // seconds at best, so a figure without its age would read as current when it is not.
     render(
@@ -839,7 +879,8 @@ describe('AppCard', () => {
       />,
     );
 
-    const stack = screen.getByText('Round trip measured by Windows').parentElement;
+    await openRow('1.1.1.1:27015');
+    const stack = screen.getByText('Round trip measured by Windows').closest('div');
     // Rounded by the same rule the probes' own figure uses: whole milliseconds above 10.
     expect(stack).toHaveTextContent('25');
     expect(stack).toHaveTextContent('37 s ago');
@@ -859,7 +900,7 @@ describe('AppCard', () => {
     expect(screen.queryByText('Round trip measured by Windows')).not.toBeInTheDocument();
   });
 
-  it('shows a dash rather than a zero where nothing counted the traffic', () => {
+  it('shows a dash rather than a zero where nothing counted the traffic', async () => {
     render(
       <AppCard
         app={app({ endpoints: [endpoint({ recentBytes: null, rttMs: null, lossPct: null })] })}
@@ -870,6 +911,7 @@ describe('AppCard', () => {
       />,
     );
 
+    await openRow('1.1.1.1:27015');
     const traffic = screen.getByText('Data exchanged (30 s)').closest('div');
     expect(traffic).toHaveTextContent('—');
     expect(screen.queryByText('0 B')).not.toBeInTheDocument();
@@ -1052,9 +1094,7 @@ describe('AppCard', () => {
     await userEvent.click(chosen);
 
     expect(chosen).toHaveAttribute('aria-pressed', 'true');
-    const rows = screen
-      .getAllByRole('listitem')
-      .filter((row) => row.className.includes('nm-endpoint'));
+    const rows = screen.getAllByRole('row').filter((row) => row.className.includes('nm-endpoint'));
     expect(rows[0]?.className).toContain('nm-endpoint--raised');
     expect(rows[1]?.className).toContain('nm-endpoint--dimmed');
     expect(screen.getByText('1.1.1.2:443')).toBeInTheDocument();
@@ -1090,9 +1130,7 @@ describe('AppCard', () => {
 
     expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' });
     // And it is pinned, so what was scrolled to is also what is raised.
-    const rows = screen
-      .getAllByRole('listitem')
-      .filter((row) => row.className.includes('nm-endpoint'));
+    const rows = screen.getAllByRole('row').filter((row) => row.className.includes('nm-endpoint'));
     expect(rows.find((row) => row.id.endsWith('b'))?.className).toContain('nm-endpoint--raised');
   });
 
@@ -1136,9 +1174,9 @@ describe('AppCard', () => {
     );
 
     expect(screen.getByText('CLOUDFLARENET')).toBeVisible();
-    expect(screen.getByText(/AS13335/)).not.toBeVisible();
+    expect(screen.queryByText(/AS13335/)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByText('More about this connection'));
+    await openRow('1.1.1.1:27015');
 
     expect(screen.getByText('Whose network it is')).toBeVisible();
     expect(screen.getByText(/AS13335/)).toBeVisible();
@@ -1179,8 +1217,190 @@ describe('AppCard', () => {
 
     expect(screen.queryByText(/AS\d/)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByText('More about this connection'));
+    await openRow('1.1.1.1:27015');
 
     expect(screen.queryByText('Whose network it is')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppCard, at level three', () => {
+  it('carries the same number of explanations at three endpoints and at twenty', () => {
+    // The rule this enforces, and the reason the list is a table: an explanation belongs to
+    // a *label*, and a label exists once per surface. On the old card it was once per row —
+    // at twenty connections, up to 260 identical marks on one page, which does not explain
+    // a figure, it hides it.
+    const many = (count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        endpoint({
+          key: `udp/198.51.100.${String(index)}:27015`,
+          address: `198.51.100.${String(index)}:27015`,
+          network: { asn: 64500 + index, name: 'EXAMPLE', country: 'US' },
+          tunnelled: true,
+        }),
+      );
+
+    const explanations = () => screen.getAllByRole('button', { name: /^What .* means$/ }).length;
+
+    const { unmount } = render(
+      <AppCard
+        app={app({ endpoints: many(3) })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+    const few = explanations();
+    unmount();
+
+    render(
+      <AppCard
+        app={app({ endpoints: many(20) })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    // The tunnel badge is the one that legitimately repeats — it is a *reason* the figures
+    // beside it were measured differently, not a figure — and it explains itself on the
+    // badge's own word rather than by adding a mark. Every other explanation is a heading.
+    const headings = screen.getAllByRole('button', { name: /^What .* means$/ }).length - 20;
+    expect(headings).toBe(few - 3);
+  });
+
+  it('puts no explanation in a table cell — only in its column heading', () => {
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:1' }),
+            endpoint({ key: 'b', address: '1.1.1.2:2' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    for (const cell of document.querySelectorAll('tbody td')) {
+      expect(cell.querySelector('.nm-explains')).toBeNull();
+    }
+    expect(document.querySelectorAll('thead .nm-explains').length).toBeGreaterThan(0);
+  });
+});
+
+describe('AppCard, leading with the busiest flow', () => {
+  it('leads with the endpoint Rust named, and keeps its route and traffic at level one', () => {
+    // A *measured* fact, not a role: volume of traffic is the one thing about an endpoint
+    // the view layer is willing to draw a conclusion from, so "the busiest flow" is honest
+    // where "the one the game is played over" would be a guess.
+    render(
+      <AppCard
+        app={app({
+          primaryEndpoint: 'busy',
+          endpoints: [
+            endpoint({
+              key: 'busy',
+              address: '1.1.1.9:27015',
+              health: 'carryingTraffic',
+              probesMeasureIt: false,
+              probeKind: null,
+              rttMs: null,
+              jitterMs: null,
+              lossPct: null,
+              path: {
+                hopTtl: 12,
+                hopsProbed: 3,
+                position: 'beyondALongHaulLink',
+                quality: 'ok',
+                rttMs: 84.2,
+                jitterMs: 2.5,
+                lossPct: 0,
+                hopNetwork: null,
+              },
+            }),
+            endpoint({ key: 'quiet', address: '1.1.1.2:443' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Busiest flow')).toBeVisible();
+    // Its route is level one here, where every other endpoint has it a level down.
+    expect(screen.getByText('The route towards it')).toBeVisible();
+    expect(screen.getByText('Round trip to that router')).toBeVisible();
+  });
+
+  it('says there is no busiest flow rather than picking one by a tiebreak', () => {
+    // Two flows within a factor of two of each other are two things the application is
+    // doing, and naming one of them would be a claim the measurement does not support.
+    render(
+      <AppCard
+        app={app({ primaryEndpoint: null })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/No single endpoint is carrying most/)).toBeVisible();
+    expect(screen.queryByText('Busiest flow')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppCard, holding the list still', () => {
+  it('does not reorder the rows while the pointer is inside the list', async () => {
+    // Rust orders worst first and re-orders on every emission, so any state change anywhere
+    // swaps the row someone is reading with its neighbour. `holdPlace` solved that only for
+    // a pinned row; most reading involves pinning nothing.
+    const addresses = () =>
+      [...document.querySelectorAll('.nm-endpoint__address')].map((node) => node.textContent);
+
+    const { rerender } = render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:1' }),
+            endpoint({ key: 'b', address: '1.1.1.2:2' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+    expect(addresses()).toEqual(['1.1.1.1:1', '1.1.1.2:2']);
+
+    await userEvent.hover(screen.getByText('1.1.1.1:1'));
+
+    // Rust now sends them the other way round, because `b` got worse.
+    rerender(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'b', address: '1.1.1.2:2', health: 'unreachable' }),
+            endpoint({ key: 'a', address: '1.1.1.1:1' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    // The order is held; the figures are not.
+    expect(addresses()).toEqual(['1.1.1.1:1', '1.1.1.2:2']);
+    expect(screen.getByText('Unreachable')).toBeVisible();
   });
 });

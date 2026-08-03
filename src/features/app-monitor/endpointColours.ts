@@ -39,6 +39,23 @@ const PALETTE = [
 const SPARE = '#8b949e';
 
 /**
+ * Shapes the swatch takes, so colour is never the only thing telling two rows apart.
+ *
+ * The swatch tying a row to its line was the one place in this product where colour carried
+ * meaning by itself — everywhere else a state has its word beside it. Twelve hues are
+ * distinguishable to most people and to nobody with a red-green deficiency; four shapes
+ * crossed with twelve colours are.
+ *
+ * The cycle length is deliberately coprime with nothing in particular: four shapes over
+ * twelve colours means adjacent slots differ in shape, which is the case that matters,
+ * because adjacent slots are what a freshly discovered endpoint gets.
+ */
+const SHAPES = ['square', 'circle', 'diamond', 'triangle'] as const;
+
+/** One of the shapes a swatch can take. */
+export type SwatchShape = (typeof SHAPES)[number];
+
+/**
  * Keeps each endpoint on the colour it was first given.
  *
  * Mutated in place and held in a ref by the component that owns the chart: this is view
@@ -75,5 +92,11 @@ export class EndpointColours {
     const slot = this.#assigned.get(key);
     if (slot === undefined) return SPARE;
     return PALETTE[slot] ?? SPARE;
+  }
+
+  /** The shape its swatch takes, so the pairing is not carried by colour alone. */
+  shapeOf(key: string): SwatchShape {
+    const slot = this.#assigned.get(key) ?? 0;
+    return SHAPES[slot % SHAPES.length] ?? 'square';
   }
 }

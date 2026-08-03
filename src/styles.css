@@ -846,13 +846,88 @@ body {
   outline-offset: 2px;
 }
 
-/* Ties a row to its line on the chart. It carries identity, never state — the badge
-   beside it says the health, in words. */
+/*
+ * Ties a row to its line on the chart. It carries identity, never state — the badge beside
+ * it says the health, in words.
+ *
+ * **Shape as well as colour.** This was the one place in the product where colour was the
+ * sole carrier of meaning: everywhere else a state has its word beside it, and here two rows
+ * were told apart by hue alone. Twelve hues are distinguishable to most people and to nobody
+ * with a red-green deficiency; four shapes crossed with twelve colours are.
+ */
 .nm-endpoint__swatch {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: var(--nm-radius-sm);
+  width: var(--nm-space-3);
+  height: var(--nm-space-3);
   flex: none;
+}
+
+.nm-endpoint__swatch--square {
+  border-radius: var(--nm-radius-sm);
+}
+
+.nm-endpoint__swatch--circle {
+  border-radius: var(--nm-radius-pill);
+}
+
+.nm-endpoint__swatch--diamond {
+  border-radius: var(--nm-radius-sm);
+  transform: rotate(45deg) scale(0.8);
+}
+
+.nm-endpoint__swatch--triangle {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+/*
+ * The busiest flow: the one endpoint that keeps everything at level one.
+ *
+ * A card among table rows, on purpose — it is the answer to the question the page was opened
+ * with, and it is a *measured* fact rather than a role, because volume of traffic is the one
+ * thing about an endpoint the view layer is willing to draw a conclusion from.
+ */
+.nm-primary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-3);
+  padding: var(--nm-space-3);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+}
+
+.nm-primary__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--nm-space-2);
+}
+
+.nm-primary__heading {
+  margin: 0;
+  font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
+}
+
+.nm-primary__address {
+  font-weight: 600;
+}
+
+.nm-primary__disclose,
+.nm-primary__none {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--nm-muted);
+  font: inherit;
+  font-size: var(--nm-text-sm);
+  cursor: pointer;
+}
+
+.nm-primary__none {
+  cursor: default;
 }
 
 /* Only ever present when the probe cannot follow the application. It is a disclosure, not
@@ -911,23 +986,80 @@ details.nm-endpointgroup > summary {
   margin-left: auto;
 }
 
-.nm-appcard__endpoints {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-2);
+/*
+ * The endpoints, as a table.
+ *
+ * They were a stack of mini-cards, each carrying its own route panel and traffic panel —
+ * seven figures on every silent endpoint, which for a game is six rows of seven. A card of
+ * six endpoints was about 1200 px tall, and a variable-height card cannot stand still: a
+ * panel arriving a second after its row grows the row and moves everything below it.
+ *
+ * The table is also what makes the rule visible. A blank Ping cell beside a filled Route cell
+ * states "these are two quantities and one of them does not exist here" on every row at once,
+ * with the column headings naming which subject each belongs to — which is stronger than the
+ * paragraph that used to say it, and is the reason the amended level-one rule allows two
+ * subjects here at all.
+ */
+.nm-endpoints {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 }
 
-.nm-endpoint {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--nm-space-1) var(--nm-space-4);
+.nm-endpoints th {
+  padding: var(--nm-space-1) var(--nm-space-2);
+  text-align: left;
+  font-size: var(--nm-text-xs);
+  font-weight: 600;
+  color: var(--nm-text-secondary);
+  border-bottom: 1px solid var(--nm-border);
+  white-space: nowrap;
+}
+
+.nm-endpoints td {
+  padding: var(--nm-space-2);
+  border-bottom: 1px solid var(--nm-border);
+  vertical-align: baseline;
+}
+
+.nm-endpoint--raised > td {
+  border-bottom-color: var(--nm-accent);
+  box-shadow: inset 0 1px 0 var(--nm-accent);
+}
+
+.nm-endpoint__figure {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.nm-endpoint__network,
+.nm-endpoint__state {
+  white-space: nowrap;
+}
+
+.nm-endpoint__state {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: var(--nm-space-2) var(--nm-space-3);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
+  gap: var(--nm-space-1);
+}
+
+/* The row expander: a chevron, and its name where only a screen reader needs it. */
+.nm-endpoint__disclose {
+  text-align: right;
+}
+
+.nm-endpoint__disclose button {
+  border: 0;
+  padding: 0 var(--nm-space-1);
+  background: none;
+  color: var(--nm-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.nm-endpoint__detailrow > td {
+  padding-bottom: var(--nm-space-4);
 }
 
 .nm-endpoint__identity {

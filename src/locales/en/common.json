@@ -175,6 +175,17 @@
       "tcp": "TCP",
       "udp": "UDP"
     },
+    "column": {
+      "endpoint": "Endpoint",
+      "network": "Network",
+      "state": "State",
+      "route": "Route",
+      "details": "Details"
+    },
+    "primary": {
+      "heading": "Busiest flow",
+      "none": "No single endpoint is carrying most of this application's traffic."
+    },
     "distribution": {
       "application": "Endpoint states across this application",
       "group": "Endpoint states in {{group}}"
@@ -211,6 +222,7 @@
     },
     "details": {
       "summary": "More about this connection",
+      "row": "More about {{endpoint}}",
       "probeKind": "How it is being measured",
       "probeKindNone": "Nothing can measure it directly",
       "use": "In use",

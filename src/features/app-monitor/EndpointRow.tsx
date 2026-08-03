@@ -1,41 +1,26 @@
-import type { TFunction } from 'i18next';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { spanOf } from '../../shared/duration';
 import type { EndpointView } from '../../shared/ipc';
 import { useFigures } from '../../shared/useFigures';
-import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
-import { MetricHelp } from '../help/MetricHelp';
-import { FlowPanel } from './FlowPanel';
+import { healthKey, healthModifier } from '../dashboard/labels';
+import type { SwatchShape } from './endpointColours';
+import { EndpointBadges } from './EndpointBadges';
+import { EndpointDetails } from './EndpointDetails';
 import { networkName } from './networkName';
-import { ageKindKey, livenessKey, probingKey, transportKey } from './labels';
-import { PathPanel } from './PathPanel';
-
-/**
- * How the application's own traffic leaves the machine.
- *
- * An adapter name where the machine gave one — "Wi-Fi", "Ethernet", the accelerator's own
- * adapter — because that is the thing a user comparing before and after a VPN can actually
- * check. The address is kept beside it rather than replaced by it: the name is a label, and
- * the address is what the probe was bound to.
- */
-const egressLine = (endpoint: EndpointView, t: TFunction): string => {
-  if (endpoint.egress === null) return t('apps.egress.unknown');
-  if (endpoint.egressInterface === null) return t('apps.egress.via', { address: endpoint.egress });
-  return t('apps.egress.viaNamed', {
-    address: endpoint.egress,
-    interface: endpoint.egressInterface,
-  });
-};
 
 interface EndpointRowProps {
   /** The row's own identifier, so a selection on the chart can bring it into view. */
   readonly id: string;
   readonly endpoint: EndpointView;
-  /** Span the byte count covers, so the traffic figure can say what it is a count of. */
+  /** Span the byte count covers, for the expander's traffic figure. */
   readonly trafficWindowSecs: number;
+  /** How many columns the row spans, so its expander can fill the width. */
+  readonly columns: number;
   /** The colour this endpoint's line is drawn in, so the row can be tied to it. */
   readonly colour: string;
+  /** Its swatch's shape, so the pairing is not carried by colour alone. */
+  readonly shape: SwatchShape;
   /** Whether this is the endpoint currently raised on the chart. */
   readonly raised: boolean;
   /** Whether another endpoint is raised, so this one steps back. */
@@ -47,52 +32,43 @@ interface EndpointRowProps {
 }
 
 /**
- * One endpoint of one application, at the depth the reader asked for.
+ * One endpoint, as a row of a table.
  *
- * **Two levels, not two products.** The same data from Rust either way; what changes is how
- * much of it is on screen before anyone asks. The page used to state everything it knew at
- * once — probe kind, proven filtering, both egress addresses and their adapters, the window a
- * rate is taken over — and the result was that the numbers that matter were indistinguishable
- * from the caveats attached to them.
+ * **The table is what makes the never-merge rule visible.** It was a stack of mini-cards,
+ * each carrying its own route panel and traffic panel — seven figures on every silent
+ * endpoint, which for a game is six rows of seven. That obeyed the letter of "at most three
+ * figures" by splitting them across panels and broke its meaning completely. In a table a
+ * blank `Ping` beside a filled `Route` states the rule on every row at once, which is
+ * stronger than any paragraph: the round trip we could not measure is *visibly* absent, and
+ * the thing standing in for it is *visibly* something else, with the column heading saying
+ * which subject it belongs to.
  *
- * *Level one*, always visible: what it is, one word of state, and three figures — ping (RTT),
- * jitter, loss. **Those are the words the rest of the networking world uses**, and that is
- * deliberate: the audience has met them in every other tool they have opened, and a quantity
- * renamed around the reader teaches a vocabulary nobody else speaks. The plain-language
- * sentence belongs to the ⓘ, which is what level three is for. *Ping* is honest here and only
- * here — this is a round trip we really measured — and it is never applied to the route
- * figure, which belongs to a router short of the endpoint.
+ * That is also why the amended level-one rule allows two subjects here at all: three figures
+ * about the endpoint, three about the route to it, **only** because the headings name which
+ * is which.
  *
- * For an endpoint nothing can measure the three do not appear at all; what stands in for them
- * is the route beside its own traffic, two quantities that are never merged, because their
- * disagreement is the diagnosis.
+ * *Level one*, in the closed row: the swatch, the address, whose network it is, one word of
+ * state, and the four figures. Nothing else — not the probe kind, not the egress adapter, not
+ * the hop count, not which kind of age it has, not the traffic volume, not "filtering
+ * confirmed", not the averaging window, not where the route stops.
  *
- * *Level two* is this row's expander, and there is deliberately **no setting**. A mode is a
- * second product to keep consistent and one a user forgets they are in; an expander is a
- * question asked and answered in place. What lives there is everything that qualifies a
- * number rather than being one: which probe produced it, whether filtering was proven, which
- * adapter the traffic and the probe leave by, what span a rate covers, how many bytes came
- * back, and how far the route reached.
+ * *Warnings do not move.* A freeze, an egress conflict, an endpoint nothing can measure stay
+ * beside the state whatever the layout costs, because the test for level one is whether there
+ * is something to do about it.
  *
- * **An egress conflict does not move.** It is a warning, not a detail: the figure describes a
- * different route from the one the application is taking, and a user who never opens the
- * expander must still be told.
+ * *Level two* is the row's own expander, and it holds the route and traffic panels in full
+ * along with everything that qualifies a figure rather than being one.
  *
- * *Level three* is the ⓘ on every figure — one or two plain sentences in place, and a way to
- * the bundled help. The audience is a player who knows their game stutters and does not know
- * what jitter is, and a measurement tool that cannot explain itself is asking to be trusted
- * on faith.
- *
- * **The row is also the keyboard path to the chart.** Selecting it raises this endpoint's
- * line and dims the others — the same thing hovering a line does. The colour swatch ties the
- * two together; it names a line and says nothing about health, which the badge states in
- * words.
+ * *Level three* is the column headings, once per table rather than once per row — which is
+ * the whole reason the table exists in the shape it does.
  */
 export const EndpointRow = ({
   id,
   endpoint,
   trafficWindowSecs,
+  columns,
   colour,
+  shape,
   raised,
   dimmed,
   pinned,
@@ -101,283 +77,106 @@ export const EndpointRow = ({
 }: EndpointRowProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
-  // Absent stays absent here too: a span the core did not send is left off the row rather
-  // than written as "0 s", which would say the endpoint had just appeared.
-  const age = endpoint.age.secs === null ? null : spanOf(endpoint.age.secs);
+  const [open, setOpen] = useState(false);
 
   const modifiers = [raised ? 'nm-endpoint--raised' : '', dimmed ? 'nm-endpoint--dimmed' : '']
     .filter(Boolean)
     .join(' ');
 
   return (
-    <li
-      id={id}
-      className={`nm-endpoint ${modifiers}`.trimEnd()}
-      onMouseEnter={() => {
-        onHover(endpoint.key);
-      }}
-      onMouseLeave={() => {
-        onHover(null);
-      }}
-    >
-      <div className="nm-endpoint__identity">
-        <button
-          type="button"
-          className="nm-endpoint__select"
-          aria-pressed={pinned}
-          onClick={onPin}
-          onFocus={() => {
-            onHover(endpoint.key);
-          }}
-          onBlur={() => {
-            onHover(null);
-          }}
-        >
-          <span
-            className="nm-endpoint__swatch"
-            style={{ backgroundColor: colour }}
-            aria-hidden="true"
-          />
-          <span className="nm-endpoint__address">{endpoint.address}</span>
-          <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
-        </button>
-        <span className="nm-endpoint__transport">{t(transportKey(endpoint.transport))}</span>
-        {/* Level one, and the only thing on the row a reader can recognise without knowing
-            what a single one of the figures means. It is a label rather than a figure, so it
-            does not count against the three, and it goes beside the address because it is
-            what the address *is*. Absent where the directory is off, still loading, or
-            simply does not know — there is no nearest network to fall back to, and a wrong
-            name is a false statement about where someone's traffic went, not a rounding. */}
-        {endpoint.network !== null && (
-          <span className="nm-endpoint__network">
-            <MetricHelp topic="network">{networkName(endpoint.network, t)}</MetricHelp>
-          </span>
-        )}
-        {/* How long it has been there, which is what tells a new endpoint from one that has
-            been carrying the match all along. One figure at level one under a neutral word:
-            it is two different facts depending on the transport, and the expander below
-            names which — a single label meaning whichever was available would answer the
-            question with a number nobody could interpret. */}
-        {age !== null && (
-          <span className="nm-endpoint__age">
-            <MetricHelp topic="age">
-              {t('apps.age.label')} {t(age.key, age.params)}
-            </MetricHelp>
-          </span>
-        )}
-      </div>
+    <>
+      <tr
+        id={id}
+        className={`nm-endpoint ${modifiers}`.trimEnd()}
+        onMouseEnter={() => {
+          onHover(endpoint.key);
+        }}
+        onMouseLeave={() => {
+          onHover(null);
+        }}
+      >
+        <td className="nm-endpoint__identity">
+          <button
+            type="button"
+            className="nm-endpoint__select"
+            aria-pressed={pinned}
+            onClick={onPin}
+            onFocus={() => {
+              onHover(endpoint.key);
+            }}
+            onBlur={() => {
+              onHover(null);
+            }}
+          >
+            {/* Ties the row to its line. Shape as well as colour, because this was the one
+                place in the product where colour carried meaning entirely by itself. */}
+            <span
+              className={`nm-endpoint__swatch nm-endpoint__swatch--${shape}`}
+              style={{ backgroundColor: colour }}
+              aria-hidden="true"
+            />
+            <span className="nm-endpoint__address">{endpoint.address}</span>
+            <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
+          </button>
+          <span className="nm-endpoint__transport">{endpoint.transport.toUpperCase()}</span>
+        </td>
 
-      <div className="nm-endpoint__badges">
-        <span className={`nm-health ${healthModifier(endpoint.health)}`}>
-          {t(healthKey(endpoint.health))}
-        </span>
-        {/* Said out loud, with the time left, rather than shown as three dashes that read
-            like a failure. Rust decides when it is over — it is the same "absent knowledge
-            stays absent" rule that already withholds a figure whose precondition failed. */}
-        {endpoint.warmupSecsRemaining !== null && (
-          <span className="nm-badge">
-            {t('apps.warmup.badge', { seconds: Math.ceil(endpoint.warmupSecsRemaining) })}
-          </span>
-        )}
-        {/* A warning, never a detail: the figure describes a different route from the one
-            this application is taking, and a reader who never opens the expander must still
-            be told. */}
-        {endpoint.egressConflict && (
-          <span className="nm-badge nm-badge--warn">{t('apps.badge.egressConflict')}</span>
-        )}
-        {!endpoint.measurable && (
-          <span className="nm-badge nm-badge--warn">{t('dashboard.badge.notMeasurable')}</span>
-        )}
-        {/* Promoted out of the expander. It qualifies every figure on the row rather than
-            describing how one of them was taken, and a reader who never opens the details
-            would otherwise read a tunnel's round trip as the server's. */}
-        {endpoint.tunnelled && (
-          <span className="nm-badge">
-            <MetricHelp topic="tunnel">{t('dashboard.badge.tunnelled')}</MetricHelp>
-          </span>
-        )}
-      </div>
+        {/* The only thing on the row a reader can recognise without knowing what a single one
+            of the figures means. Absent where the directory is off, still loading, or simply
+            does not know — a wrong name is a false statement about where someone's traffic
+            went, not a rounding. */}
+        <td className="nm-endpoint__network">
+          {endpoint.network === null ? '' : networkName(endpoint.network, t)}
+        </td>
 
-      {/* Level one: three figures and nothing else, under the names the rest of the
-          networking world uses. The plain-language sentence is the ⓘ's job, not the
-          label's — a renamed quantity teaches the reader a vocabulary nobody else speaks.
+        <td className="nm-endpoint__state">
+          <span className={`nm-health ${healthModifier(endpoint.health)}`}>
+            {t(healthKey(endpoint.health))}
+          </span>
+          <EndpointBadges endpoint={endpoint} />
+        </td>
 
-          Absent entirely where no probe will ever fill them in, and absent *silently*. Rust
-          draws the line between *not yet* and *never*: a chain still trying kinds keeps its
-          dashes, because a figure is coming, while a match server would carry three of them
-          for the whole match — and three dashes where the headline figures belong read as a
-          broken tool rather than as an honest absence. Nothing on the row explains the gap
-          in prose: what stands in its place is on the card already, and the one-line
-          disclosure below says why in the reader's own time. */}
-      {endpoint.probesMeasureIt && (
-        <dl className="nm-endpoint__metrics">
-          <div>
-            <dt>
-              <MetricHelp topic="rtt">{t('apps.metric.rtt')}</MetricHelp>
-            </dt>
-            <dd>{figures.ms(endpoint.rttMs)}</dd>
-          </div>
-          <div>
-            <dt>
-              <MetricHelp topic="jitter">{t('apps.metric.jitter')}</MetricHelp>
-            </dt>
-            <dd>{figures.ms(endpoint.jitterMs)}</dd>
-          </div>
-          <div>
-            <dt>
-              <MetricHelp topic="loss">{t('apps.metric.loss')}</MetricHelp>
-            </dt>
-            <dd>{figures.pct(endpoint.lossPct)}</dd>
-          </div>
-        </dl>
+        {/* Absent entirely where no probe will ever fill them in, and absent *silently*.
+            Rust draws the line between *not yet* and *never*: a chain still trying kinds
+            keeps its dashes, because a figure is coming, while a match server would carry
+            them for the whole match. The blank cell beside a filled route is the point. */}
+        <td className="nm-endpoint__figure">
+          {endpoint.probesMeasureIt ? figures.ms(endpoint.rttMs) : ''}
+        </td>
+        <td className="nm-endpoint__figure">
+          {endpoint.probesMeasureIt ? figures.ms(endpoint.jitterMs) : ''}
+        </td>
+        <td className="nm-endpoint__figure">
+          {endpoint.probesMeasureIt ? figures.pct(endpoint.lossPct) : ''}
+        </td>
+        <td className="nm-endpoint__figure">
+          {endpoint.path === null ? '' : figures.ms(endpoint.path.rttMs)}
+        </td>
+
+        <td className="nm-endpoint__disclose">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={`${id}-details`}
+            onClick={() => {
+              setOpen((current) => !current);
+            }}
+          >
+            <span className="nm-visually-hidden">
+              {t('apps.details.row', { endpoint: endpoint.address })}
+            </span>
+            <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          </button>
+        </td>
+      </tr>
+
+      {open && (
+        <tr className="nm-endpoint__detailrow" id={`${id}-details`}>
+          <td colSpan={columns}>
+            <EndpointDetails endpoint={endpoint} trafficWindowSecs={trafficWindowSecs} withPanels />
+          </td>
+        </tr>
       )}
-
-      {/* Two columns, never one. The route is a round trip to a router short of the
-          endpoint; the flow is the arrival pattern of the traffic itself. Merging them
-          into a single figure called "ping" is the lie this product exists not to tell,
-          and their disagreement is the whole diagnosis. Either may be absent — an endpoint
-          that answers for itself needs no route, and a machine without the tracing setup
-          counts no traffic — so the pair lays out with whichever is there. */}
-      {(endpoint.path !== null || endpoint.flow !== null) && (
-        <div className="nm-endpoint__columns">
-          {endpoint.path !== null && <PathPanel path={endpoint.path} />}
-          {endpoint.flow !== null && <FlowPanel flow={endpoint.flow} />}
-        </div>
-      )}
-
-      <details className="nm-endpoint__details">
-        <summary>{t('apps.details.summary')}</summary>
-        <dl className="nm-endpoint__detail-list">
-          <div>
-            <dt>
-              <MetricHelp topic="probeKind">{t('apps.details.probeKind')}</MetricHelp>
-            </dt>
-            <dd>
-              {endpoint.probeKind === null
-                ? t('apps.details.probeKindNone')
-                : t(probeKindKey(endpoint.probeKind))}
-              {/* The tunnel is stated at level one now, beside the health, because it
-                  qualifies the figures rather than describing how one was taken. */}
-              {endpoint.filteringConfirmed && ` · ${t('dashboard.badge.filteringConfirmed')}`}
-            </dd>
-          </div>
-          {/* Which of the two facts the header's figure is. They are not interchangeable:
-              a TCP connection has an establishment the operating system dates, and a UDP
-              endpoint has none, so what can be said there is how long we have been
-              watching. The word is here rather than beside the number because the number
-              answers the question either way. */}
-          {age !== null && (
-            <div>
-              <dt>{t(ageKindKey(endpoint.age.kind))}</dt>
-              <dd>{t(age.key, age.params)}</dd>
-            </div>
-          )}
-          {/* Level two: what qualifies the name rather than being it. The number is the
-              durable identity a reader can search for; the country is where the network was
-              *registered*, which for any large provider is routinely nowhere near the
-              machine that answered — so it is worded as a registration and never as a
-              location. How old the directory is belongs to the directory, not to each row,
-              and is stated once in Settings. */}
-          {endpoint.network !== null && (
-            <div>
-              <dt>
-                <MetricHelp topic="network">{t('apps.details.network')}</MetricHelp>
-              </dt>
-              <dd>
-                {t('apps.network.as', { asn: endpoint.network.asn })}
-                {endpoint.network.country !== null &&
-                  ` · ${t('apps.network.registeredIn', { country: endpoint.network.country })}`}
-              </dd>
-            </div>
-          )}
-          <div>
-            <dt>{t('apps.details.use')}</dt>
-            <dd>
-              {t(livenessKey(endpoint.liveness))} · {t(probingKey(endpoint.probing))}
-            </dd>
-          </div>
-          <div>
-            <dt>
-              <MetricHelp topic="traffic">
-                {t('apps.metric.traffic', { seconds: trafficWindowSecs })}
-              </MetricHelp>
-            </dt>
-            <dd>{figures.bytes(endpoint.recentBytes)}</dd>
-          </div>
-          {/* The one genuine round trip to the endpoint that cost no packet: the operating
-              system's own estimate for the application's connection. It carries its age,
-              because it arrives every few tens of seconds at best and would otherwise read
-              as live. */}
-          {endpoint.passiveRtt !== null && (
-            <div>
-              <dt>{t('apps.metric.stackRtt')}</dt>
-              <dd>
-                {figures.ms(endpoint.passiveRtt.rttMs)}{' '}
-                {/* The age is not decoration: this arrives every few tens of seconds at
-                    best, so a figure without it would read as current when it is not. */}
-                {endpoint.passiveRtt.ageSecs !== null && (
-                  <span className="nm-endpoint__age">
-                    {t('apps.metric.stackRttAge', {
-                      seconds: Math.round(endpoint.passiveRtt.ageSecs),
-                    })}
-                  </span>
-                )}
-              </dd>
-            </div>
-          )}
-          {endpoint.flow !== null && (
-            <div>
-              <dt>{t('apps.details.incoming')}</dt>
-              <dd>
-                {figures.bytesPerSec(endpoint.flow.receivedBytesPerSec)}
-                {/* The span is what keeps a rate honest — it says what period the figure is
-                    a rate over — so when it is absent the clause goes rather than a guess
-                    taking its place. */}
-                {endpoint.flow.spanSecs !== null && (
-                  <> · {t('apps.passive.span', { seconds: Math.round(endpoint.flow.spanSecs) })}</>
-                )}
-              </dd>
-            </div>
-          )}
-          {endpoint.path !== null && (
-            <div>
-              <dt>
-                <MetricHelp topic="route">{t('apps.details.route')}</MetricHelp>
-              </dt>
-              <dd>
-                {endpoint.path.hopTtl === null
-                  ? t('apps.path.hopUnknown')
-                  : t('apps.path.hop', { ttl: endpoint.path.hopTtl })}
-                {' · '}
-                {t('apps.path.hopsProbed', { count: endpoint.path.hopsProbed })}
-              </dd>
-            </div>
-          )}
-          <div>
-            <dt>
-              <MetricHelp topic="egress">{t('apps.details.egress')}</MetricHelp>
-            </dt>
-            <dd>
-              {egressLine(endpoint, t)}
-              {/* Only where the probe does not follow the application. Naming the same route
-                  twice on every row would bury the one case this disclosure exists for. */}
-              {endpoint.probeEgress !== null && (
-                <>
-                  {' '}
-                  <span className="nm-endpoint__egress-probe">
-                    {endpoint.probeEgressInterface === null
-                      ? t('apps.egress.probe', { address: endpoint.probeEgress })
-                      : t('apps.egress.probeNamed', {
-                          address: endpoint.probeEgress,
-                          interface: endpoint.probeEgressInterface,
-                        })}
-                  </span>
-                </>
-              )}
-            </dd>
-          </div>
-        </dl>
-      </details>
-    </li>
+    </>
   );
 };

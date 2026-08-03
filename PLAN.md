@@ -2135,7 +2135,7 @@ it waits on none of the contested decisions.
       hover *and* focus, "Learn more", Escape — with no glyph and no second target. A dotted
       underline marks a label as explainable; one sentence in the empty state and in the help
       introduction says so, once, rather than two hundred times.
-- [ ] **22. One explanation per surface.** Column headings and panel headings carry it; cells
+- [x] **22. One explanation per surface.** Column headings and panel headings carry it; cells
       and figures carry nothing. Applications with twenty endpoints goes from 130–260
       disclosures to 9; Network with twenty-three services from ~200 to 6.
       A test asserts the count **does not grow with the number of rows**.
@@ -2144,23 +2144,23 @@ it waits on none of the contested decisions.
 
 *Implements the amended level-one rule. Approved 2026-08-03.*
 
-- [ ] **23. `AppView.primaryEndpoint`, and the card leads with it.** The busiest flow by
+- [x] **23. `AppView.primaryEndpoint`, and the card leads with it.** The busiest flow by
       recent bytes in the window — a *measured* fact, which is the one thing `view.rs` already
       allows beside the transport, and therefore not the role guess it refuses. Rust decides
       it, as every judgement here does. Where no endpoint carries materially more than another
       there is **no primary**, stated as such, and the card leads with the table alone.
-- [ ] **24. `EndpointRow` becomes a table row.** One card at six endpoints is ~1200 px today
+- [x] **24. `EndpointRow` becomes a table row.** One card at six endpoints is ~1200 px today
       and ~480 px after. The route's jitter and loss, the route's position and the four flow
       figures move to **level two** for every endpoint except the primary; the freeze warning
       moves nowhere and stays at level one, as warnings do. The blank `Ping` column beside a
       filled `Route` column is what makes the never-merge rule visible on every row at once —
       the reason the amended rule was worth asking for.
-- [ ] **25. The order freezes while the list is being read.** `holdPlace` holds one pinned row;
+- [x] **25. The order freezes while the list is being read.** `holdPlace` holds one pinned row;
       everything else that reorders a list mid-read — a discovery, a forgotten endpoint, a
       health change elsewhere — still moves it. Rust's order is buffered while the pointer is
       over the list or focus is inside it, and applied a couple of seconds after it leaves.
       View state, like `holdPlace` itself.
-- [ ] **26. A second channel for endpoint identity besides colour.** The swatch tying a row to
+- [x] **26. A second channel for endpoint identity besides colour.** The swatch tying a row to
       its line is the one place in the product where colour is the sole carrier of meaning.
       Shape, or a dashed swatch for a route.
 

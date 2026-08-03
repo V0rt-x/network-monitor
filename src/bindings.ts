@@ -198,6 +198,22 @@ export type AppView = {
 	 *  game that plays over nothing.
 	 */
 	groups: EndpointGroupView[],
+	/**
+	 *  The key of the endpoint carrying materially more of this application's traffic than
+	 *  any other, or `null` when no single one does.
+	 * 
+	 *  The card leads with the endpoint the user came for, and this is the only honest way
+	 *  to find it. Nothing here is labelled by role, because everything except the transport
+	 *  and the volume of traffic would be a guess — and the volume is precisely what is
+	 *  *measured*, so the busiest flow is a fact while "the one the game is played over"
+	 *  remains a guess nobody makes.
+	 * 
+	 *  `null` means three different things and the page says so in one sentence rather than
+	 *  pretending: nothing counts bytes on this machine, nothing has moved, or two flows are
+	 *  close enough that naming one would be a claim the measurement does not make. The rule
+	 *  and its margin live in `nm_core::endpoint::busiest`, where they are tested.
+	 */
+	primaryEndpoint: string | null,
 };
 
 /**

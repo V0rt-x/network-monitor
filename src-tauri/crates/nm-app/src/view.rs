@@ -1060,7 +1060,7 @@ impl EndpointView {
         .then_some(report.stats.loss_pct)
         .flatten();
         Self {
-            key: format!("{}/{}", transport_slug(transport), report.key.address),
+            key: endpoint_key(&report.key),
             address: report.key.address.to_string(),
             transport,
             health: report.health.into(),
@@ -1106,6 +1106,19 @@ impl EndpointView {
             chart_path_ms: report.chart_path_ms.clone(),
         }
     }
+}
+
+/// What the UI knows an endpoint by.
+///
+/// Extracted so the row's own key and the application's `primary_endpoint` are built by one
+/// function: two spellings of the same identity would mean a card that leads with an
+/// endpoint it cannot find in its own list.
+fn endpoint_key(key: &nm_core::endpoint::EndpointKey) -> String {
+    format!(
+        "{}/{}",
+        transport_slug(TransportView::from(key.transport)),
+        key.address
+    )
 }
 
 /// The stable part of an endpoint's key, independent of any translation.
@@ -1282,6 +1295,20 @@ pub struct AppView {
     /// tracing setup there are no UDP endpoints at all, and a missing group would read as a
     /// game that plays over nothing.
     pub groups: Vec<EndpointGroupView>,
+    /// The key of the endpoint carrying materially more of this application's traffic than
+    /// any other, or `null` when no single one does.
+    ///
+    /// The card leads with the endpoint the user came for, and this is the only honest way
+    /// to find it. Nothing here is labelled by role, because everything except the transport
+    /// and the volume of traffic would be a guess — and the volume is precisely what is
+    /// *measured*, so the busiest flow is a fact while "the one the game is played over"
+    /// remains a guess nobody makes.
+    ///
+    /// `null` means three different things and the page says so in one sentence rather than
+    /// pretending: nothing counts bytes on this machine, nothing has moved, or two flows are
+    /// close enough that naming one would be a claim the measurement does not make. The rule
+    /// and its margin live in `nm_core::endpoint::busiest`, where they are tested.
+    pub primary_endpoint: Option<String>,
 }
 
 impl AppView {
@@ -1336,6 +1363,13 @@ impl AppView {
                 .cmp(&severity(right.order_health.into()))
                 .then_with(|| left.key.cmp(&right.key))
         });
+        // The endpoint the card leads with, decided on the one thing about an endpoint that
+        // is measured rather than guessed. Taken from the reports, before they are split by
+        // transport: the busiest flow is a fact about the whole application, and looking for
+        // it inside one group would turn it back into a claim about roles.
+        let primary_endpoint = nm_core::endpoint::busiest(reports, |report| report.recent_bytes)
+            .map(|report| endpoint_key(&report.key));
+
         let endpoints: Vec<EndpointView> = ordered
             .into_iter()
             .map(|report| EndpointView::of(report, interfaces, names))
@@ -1359,6 +1393,7 @@ impl AppView {
                 EndpointGroupView::of(TransportView::Udp, udp),
                 EndpointGroupView::of(TransportView::Tcp, tcp),
             ],
+            primary_endpoint,
         }
     }
 }

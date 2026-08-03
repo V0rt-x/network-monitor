@@ -42,6 +42,7 @@ const ENDPOINTS: AppEndpoints = {
       pool: null,
       warmupSecsRemaining: null,
       chartElapsedSecs: [],
+      primaryEndpoint: null,
       groups: [
         {
           transport: 'udp',
