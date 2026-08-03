@@ -110,7 +110,10 @@ where
                 })??;
 
             match echoed {
-                EchoOutcome::Replied { from, rtt } => {
+                // The hop limit is ignored here on purpose: a walk that reached its target
+                // has already learned the whole route, and a tunnel answering it would be
+                // caught by the ordinary probe long before a walk was ever scheduled.
+                EchoOutcome::Replied { from, rtt, .. } => {
                     hops.push(Hop::answered(ttl, from, Rtt::from_duration(rtt)));
                     return Ok(PathTrace::new(hops, true));
                 }
@@ -268,6 +271,7 @@ mod tests {
             EchoOutcome::Replied {
                 from: ip("203.0.113.200"),
                 rtt: Duration::from_millis(20),
+                hop_limit: None,
             },
         ]);
 
@@ -283,6 +287,7 @@ mod tests {
         let (probe, echoer) = walking(vec![EchoOutcome::Replied {
             from: ip("203.0.113.200"),
             rtt: Duration::from_millis(9),
+            hop_limit: None,
         }]);
 
         let trace = probe.trace(&target()).await.unwrap();

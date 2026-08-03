@@ -19,7 +19,7 @@
 //! moderate loss almost never produces in an unbroken run, and the cost of being wrong is
 //! only that a cheaper kind is retried later.
 
-use nm_core::address::AddressClass;
+use nm_core::address::{AddressClass, Egress};
 use nm_core::sample::ProbeOutcome;
 
 use crate::probe::{preferred_kinds, ProbeKind};
@@ -114,12 +114,36 @@ pub struct RuledOut {
 #[derive(Debug, Clone)]
 pub struct FallbackChain {
     class: AddressClass,
+    /// Every kind this build has, kept so the order can be rebuilt if the class changes.
+    available: Vec<ProbeKind>,
+    /// The opening kind a data file asked for, kept for the same reason.
+    preferred: Option<ProbeKind>,
     order: Vec<ProbeKind>,
     position: usize,
     consecutive_silent: u32,
     consecutive_refused: u32,
     ruled_out: Vec<RuledOut>,
     filtering_confirmed: bool,
+}
+
+/// The kinds to try for a class, in order, with a hint applied if it names one of them.
+///
+/// The hint **reorders, it never admits** — it is applied to a list the class has already
+/// filtered, so a data file can shorten a wait and can never introduce a kind whose number
+/// would be invented.
+fn build_order(
+    class: AddressClass,
+    available: &[ProbeKind],
+    preferred: Option<ProbeKind>,
+) -> Vec<ProbeKind> {
+    let mut order = preferred_kinds(class, available);
+    if let Some(first) = preferred {
+        if let Some(at) = order.iter().position(|kind| *kind == first) {
+            let kind = order.remove(at);
+            order.insert(0, kind);
+        }
+    }
+    order
 }
 
 impl FallbackChain {
@@ -157,18 +181,14 @@ impl FallbackChain {
         available: &[ProbeKind],
         preferred: Option<ProbeKind>,
     ) -> Result<Self, Error> {
-        let mut order = preferred_kinds(class, available);
+        let order = build_order(class, available, preferred);
         if order.is_empty() {
             return Err(Error::NothingUsable { class });
         }
-        if let Some(first) = preferred {
-            if let Some(at) = order.iter().position(|kind| *kind == first) {
-                let kind = order.remove(at);
-                order.insert(0, kind);
-            }
-        }
         Ok(Self {
             class,
+            available: available.to_vec(),
+            preferred,
             order,
             position: 0,
             consecutive_silent: 0,
@@ -251,6 +271,11 @@ impl FallbackChain {
             // and every kind after it would fail in exactly the same way.
             ProbeOutcome::Unreachable => self.consecutive_silent = 0,
             ProbeOutcome::Blocked => self.set_aside(kind, RuledOutBecause::ItReportedFiltering),
+            // Not a demotion of one kind but a correction about the endpoint. The reply
+            // proved a tunnel on this machine answered it, which means every kind the
+            // tunnel can answer by itself is worthless here — stepping to the next one
+            // would swap one invented number for another.
+            ProbeOutcome::AnsweredLocally => self.found_to_be_tunnelled(),
             ProbeOutcome::Timeout => {
                 self.consecutive_silent = self.consecutive_silent.saturating_add(1);
                 if self.consecutive_silent >= SILENCE_BEFORE_FALLBACK {
@@ -258,6 +283,44 @@ impl FallbackChain {
                 }
             }
         }
+    }
+
+    /// The class this chain is measuring under.
+    ///
+    /// Read by the app layer to label an endpoint, and worth reading rather than
+    /// recomputing from the address: a chain can *learn* it is behind a tunnel from a
+    /// reply, and an address alone would then be out of date.
+    #[must_use]
+    pub const fn class(&self) -> AddressClass {
+        self.class
+    }
+
+    /// Reclassifies the endpoint after a reply proved a tunnel answered it.
+    ///
+    /// Not a demotion of one probe kind: nothing is ruled out, because nothing about this
+    /// endpoint was ever measured. The class changes, and with it the whole list of kinds
+    /// that may honestly be used — which for a tunnel is only an end-to-end exchange.
+    ///
+    /// The position resets, because the surviving kinds are a different list from the one
+    /// the old position indexed into, and a stale index would silently skip the only usable
+    /// kind or run off the end into a path walk this endpoint must not be given.
+    ///
+    /// Idempotent: a second proof of something already known changes nothing, which matters
+    /// because several probes can be in flight when the first one lands.
+    fn found_to_be_tunnelled(&mut self) {
+        if !self.class.trusts_transport_rtt() {
+            return;
+        }
+        self.class = self.class.through(Egress::LocalTunnel);
+        self.order = build_order(self.class, &self.available, self.preferred);
+        self.position = 0;
+        self.consecutive_silent = 0;
+        self.consecutive_refused = 0;
+        // What was ruled out was ruled out for reasons that still hold, but a claim of
+        // *filtering* cannot survive this: a kind that went silent behind a tunnel was
+        // never offered to the network, so nothing on the path was ever shown to drop it.
+        self.ruled_out.clear();
+        self.filtering_confirmed = false;
     }
 
     /// Sets the current kind aside because this build cannot address the target with it.
@@ -566,6 +629,89 @@ mod tests {
 
         chain.record(ProbeOutcome::Blocked);
         assert_eq!(chain.step(), ChainStep::Nothing);
+    }
+
+    #[test]
+    fn a_reply_a_tunnel_answered_moves_the_endpoint_off_every_kind_it_could_fake() {
+        // The whole point, in one test. Stepping to the *next* kind would swap ICMP's
+        // invented number for TCP-connect's, because the same tunnel answers both. The
+        // class changes instead, and with it the entire list of kinds allowed.
+        let mut chain = chain();
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::IcmpEcho));
+
+        chain.record(ProbeOutcome::AnsweredLocally);
+
+        assert_eq!(chain.class(), AddressClass::TunnelledEgress);
+        assert_eq!(
+            chain.step(),
+            ChainStep::Probe(ProbeKind::TlsHello),
+            "an end-to-end exchange is the only thing a tunnel cannot answer for itself"
+        );
+    }
+
+    #[test]
+    fn learning_about_a_tunnel_never_reaches_the_path_walk() {
+        // A TTL walk from this machine maps the route to the tunnel rather than to the
+        // destination, so a tunnelled endpoint with no end-to-end prober must admit the
+        // gap instead of measuring the wrong thing.
+        let mut chain = FallbackChain::new(AddressClass::Routable, &[ProbeKind::IcmpEcho]).unwrap();
+        chain.record(ProbeOutcome::AnsweredLocally);
+
+        assert_eq!(chain.current_kind(), None);
+        assert_eq!(chain.step(), ChainStep::Nothing);
+    }
+
+    #[test]
+    fn a_tunnel_discovered_late_withdraws_a_claim_of_filtering() {
+        // ICMP went silent and TCP answered, which normally proves echoes are dropped on
+        // the path. If the answer then turns out to be the tunnel's own, nothing was ever
+        // offered to the path and the claim has no evidence left behind it.
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::Timeout, SILENCE_BEFORE_FALLBACK);
+        chain.record(success());
+        assert!(chain.filtering_confirmed());
+
+        chain.record(ProbeOutcome::AnsweredLocally);
+
+        assert!(!chain.filtering_confirmed());
+        assert!(chain.ruled_out().is_empty());
+    }
+
+    #[test]
+    fn proving_a_tunnel_twice_changes_nothing_the_second_time() {
+        // Several probes can be in flight when the first proof lands.
+        let mut chain = chain();
+        repeat(&mut chain, ProbeOutcome::AnsweredLocally, 5);
+
+        assert_eq!(chain.class(), AddressClass::TunnelledEgress);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
+    }
+
+    #[test]
+    fn a_tunnel_discovered_late_still_honours_the_opening_hint() {
+        // The hint reorders the kinds a class allows. Rebuilding the order for a new class
+        // must not quietly discard it — nor let it readmit a kind the new class refuses.
+        let mut chain =
+            FallbackChain::starting_with(AddressClass::Routable, ALL, Some(ProbeKind::TcpConnect))
+                .unwrap();
+        chain.record(ProbeOutcome::AnsweredLocally);
+
+        assert_eq!(
+            chain.step(),
+            ChainStep::Probe(ProbeKind::TlsHello),
+            "the hinted kind is one the tunnel answers itself, so it stays refused"
+        );
+    }
+
+    #[test]
+    fn an_endpoint_already_known_to_be_tunnelled_is_unmoved_by_the_proof() {
+        // A sentinel is already the stronger statement; re-deriving from it must not
+        // rewrite it into the weaker one.
+        let mut chain = FallbackChain::new(AddressClass::TunnelSentinel, ALL).unwrap();
+        chain.record(ProbeOutcome::AnsweredLocally);
+
+        assert_eq!(chain.class(), AddressClass::TunnelSentinel);
+        assert_eq!(chain.step(), ChainStep::Probe(ProbeKind::TlsHello));
     }
 
     #[test]

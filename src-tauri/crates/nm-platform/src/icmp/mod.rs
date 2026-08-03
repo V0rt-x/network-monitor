@@ -87,6 +87,16 @@ pub enum EchoOutcome {
         from: IpAddr,
         /// Measured round-trip time.
         rtt: Duration,
+        /// Hop limit the reply arrived with, where the backend reports one.
+        ///
+        /// Carried because of what it proves. Each router decrements this, and senders
+        /// start it at one of a few well-known values, so a reply that still holds an
+        /// initial value crossed no router and cannot have come from a public address —
+        /// it was answered on this machine, by a tunnel. `nm_core::forgery` reads it.
+        ///
+        /// [`None`] where the backend cannot report it, which is not the same as zero and
+        /// must not become a claim that nothing was crossed.
+        hop_limit: Option<u8>,
     },
     /// A router on the path discarded the packet because its TTL ran out.
     ///

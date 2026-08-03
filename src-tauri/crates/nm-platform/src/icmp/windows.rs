@@ -183,7 +183,15 @@ impl IcmpProber for WindowsIcmpProber {
         let from = IpAddr::V4(from_in_addr(reply.Address));
 
         match classify_status(reply.Status) {
-            StatusKind::Replied => Ok(EchoOutcome::Replied { from, rtt: elapsed }),
+            StatusKind::Replied => Ok(EchoOutcome::Replied {
+                from,
+                rtt: elapsed,
+                // The one field here that is about honesty rather than latency: a reply
+                // still carrying an initial hop limit was answered without crossing a
+                // router, which for a public address means a tunnel on this machine
+                // answered it. See `nm_core::forgery`.
+                hop_limit: Some(reply.Options.Ttl),
+            }),
             StatusKind::TtlExpired => Ok(EchoOutcome::TtlExpired {
                 from: Some(from),
                 rtt: elapsed,

@@ -68,16 +68,26 @@ pub struct ProbeTarget {
     pub source: Option<IpAddr>,
     /// How long to wait before calling the attempt a timeout.
     pub timeout: Duration,
+    /// What the runner has decided this endpoint is.
+    ///
+    /// Carried so a prober can tell whether an answer it received is *possible*, which is
+    /// not something the reply alone can say. A hop limit proving the reply crossed no
+    /// router is forgery from a public address and perfectly normal from a LAN peer.
+    pub class: AddressClass,
 }
 
 impl ProbeTarget {
     /// A probe to `address` with no routing constraint.
+    ///
+    /// The class defaults to [`AddressClass::Routable`], which is what an unqualified
+    /// target means: an ordinary public address, measured by whatever kind was chosen.
     #[must_use]
     pub const fn new(address: TargetAddress, timeout: Duration) -> Self {
         Self {
             address,
             source: None,
             timeout,
+            class: AddressClass::Routable,
         }
     }
 
@@ -85,6 +95,13 @@ impl ProbeTarget {
     #[must_use]
     pub const fn from_source(mut self, source: IpAddr) -> Self {
         self.source = Some(source);
+        self
+    }
+
+    /// The same probe, against an endpoint of a known class.
+    #[must_use]
+    pub const fn of_class(mut self, class: AddressClass) -> Self {
+        self.class = class;
         self
     }
 }

@@ -13,6 +13,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use nm_core::address::AddressClass;
+use nm_core::forgery;
 use nm_core::sample::{ProbeOutcome, Rtt};
 use nm_platform::icmp::{EchoOutcome, EchoRequest, IcmpProber};
 
@@ -63,7 +65,7 @@ where
                 kind: ProbeKind::IcmpEcho,
             })?;
 
-        Ok(to_probe_outcome(echoed?))
+        Ok(to_probe_outcome(echoed?, target.class))
     }
 }
 
@@ -71,8 +73,16 @@ where
 ///
 /// Kept separate from the async plumbing so the mapping — the part that decides what the
 /// user is told — is a pure function with its own tests.
-fn to_probe_outcome(echo: EchoOutcome) -> ProbeOutcome {
+fn to_probe_outcome(echo: EchoOutcome, class: AddressClass) -> ProbeOutcome {
     match echo {
+        // A reply whose hop limit was never decremented crossed no router, so for an
+        // address that ought to be far away it was answered on this machine. Reporting its
+        // timing as a round trip to the endpoint is the failure this whole path exists to
+        // prevent — a tunnel answering for the entire internet in under a millisecond.
+        EchoOutcome::Replied {
+            hop_limit: Some(hop_limit),
+            ..
+        } if forgery::reply_was_answered_locally(class, hop_limit) => ProbeOutcome::AnsweredLocally,
         EchoOutcome::Replied { rtt, .. } => ProbeOutcome::Success(Rtt::from_duration(rtt)),
         // This prober never sets a TTL, so an expiry means the system default ran out
         // before the packet arrived: a routing loop, or a path longer than 128 hops.
@@ -128,15 +138,75 @@ mod tests {
         );
     }
 
+    /// A reply that crossed a plausible number of routers on its way back.
+    fn replied(rtt: Duration) -> EchoOutcome {
+        EchoOutcome::Replied {
+            from: ip(),
+            rtt,
+            hop_limit: Some(57),
+        }
+    }
+
     #[tokio::test]
     async fn a_reply_becomes_a_round_trip_time() {
+        assert_eq!(
+            answering(replied(Duration::from_micros(12_345)))
+                .probe(&target())
+                .await
+                .unwrap(),
+            ProbeOutcome::Success(Rtt::from_micros(12_345))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reply_that_crossed_no_router_is_refused_as_a_measurement() {
+        // The finding this exists for: a TUN client answers echo requests for the whole
+        // internet itself, in under a millisecond, with the machine's own initial hop
+        // limit. Reported as success it would say the user's connection is perfect.
         let echo = EchoOutcome::Replied {
             from: ip(),
-            rtt: Duration::from_micros(12_345),
+            rtt: Duration::from_micros(700),
+            hop_limit: Some(128),
         };
         assert_eq!(
             answering(echo).probe(&target()).await.unwrap(),
-            ProbeOutcome::Success(Rtt::from_micros(12_345))
+            ProbeOutcome::AnsweredLocally
+        );
+    }
+
+    #[tokio::test]
+    async fn a_backend_that_reports_no_hop_limit_still_measures() {
+        // The proof is an extra, not a precondition. A platform that cannot report the
+        // field must keep measuring rather than treat every reply as suspect.
+        let echo = EchoOutcome::Replied {
+            from: ip(),
+            rtt: Duration::from_millis(9),
+            hop_limit: None,
+        };
+        assert_eq!(
+            answering(echo).probe(&target()).await.unwrap(),
+            ProbeOutcome::Success(Rtt::from_micros(9_000))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lan_peer_answering_from_zero_hops_away_is_a_real_measurement() {
+        // The mirror of the rule: a private address really is on this segment, and calling
+        // its reply forged would be false. The class is what separates the two.
+        let echo = EchoOutcome::Replied {
+            from: "192.168.1.1".parse().unwrap(),
+            rtt: Duration::from_micros(400),
+            hop_limit: Some(64),
+        };
+        let private = ProbeTarget::new(
+            TargetAddress::icmp("192.168.1.1".parse().unwrap()),
+            Duration::from_millis(750),
+        )
+        .of_class(nm_core::address::AddressClass::Private);
+
+        assert_eq!(
+            answering(echo).probe(&private).await.unwrap(),
+            ProbeOutcome::Success(Rtt::from_micros(400))
         );
     }
 

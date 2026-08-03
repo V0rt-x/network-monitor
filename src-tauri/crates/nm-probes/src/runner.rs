@@ -21,12 +21,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use nm_core::address::{AddressClass, AddressPolicy};
+use nm_core::address::{AddressClass, AddressPolicy, Egress};
 use nm_core::backoff::Backoff;
 use nm_core::path::PathTrace;
 use nm_core::sample::ProbeOutcome;
 use nm_core::scheduler::ProbeScheduler;
 use nm_core::target::{TargetAddress, TargetId};
+use nm_platform::route::{EgressKind, RouteTable};
 
 use crate::chain::{ChainStep, FallbackChain};
 use crate::path::PathProbe;
@@ -157,6 +158,9 @@ struct TargetState {
     address: TargetAddress,
     source: Option<IpAddr>,
     chain: FallbackChain,
+    /// The opening kind this target was registered with, kept so reconsidering can build a
+    /// fresh chain that still honours it.
+    preferred: Option<ProbeKind>,
     backoff: Backoff,
     in_flight: bool,
 }
@@ -168,6 +172,13 @@ pub struct ProbeRunner {
     targets: BTreeMap<TargetId, TargetState>,
     unmeasurable: Vec<TargetId>,
     policy: AddressPolicy,
+    /// Where the operating system says packets to an address would leave by.
+    ///
+    /// Optional because only Windows has a backend so far, and because the engine's own
+    /// tests must run without one. Absent, every endpoint's egress is
+    /// [`Egress::Unknown`] and classification falls back to the address alone — which is
+    /// the behaviour this crate had before routes were consulted at all.
+    routes: Option<Box<dyn RouteTable>>,
     available: Vec<ProbeKind>,
     interval: Duration,
     max_interval: Duration,
@@ -191,12 +202,59 @@ impl ProbeRunner {
             targets: BTreeMap::new(),
             unmeasurable: Vec::new(),
             policy,
+            routes: None,
             available,
             interval: DEFAULT_INTERVAL,
             max_interval: MAX_INTERVAL,
             walk_interval: DEFAULT_WALK_INTERVAL,
             due_buffer: Vec::new(),
         })
+    }
+
+    /// Consults `routes` when classifying an endpoint.
+    ///
+    /// Without this the engine sees only addresses, and a tunnel that takes traffic by
+    /// installing routes rather than by rewriting DNS is invisible to it: every name
+    /// resolves to the real public address of the real service, and the tunnel answers the
+    /// cheap probes itself. With it, such an endpoint is classified as tunnelled at
+    /// registration and measured end to end.
+    #[must_use]
+    pub fn with_routes(mut self, routes: Box<dyn RouteTable>) -> Self {
+        self.routes = Some(routes);
+        self
+    }
+
+    /// What the operating system says the route to `address` starts with.
+    ///
+    /// A failed lookup is [`Egress::Unknown`] rather than an error: not knowing which
+    /// adapter an endpoint uses is a reason to fall back on the address alone, not a reason
+    /// to refuse to measure it.
+    fn egress_of(&self, address: IpAddr) -> Egress {
+        match self.routes.as_ref().map(|routes| routes.route_to(address)) {
+            Some(Ok(route)) => match route.kind {
+                EgressKind::LocalTunnel => Egress::LocalTunnel,
+                EgressKind::Ordinary => Egress::Direct,
+                EgressKind::Unknown => Egress::Unknown,
+            },
+            Some(Err(_)) | None => Egress::Unknown,
+        }
+    }
+
+    /// What this endpoint is: its address, and the route into it.
+    fn class_of_address(&self, address: IpAddr) -> AddressClass {
+        self.policy
+            .classify(address)
+            .through(self.egress_of(address))
+    }
+
+    /// The class a registered target is being measured under.
+    ///
+    /// Read rather than recomputed by the app layer, because a chain can *learn* it is
+    /// behind a tunnel from a reply that proved it — see [`nm_core::forgery`] — and the
+    /// address alone would then be out of date.
+    #[must_use]
+    pub fn class_of(&self, id: TargetId) -> Option<AddressClass> {
+        self.targets.get(&id).map(|state| state.chain.class())
     }
 
     /// Uses a different base and maximum interval.
@@ -253,7 +311,7 @@ impl ProbeRunner {
         preferred: Option<ProbeKind>,
         now: Instant,
     ) -> Result<(), Error> {
-        let class = self.policy.classify(address.ip);
+        let class = self.class_of_address(address.ip);
         let chain = FallbackChain::starting_with(class, &self.available, preferred)?;
         let backoff = Backoff::new(self.interval, self.max_interval)?;
 
@@ -263,6 +321,7 @@ impl ProbeRunner {
                 address,
                 source,
                 chain,
+                preferred,
                 backoff,
                 in_flight: false,
             },
@@ -418,11 +477,32 @@ impl ProbeRunner {
     /// Filtering is not permanent, but re-testing costs probes and risks silence on an
     /// endpoint that was being measured perfectly well, so the runner never decides this on
     /// its own. Returns `true` if the target is registered.
+    ///
+    /// **The route is looked up again, not assumed.** This is the moment a VPN or an
+    /// accelerator switched off is noticed: the endpoint was classified as tunnelled when
+    /// it was registered, and nothing else would ever revisit that. A tunnel still up
+    /// simply classifies the same way again — and if the route lookup has grown blind to
+    /// it, the first echo re-proves it from the reply's own hop limit within one probe.
     pub fn reconsider(&mut self, id: TargetId, now: Instant) -> bool {
+        let Some(state) = self.targets.get(&id) else {
+            return false;
+        };
+        let class = self.class_of_address(state.address.ip);
+        let preferred = state.preferred;
+        let rebuilt = FallbackChain::starting_with(class, &self.available, preferred).ok();
+
         let Some(state) = self.targets.get_mut(&id) else {
             return false;
         };
-        state.chain.reconsider();
+        match rebuilt {
+            // A class the endpoint can still be measured under: start again from the top of
+            // its honest order.
+            Some(chain) => state.chain = chain,
+            // Nothing may honestly measure it any more. Keeping what the chain already
+            // knows is better than a chain that cannot exist, and `step` will report the
+            // gap rather than invent a kind.
+            None => state.chain.reconsider(),
+        }
         state.backoff.reset();
         self.unmeasurable.retain(|seen| *seen != id);
         if !state.in_flight {
@@ -557,7 +637,10 @@ impl ProbeRunner {
 }
 
 fn probe_target(state: &TargetState, timeout: Duration) -> ProbeTarget {
-    let mut target = ProbeTarget::new(state.address, timeout);
+    // The chain's class rather than the address's: a chain can have *learned* it is behind
+    // a tunnel from a reply, and a prober handed the stale class would be asked to judge
+    // its next reply against a fact that has already been disproved.
+    let mut target = ProbeTarget::new(state.address, timeout).of_class(state.chain.class());
     if let Some(source) = state.source {
         target = target.from_source(source);
     }
@@ -883,6 +966,154 @@ mod tests {
 
     fn runner(now: Instant) -> ProbeRunner {
         ProbeRunner::new(AddressPolicy::default(), ALL.to_vec(), now).unwrap()
+    }
+
+    /// A route table that answers the same way for everything.
+    ///
+    /// Enough for these tests: what matters is whether the runner *asks*, and what it does
+    /// with the answer. A machine where only some destinations are tunnelled is the real
+    /// case, and it is the same code path run twice.
+    #[derive(Debug)]
+    struct EveryRouteVia(EgressKind);
+
+    impl RouteTable for EveryRouteVia {
+        fn route_to(
+            &self,
+            _destination: IpAddr,
+        ) -> Result<nm_platform::route::Route, nm_platform::Error> {
+            Ok(nm_platform::route::Route {
+                interface_index: 1,
+                kind: self.0,
+                source_address: None,
+            })
+        }
+    }
+
+    /// A route table that cannot answer, which is every platform without a backend.
+    #[derive(Debug)]
+    struct NoRoutesKnown;
+
+    impl RouteTable for NoRoutesKnown {
+        fn route_to(
+            &self,
+            _destination: IpAddr,
+        ) -> Result<nm_platform::route::Route, nm_platform::Error> {
+            Err(nm_platform::Error::UnsupportedPlatform)
+        }
+    }
+
+    fn runner_routing_via(kind: EgressKind, now: Instant) -> ProbeRunner {
+        runner(now).with_routes(Box::new(EveryRouteVia(kind)))
+    }
+
+    #[test]
+    fn an_ordinary_address_reached_through_a_tunnel_never_gets_the_cheap_probes() {
+        // The bug this whole change exists for: the address is a real public one, so the
+        // policy alone calls it routable and the engine opens on ICMP — which the tunnel
+        // answers itself, in under a millisecond, for every service on earth.
+        let start = Instant::now();
+        let mut runner = runner_routing_via(EgressKind::LocalTunnel, start);
+        runner
+            .add(id(0), TargetAddress::with_port(ip(0), 443), None, start)
+            .unwrap();
+
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::TunnelledEgress));
+        let planned = runner.due(start);
+        assert_eq!(
+            planned[0].action,
+            PlannedAction::Probe(ProbeKind::TlsHello),
+            "only an end-to-end exchange survives a tunnel"
+        );
+    }
+
+    #[test]
+    fn the_class_travels_with_the_probe_so_a_prober_can_judge_its_own_reply() {
+        let start = Instant::now();
+        let mut runner = runner_routing_via(EgressKind::Ordinary, start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert_eq!(runner.due(start)[0].target.class, AddressClass::Routable);
+    }
+
+    #[test]
+    fn an_ordinary_route_leaves_the_cheapest_kind_in_place() {
+        let start = Instant::now();
+        let mut runner = runner_routing_via(EgressKind::Ordinary, start);
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::Routable));
+        assert_eq!(
+            runner.due(start)[0].action,
+            PlannedAction::Probe(ProbeKind::IcmpEcho)
+        );
+    }
+
+    #[test]
+    fn a_route_lookup_that_fails_measures_exactly_as_it_did_before_routes_existed() {
+        // Every platform without a backend, and every destination whose route cannot be
+        // resolved. Refusing the cheap kinds here would leave Linux and macOS measuring
+        // almost nothing; the hop-limit proof is what covers the case instead.
+        let start = Instant::now();
+        let mut runner = runner(start).with_routes(Box::new(NoRoutesKnown));
+        runner
+            .add(id(0), TargetAddress::icmp(ip(0)), None, start)
+            .unwrap();
+
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::Routable));
+        assert_eq!(
+            runner.due(start)[0].action,
+            PlannedAction::Probe(ProbeKind::IcmpEcho)
+        );
+    }
+
+    #[test]
+    fn a_reply_proving_a_tunnel_moves_the_endpoint_without_any_route_table() {
+        // The backstop, end to end through the runner: no routes are known, the endpoint
+        // opens on ICMP, and the first reply's hop limit settles it.
+        let start = Instant::now();
+        let mut runner = runner(start);
+        runner
+            .add(id(0), TargetAddress::with_port(ip(0), 443), None, start)
+            .unwrap();
+        let planned = runner.due(start);
+        assert_eq!(planned[0].action, PlannedAction::Probe(ProbeKind::IcmpEcho));
+
+        runner.complete(&report(
+            id(0),
+            start,
+            Measured::Probe {
+                kind: ProbeKind::IcmpEcho,
+                outcome: ProbeOutcome::AnsweredLocally,
+            },
+        ));
+
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::TunnelledEgress));
+    }
+
+    #[test]
+    fn reconsidering_asks_the_route_again_rather_than_trusting_the_old_answer() {
+        // A VPN switched off mid-session. The endpoint was classified as tunnelled when it
+        // was registered, and nothing else would ever revisit that.
+        let start = Instant::now();
+        let mut runner = runner_routing_via(EgressKind::LocalTunnel, start);
+        runner
+            .add(id(0), TargetAddress::with_port(ip(0), 443), None, start)
+            .unwrap();
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::TunnelledEgress));
+
+        runner = runner.with_routes(Box::new(EveryRouteVia(EgressKind::Ordinary)));
+        assert!(runner.reconsider(id(0), start));
+
+        assert_eq!(runner.class_of(id(0)), Some(AddressClass::Routable));
+        assert_eq!(
+            runner.due(start)[0].action,
+            PlannedAction::Probe(ProbeKind::IcmpEcho),
+            "the cheap kinds come back when the tunnel that forbade them is gone"
+        );
     }
 
     fn success() -> Measured {

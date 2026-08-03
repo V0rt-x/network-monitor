@@ -112,15 +112,20 @@ impl Backoff {
 
     /// Folds one probe result in.
     ///
-    /// A success is the only outcome that restores full rate. The other three are stable
-    /// states — silence, a standing refusal, a filtered probe kind — and repeating them
-    /// faster produces no new knowledge.
+    /// A success is the only outcome that restores full rate. Silence, a standing refusal
+    /// and a filtered probe kind are stable states, and repeating them faster produces no
+    /// new knowledge.
+    ///
+    /// A reply the tunnel answered is neither, and it moves nothing. It is not evidence
+    /// that the endpoint is failing — the endpoint was never asked — and slowing down
+    /// because of it would delay the honest probe that is about to replace it.
     pub fn record(&mut self, outcome: ProbeOutcome) {
         match outcome {
             ProbeOutcome::Success(_) => self.consecutive_failures = 0,
             ProbeOutcome::Timeout | ProbeOutcome::Unreachable | ProbeOutcome::Blocked => {
                 self.consecutive_failures = self.consecutive_failures.saturating_add(1);
             }
+            ProbeOutcome::AnsweredLocally => {}
         }
     }
 

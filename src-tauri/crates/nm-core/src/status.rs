@@ -77,6 +77,13 @@ pub enum CheckMark {
     Refused,
     /// The probe kind was filtered, so this check measured nothing at all.
     Filtered,
+    /// A tunnel on this machine answered instead of the service.
+    ///
+    /// Distinct from [`Filtered`](Self::Filtered), which it superficially resembles in that
+    /// neither measured the path: filtering happens *on* the path, and this happened before
+    /// the path. Saying the wrong one would send a user looking for a block that is not
+    /// there, past the tunnel that is.
+    AnsweredLocally,
 }
 
 impl StatusThresholds {
@@ -91,6 +98,7 @@ impl StatusThresholds {
             ProbeOutcome::Timeout => CheckMark::Lost,
             ProbeOutcome::Unreachable => CheckMark::Refused,
             ProbeOutcome::Blocked => CheckMark::Filtered,
+            ProbeOutcome::AnsweredLocally => CheckMark::AnsweredLocally,
         }
     }
 

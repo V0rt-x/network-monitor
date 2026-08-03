@@ -24,13 +24,19 @@ pub struct OutcomeCounts {
     pub unreachable: usize,
     /// Probes filtered on the path, carrying no information about the link.
     pub blocked: usize,
+    /// Probes a tunnel on this machine answered itself.
+    ///
+    /// Counted apart from [`blocked`](Self::blocked) even though neither says anything
+    /// about the link, because the two are different findings: one means something on the
+    /// path dropped our probe, the other means the probe never reached the path.
+    pub answered_locally: usize,
 }
 
 impl OutcomeCounts {
     /// Total number of probes counted.
     #[must_use]
     pub const fn total(self) -> usize {
-        self.success + self.timeout + self.unreachable + self.blocked
+        self.success + self.timeout + self.unreachable + self.blocked + self.answered_locally
     }
 
     /// Probes that actually tested whether packets get through.
@@ -45,6 +51,7 @@ impl OutcomeCounts {
             ProbeOutcome::Timeout => self.timeout += 1,
             ProbeOutcome::Unreachable => self.unreachable += 1,
             ProbeOutcome::Blocked => self.blocked += 1,
+            ProbeOutcome::AnsweredLocally => self.answered_locally += 1,
         }
     }
 }
@@ -315,6 +322,7 @@ mod tests {
             ProbeOutcome::Timeout,
             ProbeOutcome::Unreachable,
             ProbeOutcome::Blocked,
+            ProbeOutcome::AnsweredLocally,
         ]));
         assert_eq!(
             stats.outcomes,
@@ -323,9 +331,10 @@ mod tests {
                 timeout: 1,
                 unreachable: 1,
                 blocked: 1,
+                answered_locally: 1,
             }
         );
-        assert_eq!(stats.outcomes.total(), 4);
+        assert_eq!(stats.outcomes.total(), 5);
         assert_eq!(stats.outcomes.delivery_attempts(), 2);
         assert_eq!(stats.loss_pct, Some(50.0));
     }

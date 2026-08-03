@@ -66,6 +66,17 @@ pub enum ProbeOutcome {
     Unreachable,
     /// This probe kind is filtered on the path; the sample measures nothing.
     Blocked,
+    /// A reply arrived and proved that nothing on the network sent it.
+    ///
+    /// A tunnel running on this machine answered on the endpoint's behalf, so the round
+    /// trip belongs to the tunnel and the endpoint said nothing at all. Held apart from
+    /// every other outcome because it is the only one that is a fact about *us*: the
+    /// path was never tested, so this is not loss, and something did answer, so it is
+    /// not silence.
+    ///
+    /// It is also the only outcome that changes what an endpoint *is* rather than how it
+    /// is doing — see `crate::address::AddressClass::TunnelledEgress`.
+    AnsweredLocally,
 }
 
 impl ProbeOutcome {
@@ -74,15 +85,19 @@ impl ProbeOutcome {
     pub const fn rtt(self) -> Option<Rtt> {
         match self {
             Self::Success(rtt) => Some(rtt),
-            Self::Timeout | Self::Unreachable | Self::Blocked => None,
+            // A locally answered reply has a round trip, and it is the tunnel's. Reporting
+            // it would be the exact lie this outcome exists to stop.
+            Self::Timeout | Self::Unreachable | Self::Blocked | Self::AnsweredLocally => None,
         }
     }
 
     /// Whether this outcome is evidence about packet delivery.
     ///
     /// Only successes and timeouts are: they are the two ways a delivery test can end.
-    /// Unreachable and blocked outcomes answer a different question and must stay out of
-    /// the loss ratio's denominator.
+    /// Unreachable, blocked and locally answered outcomes answer a different question and
+    /// must stay out of the loss ratio's denominator — the last of those most of all,
+    /// since counting a tunnel's own answer as a delivered packet would report a perfect
+    /// connection to an endpoint nothing reached.
     #[must_use]
     pub const fn tests_delivery(self) -> bool {
         matches!(self, Self::Success(_) | Self::Timeout)
