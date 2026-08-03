@@ -105,8 +105,7 @@ export const EndpointGroup = ({
           page is now what the explanation says. A hint is a paragraph competing with the
           figures it describes; a name a reader can ask about is not. */}
       <span className="nm-endpointgroup__title">
-        {t(groupKey(group.transport))}
-        <MetricHelp topic={groupTopic(group.transport)} />
+        <MetricHelp topic={groupTopic(group.transport)}>{t(groupKey(group.transport))}</MetricHelp>
       </span>
       <Distribution
         counts={group.counts}

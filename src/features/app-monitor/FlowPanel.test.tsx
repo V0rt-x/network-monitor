@@ -70,7 +70,7 @@ describe('FlowPanel', () => {
     // "something is wrong right now" rendered with an inherited colour and a plain border.
     render(<FlowPanel flow={flow({ stallMs: 900 })} />);
 
-    expect(screen.getByText(/Frozen for 900 ms/).closest('span')).toHaveClass(
+    expect(screen.getByText(/Frozen for 900 ms/).closest('.nm-health')).toHaveClass(
       'nm-health--unreachable',
     );
   });

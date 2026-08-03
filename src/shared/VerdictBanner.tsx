@@ -53,17 +53,17 @@ export const VerdictBanner = ({ diagnosis, subject }: VerdictBannerProps) => {
           kind — which, under the rule that a figure is not done until it has a help topic, was
           a debt rather than an omission. The headline carries it, once per banner. */}
       <p className="nm-verdict__headline">
-        {subject === undefined
-          ? t(verdictKey(diagnosis.verdict))
-          : t('verdict.about', { subject, verdict: t(verdictKey(diagnosis.verdict)) })}
-        <MetricHelp topic="verdict" />
+        <MetricHelp topic="verdict">
+          {subject === undefined
+            ? t(verdictKey(diagnosis.verdict))
+            : t('verdict.about', { subject, verdict: t(verdictKey(diagnosis.verdict)) })}
+        </MetricHelp>
       </p>
       {/* How much of the application the claim is about, which is a different message from
           the claim itself and has its own topic for exactly that reason. */}
       {scope !== null && (
         <p className="nm-verdict__scope">
-          {scope}
-          <MetricHelp topic="verdictEvidence" />
+          <MetricHelp topic="verdictEvidence">{scope}</MetricHelp>
         </p>
       )}
       {advice !== null && <p className="nm-verdict__advice">{t(advice)}</p>}

@@ -57,8 +57,7 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
             a ping, and why these figures sit beside the route rather than instead of it, is
             a question about the whole panel rather than about any one figure in it. */}
         <h4 className="nm-panel__title">
-          {t('apps.passive.heading')}
-          <MetricHelp topic="passive" />
+          <MetricHelp topic="passive">{t('apps.passive.heading')}</MetricHelp>
         </h4>
         {/* Kept prominent rather than demoted: a freeze is the one thing here a player
             recognises immediately, and it is the strongest evidence the panel can show. */}
@@ -67,8 +66,9 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
             the strongest evidence in the product rendered as a neutral pill. */}
         {flow.stallMs !== null && (
           <span className="nm-health nm-health--unreachable">
-            {t('apps.passive.stall', { ms: Math.round(flow.stallMs) })}
-            <MetricHelp topic="freeze" />
+            <MetricHelp topic="freeze">
+              {t('apps.passive.stall', { ms: Math.round(flow.stallMs) })}
+            </MetricHelp>
           </span>
         )}
       </header>
@@ -76,8 +76,7 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
       <dl className="nm-endpoint__metrics">
         <div>
           <dt>
-            {t('apps.passive.metric.updates')}
-            <MetricHelp topic="updates" />
+            <MetricHelp topic="updates">{t('apps.passive.metric.updates')}</MetricHelp>
           </dt>
           <dd>
             {updates === null
@@ -87,22 +86,19 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
         </div>
         <div>
           <dt>
-            {t('apps.passive.metric.arrivalJitter')}
-            <MetricHelp topic="arrivalJitter" />
+            <MetricHelp topic="arrivalJitter">{t('apps.passive.metric.arrivalJitter')}</MetricHelp>
           </dt>
           <dd>{figures.ms(flow.arrivalJitterMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('apps.passive.metric.worstPause')}
-            <MetricHelp topic="worstPause" />
+            <MetricHelp topic="worstPause">{t('apps.passive.metric.worstPause')}</MetricHelp>
           </dt>
           <dd>{figures.ms(flow.arrivalMaxMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('apps.passive.metric.dropOff')}
-            <MetricHelp topic="dropOff" />
+            <MetricHelp topic="dropOff">{t('apps.passive.metric.dropOff')}</MetricHelp>
           </dt>
           <dd>{figures.pct(flow.receiveShortfallPct)}</dd>
         </div>

@@ -45,8 +45,7 @@ export const TargetRow = ({ target }: TargetRowProps) => {
             figures beside it were measured a different way. */}
         {target.tunnelled && (
           <span className="nm-badge">
-            {t('dashboard.badge.tunnelled')}
-            <MetricHelp topic="tunnel" />
+            <MetricHelp topic="tunnel">{t('dashboard.badge.tunnelled')}</MetricHelp>
           </span>
         )}
         {target.filteringConfirmed && (
@@ -66,22 +65,19 @@ export const TargetRow = ({ target }: TargetRowProps) => {
       <dl className="nm-target__metrics">
         <div>
           <dt>
-            {t('dashboard.metric.rtt')}
-            <MetricHelp topic="rtt" />
+            <MetricHelp topic="rtt">{t('dashboard.metric.rtt')}</MetricHelp>
           </dt>
           <dd>{figures.ms(target.rttMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('dashboard.metric.jitter')}
-            <MetricHelp topic="jitter" />
+            <MetricHelp topic="jitter">{t('dashboard.metric.jitter')}</MetricHelp>
           </dt>
           <dd>{figures.ms(target.jitterMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('dashboard.metric.loss')}
-            <MetricHelp topic="loss" />
+            <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>
           </dt>
           <dd>{figures.pct(target.lossPct)}</dd>
         </div>

@@ -2131,7 +2131,7 @@ it waits on none of the contested decisions.
 
 *Implements the amended level-three rule. Approved 2026-08-03.*
 
-- [ ] **21. `MetricHelp` wraps the label instead of standing beside it.** Same behaviour —
+- [x] **21. `MetricHelp` wraps the label instead of standing beside it.** Same behaviour —
       hover *and* focus, "Learn more", Escape — with no glyph and no second target. A dotted
       underline marks a label as explainable; one sentence in the empty state and in the help
       introduction says so, once, rather than two hundred times.

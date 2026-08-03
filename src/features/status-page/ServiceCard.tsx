@@ -65,8 +65,7 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
               on nearly every endpoint on the page. */}
           {endpoint.tunnelled && (
             <span className="nm-badge">
-              {t('dashboard.badge.tunnelled')}
-              <MetricHelp topic="tunnel" />
+              <MetricHelp topic="tunnel">{t('dashboard.badge.tunnelled')}</MetricHelp>
             </span>
           )}
           {endpoint.filteringConfirmed && (
@@ -92,8 +91,7 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
       <dl className="nm-service__metrics">
         <div>
           <dt>
-            {t('status.metric.latest')}
-            <MetricHelp topic="latestCheck" />
+            <MetricHelp topic="latestCheck">{t('status.metric.latest')}</MetricHelp>
           </dt>
           <dd>{figures.ms(endpoint.rttMs)}</dd>
         </div>
@@ -102,15 +100,13 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
             the numbers out of line with each other. The ⓘ says it too. */}
         <div>
           <dt>
-            {t('status.metric.mean')}
-            <MetricHelp topic="meanRtt" />
+            <MetricHelp topic="meanRtt">{t('status.metric.mean')}</MetricHelp>
           </dt>
           <dd>{figures.ms(endpoint.meanRttMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('status.metric.loss')}
-            <MetricHelp topic="loss" />
+            <MetricHelp topic="loss">{t('status.metric.loss')}</MetricHelp>
           </dt>
           <dd>{figures.pct(endpoint.lossPct)}</dd>
         </div>
@@ -164,8 +160,7 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
           median across the endpoints that answered, and it says so. */}
       <p className="nm-service__meta">
         <span className="nm-service__rttlabel">
-          {t('status.metric.median')}
-          <MetricHelp topic="medianRtt" />
+          <MetricHelp topic="medianRtt">{t('status.metric.median')}</MetricHelp>
         </span>
         <span className="nm-service__rtt">{figures.ms(service.rttMs)}</span>
         <span className={stale ? 'nm-service__stale' : 'nm-service__checked'}>{lastChecked}</span>

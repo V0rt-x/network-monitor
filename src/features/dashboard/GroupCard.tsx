@@ -55,22 +55,19 @@ export const GroupCard = ({ group }: GroupCardProps) => {
       <dl className="nm-group__metrics">
         <div>
           <dt>
-            {t('dashboard.metric.rttMedian')}
-            <MetricHelp topic="medianRtt" />
+            <MetricHelp topic="medianRtt">{t('dashboard.metric.rttMedian')}</MetricHelp>
           </dt>
           <dd>{figures.ms(group.rttMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('dashboard.metric.jitterMedian')}
-            <MetricHelp topic="jitter" />
+            <MetricHelp topic="jitter">{t('dashboard.metric.jitterMedian')}</MetricHelp>
           </dt>
           <dd>{figures.ms(group.jitterMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('dashboard.metric.loss')}
-            <MetricHelp topic="loss" />
+            <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>
           </dt>
           <dd>{figures.pct(group.lossPct)}</dd>
         </div>

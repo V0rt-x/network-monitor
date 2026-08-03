@@ -185,8 +185,9 @@ export const AppCard = ({
           that. Rust decides both, by simply not offering this application as evidence yet. */}
       {app.warmupSecsRemaining !== null && (
         <p className="nm-appcard__warmup nm-state--pending">
-          {t('apps.warmup.application', { seconds: Math.ceil(app.warmupSecsRemaining) })}
-          <MetricHelp topic="warmup" />
+          <MetricHelp topic="warmup">
+            {t('apps.warmup.application', { seconds: Math.ceil(app.warmupSecsRemaining) })}
+          </MetricHelp>
         </p>
       )}
 
@@ -216,8 +217,9 @@ export const AppCard = ({
               competing with the chart they described; they are the help's job, and what a
               reader needs beside the picture is what the axes are. */}
           <p className="nm-appcard__chartnote">
-            {t('apps.chart.caption', { seconds: chartStepSecs })}
-            <MetricHelp topic="chart" />
+            <MetricHelp topic="chart">
+              {t('apps.chart.caption', { seconds: chartStepSecs })}
+            </MetricHelp>
           </p>
           {/* Once per card, under the chart it is about — not once per silent endpoint.
               It is the same three-point disclosure every time, and a game has several

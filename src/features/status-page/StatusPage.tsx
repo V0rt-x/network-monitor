@@ -59,8 +59,7 @@ export const StatusPage = () => {
           channel: every state is named beside the colour that carries it. */}
       <section className="nm-status__legend">
         <h2 className="nm-status__legendtitle">
-          {t('status.timeline.heading')}
-          <MetricHelp topic="checks" />
+          <MetricHelp topic="checks">{t('status.timeline.heading')}</MetricHelp>
         </h2>
         <p className="nm-status__legendnote">
           {t('status.timeline.note', {

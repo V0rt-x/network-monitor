@@ -14,6 +14,28 @@ describe('MetricHelp', () => {
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('is the label itself, with no second mark beside it', () => {
+    // The rule this implements was written in the singular — "an ⓘ on every figure" — and
+    // silently assumed one figure on screen. At twenty connections it produced up to two
+    // hundred and sixty identical marks, and a mark repeated two hundred times does not
+    // explain a figure, it hides it. The word already names the quantity; a dotted underline
+    // says there is more to it, costs no width, and adds no second target for a keyboard.
+    render(<MetricHelp topic="jitter">Jitter</MetricHelp>);
+
+    const label = screen.getByRole('button');
+    expect(label).toHaveTextContent('Jitter');
+    expect(label).toHaveClass('nm-explains');
+    expect(document.querySelectorAll('.nm-help__mark')).toHaveLength(0);
+  });
+
+  it('falls back to the topic’s own title when the label is the same words', () => {
+    // A column heading reading "Ping (RTT)" is explained by a topic whose title is the same
+    // words; repeating them at the call site is a second place to keep them in step.
+    render(<MetricHelp topic="rtt" />);
+
+    expect(screen.getByRole('button')).toHaveTextContent('Ping (RTT)');
+  });
+
   it('explains the metric in place, without a mouse', async () => {
     // The whole point of the level: a player who does not know what jitter is has to be able
     // to ask, and a keyboard user has to be able to ask the same way.

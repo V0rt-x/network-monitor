@@ -31,8 +31,7 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
   if (pool === null) {
     return (
       <p className="nm-pool__absent">
-        {t('apps.pool.none')}
-        <MetricHelp topic="pool" />
+        <MetricHelp topic="pool">{t('apps.pool.none')}</MetricHelp>
       </p>
     );
   }
@@ -41,8 +40,7 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
     <section className="nm-pool nm-panel">
       <header className="nm-panel__header">
         <h4 className="nm-panel__title">
-          {t('apps.pool.title')}
-          <MetricHelp topic="pool" />
+          <MetricHelp topic="pool">{t('apps.pool.title')}</MetricHelp>
         </h4>
         <span className={`nm-health ${healthModifier(pool.health)}`}>
           {t(healthKey(pool.health))}

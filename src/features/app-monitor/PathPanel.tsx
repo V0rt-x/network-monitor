@@ -50,8 +50,7 @@ export const PathPanel = ({ path }: PathPanelProps) => {
     <section className="nm-path">
       <header className="nm-panel__header">
         <h4 className="nm-panel__title">
-          {t('apps.path.heading')}
-          <MetricHelp topic="route" />
+          <MetricHelp topic="route">{t('apps.path.heading')}</MetricHelp>
         </h4>
         <span className={`nm-health ${pathQualityModifier(path.quality)}`}>
           {t(pathQualityKey(path.quality))}
@@ -69,15 +68,13 @@ export const PathPanel = ({ path }: PathPanelProps) => {
         </div>
         <div>
           <dt>
-            {t('apps.metric.jitter')}
-            <MetricHelp topic="jitter" />
+            <MetricHelp topic="jitter">{t('apps.metric.jitter')}</MetricHelp>
           </dt>
           <dd>{figures.ms(path.jitterMs)}</dd>
         </div>
         <div>
           <dt>
-            {t('apps.metric.loss')}
-            <MetricHelp topic="loss" />
+            <MetricHelp topic="loss">{t('apps.metric.loss')}</MetricHelp>
           </dt>
           <dd>{figures.pct(path.lossPct)}</dd>
         </div>
@@ -93,8 +90,7 @@ export const PathPanel = ({ path }: PathPanelProps) => {
         {path.hopNetwork !== null && (
           <>
             {' · '}
-            {networkName(path.hopNetwork, t)}
-            <MetricHelp topic="network" />
+            <MetricHelp topic="network">{networkName(path.hopNetwork, t)}</MetricHelp>
           </>
         )}
       </p>

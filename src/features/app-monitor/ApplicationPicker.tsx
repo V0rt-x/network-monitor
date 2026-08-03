@@ -120,14 +120,15 @@ export const ApplicationPicker = ({
     return (
       <section className="nm-picker nm-picker--folded">
         <p className="nm-picker__watching">
-          {watching.length === 0
-            ? t('apps.picker.watchingNone')
-            : t('apps.picker.watching', {
-                names: watching.join(', '),
-                count: watching.length,
-                limit,
-              })}
-          <MetricHelp topic="watching" />
+          <MetricHelp topic="watching">
+            {watching.length === 0
+              ? t('apps.picker.watchingNone')
+              : t('apps.picker.watching', {
+                  names: watching.join(', '),
+                  count: watching.length,
+                  limit,
+                })}
+          </MetricHelp>
         </p>
         <button
           type="button"
@@ -145,13 +146,12 @@ export const ApplicationPicker = ({
   return (
     <section className="nm-picker">
       <header className="nm-picker__header">
+        {/* What choosing an application actually does — that it takes the whole process
+            group and anything it launches, and that nothing inside a process is ever read —
+            was three sentences here. It is a real answer to a real question and it is not a
+            warning, so it moved a level down rather than off the page. */}
         <h3 className="nm-picker__title">
-          {t('apps.picker.chooseHeading')}
-          {/* What choosing an application actually does — that it takes the whole process
-              group and anything it launches, and that nothing inside a process is ever
-              read — was three sentences here. It is a real answer to a real question and
-              it is not a warning, so it moved a level down rather than off the page. */}
-          <MetricHelp topic="watching" />
+          <MetricHelp topic="watching">{t('apps.picker.chooseHeading')}</MetricHelp>
         </h3>
         <div className="nm-picker__actions">
           <button

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,15 +8,34 @@ import { shortKey, titleKey } from './topics';
 
 interface MetricHelpProps {
   readonly topic: HelpTopic;
+  /**
+   * The label being explained.
+   *
+   * Omitted where the topic's own title *is* the label, which is the ordinary case: a column
+   * heading reading "Ping (RTT)" is explained by the `rtt` topic, whose title is the same
+   * words, so repeating them at the call site is a second place to keep them in step.
+   */
+  readonly children?: ReactNode;
 }
 
 /**
- * The ⓘ beside a figure: one or two plain sentences, and a way to the rest.
+ * A label that explains itself, in one or two plain sentences, with a way to the rest.
  *
  * The audience is a player who knows their game stutters and does not know what jitter is.
- * Every number on this page therefore has to be able to explain itself in place — a
+ * Every figure on the page therefore has to be able to explain itself in place — a
  * measurement tool that cannot is asking to be trusted on faith, and this audience has no
  * reason to extend that.
+ *
+ * **The label carries the explanation; there is no separate mark.** It used to draw an ⓘ
+ * beside the word, which is a second target that names nothing next to a word that already
+ * names the quantity. The rule this implements was written in the singular — "an ⓘ on every
+ * figure" — and silently assumed one figure on screen; on an application with twenty
+ * connections it produced up to two hundred and sixty identical marks, and a mark repeated
+ * two hundred times does not explain a figure, it hides it. A dotted underline says the same
+ * thing, costs no width, and creates no second stop for a keyboard.
+ *
+ * That the underline means something is stated once, in the help's own introduction and in
+ * the empty state — once, rather than two hundred times.
  *
  * **Reachable without a mouse, like everything else here.** It is a disclosure button rather
  * than a hover-only tooltip precisely because of what is inside it: a "Learn more" that
@@ -23,7 +43,7 @@ interface MetricHelpProps {
  * opens it as well, and the pointer can travel into the panel without it closing, because
  * the handlers sit on the wrapper rather than on the button.
  */
-export const MetricHelp = ({ topic }: MetricHelpProps) => {
+export const MetricHelp = ({ topic, children }: MetricHelpProps) => {
   const { t } = useTranslation();
   const openHelp = useHelp();
   const [pinned, setPinned] = useState(false);
@@ -61,8 +81,11 @@ export const MetricHelp = ({ topic }: MetricHelpProps) => {
     >
       <button
         type="button"
-        className="nm-help__mark"
+        className="nm-explains"
         aria-expanded={shown}
+        // The accessible name is the same sentence the ⓘ used to carry, so nothing a screen
+        // reader hears has changed: the word alone would be indistinguishable from a
+        // heading, and what this control does is explain it.
         aria-label={t('help.explain', { metric: t(titleKey(topic)) })}
         onClick={() => {
           setPinned((current) => !current);
@@ -74,7 +97,7 @@ export const MetricHelp = ({ topic }: MetricHelpProps) => {
           if (event.key === 'Escape') setPinned(false);
         }}
       >
-        <span aria-hidden="true">i</span>
+        {children ?? t(titleKey(topic))}
       </button>
       {shown && (
         <span

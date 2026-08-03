@@ -150,8 +150,7 @@ export const EndpointRow = ({
             name is a false statement about where someone's traffic went, not a rounding. */}
         {endpoint.network !== null && (
           <span className="nm-endpoint__network">
-            {networkName(endpoint.network, t)}
-            <MetricHelp topic="network" />
+            <MetricHelp topic="network">{networkName(endpoint.network, t)}</MetricHelp>
           </span>
         )}
         {/* How long it has been there, which is what tells a new endpoint from one that has
@@ -161,8 +160,9 @@ export const EndpointRow = ({
             question with a number nobody could interpret. */}
         {age !== null && (
           <span className="nm-endpoint__age">
-            {t('apps.age.label')} {t(age.key, age.params)}
-            <MetricHelp topic="age" />
+            <MetricHelp topic="age">
+              {t('apps.age.label')} {t(age.key, age.params)}
+            </MetricHelp>
           </span>
         )}
       </div>
@@ -193,8 +193,7 @@ export const EndpointRow = ({
             would otherwise read a tunnel's round trip as the server's. */}
         {endpoint.tunnelled && (
           <span className="nm-badge">
-            {t('dashboard.badge.tunnelled')}
-            <MetricHelp topic="tunnel" />
+            <MetricHelp topic="tunnel">{t('dashboard.badge.tunnelled')}</MetricHelp>
           </span>
         )}
       </div>
@@ -214,22 +213,19 @@ export const EndpointRow = ({
         <dl className="nm-endpoint__metrics">
           <div>
             <dt>
-              {t('apps.metric.rtt')}
-              <MetricHelp topic="rtt" />
+              <MetricHelp topic="rtt">{t('apps.metric.rtt')}</MetricHelp>
             </dt>
             <dd>{figures.ms(endpoint.rttMs)}</dd>
           </div>
           <div>
             <dt>
-              {t('apps.metric.jitter')}
-              <MetricHelp topic="jitter" />
+              <MetricHelp topic="jitter">{t('apps.metric.jitter')}</MetricHelp>
             </dt>
             <dd>{figures.ms(endpoint.jitterMs)}</dd>
           </div>
           <div>
             <dt>
-              {t('apps.metric.loss')}
-              <MetricHelp topic="loss" />
+              <MetricHelp topic="loss">{t('apps.metric.loss')}</MetricHelp>
             </dt>
             <dd>{figures.pct(endpoint.lossPct)}</dd>
           </div>
@@ -254,8 +250,7 @@ export const EndpointRow = ({
         <dl className="nm-endpoint__detail-list">
           <div>
             <dt>
-              {t('apps.details.probeKind')}
-              <MetricHelp topic="probeKind" />
+              <MetricHelp topic="probeKind">{t('apps.details.probeKind')}</MetricHelp>
             </dt>
             <dd>
               {endpoint.probeKind === null
@@ -286,8 +281,7 @@ export const EndpointRow = ({
           {endpoint.network !== null && (
             <div>
               <dt>
-                {t('apps.details.network')}
-                <MetricHelp topic="network" />
+                <MetricHelp topic="network">{t('apps.details.network')}</MetricHelp>
               </dt>
               <dd>
                 {t('apps.network.as', { asn: endpoint.network.asn })}
@@ -304,8 +298,9 @@ export const EndpointRow = ({
           </div>
           <div>
             <dt>
-              {t('apps.metric.traffic', { seconds: trafficWindowSecs })}
-              <MetricHelp topic="traffic" />
+              <MetricHelp topic="traffic">
+                {t('apps.metric.traffic', { seconds: trafficWindowSecs })}
+              </MetricHelp>
             </dt>
             <dd>{figures.bytes(endpoint.recentBytes)}</dd>
           </div>
@@ -347,8 +342,7 @@ export const EndpointRow = ({
           {endpoint.path !== null && (
             <div>
               <dt>
-                {t('apps.details.route')}
-                <MetricHelp topic="route" />
+                <MetricHelp topic="route">{t('apps.details.route')}</MetricHelp>
               </dt>
               <dd>
                 {endpoint.path.hopTtl === null
@@ -361,8 +355,7 @@ export const EndpointRow = ({
           )}
           <div>
             <dt>
-              {t('apps.details.egress')}
-              <MetricHelp topic="egress" />
+              <MetricHelp topic="egress">{t('apps.details.egress')}</MetricHelp>
             </dt>
             <dd>
               {egressLine(endpoint, t)}

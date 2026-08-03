@@ -1461,32 +1461,39 @@ details.nm-endpointgroup > summary {
 
 /* ---------------------------------------------------------------- explaining itself */
 
-/* The ⓘ beside a figure. A disclosure rather than a hover-only tooltip, because what is
-   inside it — the way to the rest of the explanation — has to be reachable by keyboard. */
+/* A label that explains itself. A disclosure rather than a hover-only tooltip, because what
+   is inside it — the way to the rest of the explanation — has to be reachable by keyboard. */
 .nm-help {
   position: relative;
   display: inline-flex;
-  margin-left: var(--nm-space-1);
 }
 
-.nm-help__mark {
-  width: 1rem;
-  height: 1rem;
+/*
+ * The label *is* the control.
+ *
+ * There used to be an ⓘ beside it: a second target that names nothing, next to a word that
+ * already names the quantity. At twenty connections that produced up to two hundred and
+ * sixty identical marks on one page, and a mark repeated two hundred times does not explain
+ * a figure — it hides it. A dotted underline is the common sign for "there is more here", it
+ * does not read as a link outwards (there are none in this product and never will be), and
+ * it costs not one pixel of width.
+ */
+.nm-explains {
+  border: 0;
   padding: 0;
-  border: 1px solid var(--nm-border);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-xs);
-  font-style: italic;
-  line-height: 1;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--nm-muted);
   cursor: help;
 }
 
-.nm-help__mark:hover,
-.nm-help__mark:focus-visible {
-  color: var(--nm-text);
-  border-color: var(--nm-text);
+.nm-explains:hover,
+.nm-explains:focus-visible {
+  text-decoration-color: var(--nm-text);
 }
 
 /*

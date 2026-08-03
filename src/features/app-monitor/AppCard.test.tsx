@@ -764,11 +764,9 @@ describe('AppCard', () => {
     expect(screen.getAllByText('Carrying traffic').length).toBeGreaterThan(0);
     expect(screen.queryByText('Unreachable')).not.toBeInTheDocument();
     // It claims nothing it did not measure.
-    const rtt = screen.getByText('Ping (RTT)').parentElement?.parentElement;
+    const rtt = screen.getByText('Ping (RTT)').closest('div');
     expect(rtt).toHaveTextContent('—');
-    expect(
-      screen.getByText('Data exchanged (30 s)').parentElement?.parentElement,
-    ).toHaveTextContent('630 kB');
+    expect(screen.getByText('Data exchanged (30 s)').closest('div')).toHaveTextContent('630 kB');
   });
 
   it('says how old a connection is, and which kind of old that is', () => {
@@ -872,7 +870,7 @@ describe('AppCard', () => {
       />,
     );
 
-    const traffic = screen.getByText('Data exchanged (30 s)').parentElement?.parentElement;
+    const traffic = screen.getByText('Data exchanged (30 s)').closest('div');
     expect(traffic).toHaveTextContent('—');
     expect(screen.queryByText('0 B')).not.toBeInTheDocument();
   });

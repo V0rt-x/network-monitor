@@ -88,6 +88,10 @@ export const AppMonitorPage = () => {
           {/* Nothing here is idle while nothing is chosen, and saying so is what stops the
               empty page reading as an application that is not working. */}
           <p className="nm-apps__emptymeanwhile">{t('apps.empty.meanwhile')}</p>
+          {/* That a dotted underline means a label explains itself is said here and in the
+              help's introduction — twice in the whole product, rather than once beside each
+              of two hundred figures, which is what the mark it replaces amounted to. */}
+          <p className="nm-apps__emptymeanwhile">{t('help.affordance')}</p>
         </section>
       )}
 
