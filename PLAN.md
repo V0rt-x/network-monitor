@@ -2109,7 +2109,7 @@ move down a level, and each item below names the level they land on.
 Placed above the table rework deliberately: it is independent, it is visible immediately, and
 it waits on none of the contested decisions.
 
-- [ ] **18. A tooltip that is also the legend.** Today the chart has no legend, no cursor
+- [x] **18. A tooltip that is also the legend.** Today the chart has no legend, no cursor
       point and no tooltip, and the *only* effect of hovering a line happens somewhere else —
       a row that may be off screen, which is exactly what the user reported. The tooltip lists
       **every** line at the pointed moment (the chart's stated job is "which of these is the
@@ -2118,10 +2118,10 @@ it waits on none of the contested decisions.
       value in that slot reads `no reply`, never `0` and never a silently missing entry. It
       carries no words about health: the list remains the only authority on state. Plus a
       crosshair, and the same edge-flip as item 7.
-- [ ] **19. Selecting from the tooltip pins the endpoint and scrolls its row into view.** On
+- [x] **19. Selecting from the tooltip pins the endpoint and scrolls its row into view.** On
       click only — scrolling on hover is nauseating — which is the direct fix for "it
       highlights something I cannot see".
-- [ ] **20. Keyboard parity with `CheckTimeline`.** The chart is `role="img"` with a static
+- [x] **20. Keyboard parity with `CheckTimeline`.** The chart is `role="img"` with a static
       label, so it is inert to a keyboard, while the far less important check strip on the
       services page already does this properly: one tab stop, arrows inside, a live text
       readout. The chart gets the same — `←`/`→` through time, `↑`/`↓` between lines, Enter to

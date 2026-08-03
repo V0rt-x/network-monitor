@@ -1,5 +1,14 @@
 import type { TransportView } from '../../shared/ipc';
 
+/**
+ * The identifier of an endpoint's row, so a selection on the chart can reach it.
+ *
+ * Scoped by application because two cards can be watching the same address, and scrolling to
+ * whichever one happened to render first would take the reader to another game's card.
+ */
+export const rowIdOf = (app: number, endpoint: string) =>
+  `nm-endpoint-${String(app)}-${endpoint}` as const;
+
 /** One line on an application's chart. */
 export interface ChartLine {
   /** The endpoint it belongs to. Two lines can share this — see `isPath`. */
@@ -14,6 +23,14 @@ export interface ChartLine {
   readonly transport: TransportView;
   /** What the line is called in the chart's own legend. */
   readonly label: string;
+  /**
+   * The endpoint's address, plain.
+   *
+   * Beside `label`, which for a route reads "Route to …". The tooltip names the address and
+   * names the quantity separately, so a route entry reads "… · route 91 ms" rather than
+   * "Route to … · route 91 ms" — the same fact stated twice.
+   */
+  readonly address: string;
   /** Milliseconds in each slot; `null` is a gap and is never drawn across. */
   readonly values: readonly (number | null)[];
   /** The colour the endpoint is identified by. */
@@ -83,6 +100,65 @@ export const formatAxisElapsed = (value: number | null | undefined): string => {
  * where it is never rounded.
  */
 export const LOG_FLOOR_MS = 0.01;
+
+/** One line's value at one moment, as the tooltip and the spoken readout state it. */
+export interface ChartReadingEntry {
+  /** The endpoint the line belongs to, so selecting the entry can pin it. */
+  readonly endpoint: string;
+  /** The endpoint's address, which is what the entry is named by. */
+  readonly address: string;
+  readonly colour: string;
+  /**
+   * Whether this is the route to the endpoint rather than the endpoint itself.
+   *
+   * The never-merge rule, applied to the tooltip: an entry for a route says *route*, and the
+   * word *ping* appears on no route entry in any form.
+   */
+  readonly isPath: boolean;
+  /** Milliseconds, or `null` where nothing came back in that slot. */
+  readonly valueMs: number | null;
+}
+
+/** Every line at one moment. */
+export interface ChartReading {
+  /** Seconds since monitoring began, for the moment being read. */
+  readonly elapsedSecs: number | null;
+  readonly entries: readonly ChartReadingEntry[];
+}
+
+/**
+ * What every line was doing at one slot.
+ *
+ * **Every line, not the nearest one.** The chart's stated job is "which of these is the odd
+ * one out", and at a given second that is a question about all of them at once — so the
+ * tooltip is the legend the chart never had, rather than a label for whatever the pointer
+ * happened to be near.
+ *
+ * Worst first, which is the order the list beside the chart is already in, so the two agree.
+ * A line with nothing in that slot sorts last and keeps its `null`: it is read out as *no
+ * reply*, never as `0` and never by being quietly left out of the list, because a silently
+ * missing entry is indistinguishable from a line that is doing fine.
+ */
+export const readingAt = (
+  aligned: readonly (readonly (number | null)[])[],
+  lines: readonly ChartLine[],
+  slot: number,
+): ChartReading => {
+  const entries = lines.map((line, index) => ({
+    endpoint: line.endpoint,
+    address: line.address,
+    colour: line.colour,
+    isPath: line.isPath,
+    valueMs: aligned[index + 1]?.[slot] ?? null,
+  }));
+  entries.sort((left, right) => {
+    if (left.valueMs === null && right.valueMs === null) return 0;
+    if (left.valueMs === null) return 1;
+    if (right.valueMs === null) return -1;
+    return right.valueMs - left.valueMs;
+  });
+  return { elapsedSecs: aligned[0]?.[slot] ?? null, entries };
+};
 
 /**
  * Pairs the shared time axis with every line, in the layout uPlot wants.

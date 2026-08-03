@@ -137,6 +137,12 @@
       "caption": "One point per {{seconds}} s · log scale",
       "axisMs": "ms",
       "axisElapsed": "Time watched",
+      "at": "At {{time}}",
+      "entryPing": "{{endpoint}} · ping {{value}}",
+      "entryRoute": "{{endpoint}} · route {{value}}",
+      "entryNone": "{{endpoint}} · no reply",
+      "pinHint": "Select to keep it and jump to its row",
+      "keyboard": "Left and right arrows move through time, up and down move between endpoints, Enter keeps one selected.",
       "highlight": "Highlight on the chart",
       "failed": "The chart could not be drawn ({{reason}}). Every figure it would show is in the list below."
     },

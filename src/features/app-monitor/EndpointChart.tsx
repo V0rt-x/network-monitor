@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import uPlot from 'uplot';
 
-import type { ChartLine } from './chartSeries';
-import { alignSeries, formatAxisElapsed, formatAxisMs } from './chartSeries';
+import { useFigures } from '../../shared/useFigures';
+import type { ChartLine, ChartReadingEntry } from './chartSeries';
+import { alignSeries, formatAxisElapsed, formatAxisMs, readingAt } from './chartSeries';
 
 interface EndpointChartProps {
   /**
@@ -19,7 +20,7 @@ interface EndpointChartProps {
   readonly highlighted: string | null;
   /** Called with the endpoint under the cursor, or `null` when it leaves. */
   readonly onHover: (endpoint: string | null) => void;
-  /** Called when a line is clicked, which pins the selection. */
+  /** Called when an endpoint is chosen, which pins it and brings its row into view. */
   readonly onSelect: (endpoint: string) => void;
   /** Accessible description; every figure it draws is also in the list beside it. */
   readonly label: string;
@@ -59,29 +60,44 @@ const AXIS_LABEL_FONT = '12px "Segoe UI", system-ui, sans-serif';
 const AXIS_STROKE = '#b1bac4';
 const GRID_STROKE = '#30363d';
 
+/** How wide the tooltip is, in pixels, for deciding which side of the cursor it goes on. */
+const TOOLTIP_WIDTH = 260;
+
 /**
- * Every endpoint of one application on one time axis.
+ * Every endpoint of one application on one time axis, and a surface that can be read.
  *
  * The page's list of rows answers "how is this endpoint". The question a user actually has
  * during a match is "which of these is the odd one out", and only a shared axis answers it:
  * sixteen separate sparklines can be scanned but not compared.
  *
- * Four rules it exists to keep:
+ * Rules it exists to keep:
  *
  * **The silent endpoint is on the chart.** A game's match server answers nothing, so it has
  * no round trip to draw — and it is the endpoint the whole product is for. It appears as the
  * route to it, dashed and named as the route, sharing the axis but never the meaning. A
  * dashed line at 40 ms is not a 40 ms ping to the server; the row beside it says so in
- * words, and the chart says so by not drawing it like the others.
+ * words, the chart says so by not drawing it like the others, and the tooltip says so by
+ * naming its quantity *route*. The word *ping* appears on no route entry anywhere.
  *
  * **Gaps stay gaps.** uPlot does not span a `null`, so an outage is a break in the line
- * rather than a straight segment drawn through it.
+ * rather than a straight segment drawn through it — and a slot with nothing in it reads
+ * *no reply* rather than `0` or a silently missing tooltip entry.
  *
  * **Colour identifies, it never states.** The list, ordered worst first, is the authority on
- * health. A line's colour says which endpoint it is and nothing else.
+ * health. A line's colour says which endpoint it is and nothing else, and the tooltip carries
+ * no word about health for the same reason: a second opinion would contradict the first the
+ * moment two endpoints shared a state.
+ *
+ * **The chart is a reading surface, not a picture.** It had no legend, no cursor point and no
+ * tooltip, and the only effect of hovering a line happened somewhere else — a row that might
+ * be off screen. Now: a tooltip listing every line at the pointed moment, a crosshair saying
+ * which moment that is, selection that pins the endpoint *and* brings its row into view, and
+ * the same keyboard the check strip on the services page already had. Scrolling happens on
+ * selection only; scrolling on hover is nauseating.
  *
  * **Nothing here drives sampling.** Rust emits at its own rate and emits nothing at all
- * while the window is hidden, so a chart of sixteen series costs no canvas work in the tray.
+ * while the window is hidden, and the tooltip and crosshair are drawn only in response to a
+ * pointer or a key — so in the tray this costs exactly nothing.
  */
 export const EndpointChart = ({
   elapsedSecs,
@@ -92,9 +108,21 @@ export const EndpointChart = ({
   label,
 }: EndpointChartProps) => {
   const { t } = useTranslation();
+  const figures = useFigures();
+  const keyboardId = useId();
   const host = useRef<HTMLDivElement>(null);
   const plot = useRef<uPlot | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+
+  // Which moment is being read, and which line inside it. `null` is nobody pointing at or
+  // arrowing through the chart, which is the state it spends most of its life in.
+  const [slot, setSlot] = useState<number | null>(null);
+  const [focused, setFocused] = useState(0);
+  // Where to put the tooltip, in pixels from the left of the chart's frame.
+  const [cursorX, setCursorX] = useState(0);
+
+  const aligned = useMemo(() => alignSeries(elapsedSecs, lines), [elapsedSecs, lines]);
+  const slots = aligned[0]?.length ?? 0;
 
   // Read by uPlot's stroke callbacks at draw time. Kept in refs so that hovering a line
   // recolours the chart with a redraw rather than by tearing it down and rebuilding it.
@@ -102,12 +130,8 @@ export const EndpointChart = ({
   currentLines.current = lines;
   const currentHighlight = useRef<string | null>(highlighted);
   currentHighlight.current = highlighted;
-  const currentElapsed = useRef<readonly (number | null)[]>(elapsedSecs);
-  currentElapsed.current = elapsedSecs;
-  const notifyHover = useRef(onHover);
-  notifyHover.current = onHover;
-  const notifySelect = useRef(onSelect);
-  notifySelect.current = onSelect;
+  const currentAligned = useRef(aligned);
+  currentAligned.current = aligned;
 
   // The chart is rebuilt when the *set* of lines changes — an endpoint appearing or going
   // away — and only then. New numbers for the same endpoints are a `setData`, which is what
@@ -142,6 +166,11 @@ export const EndpointChart = ({
             // can answer at all; without it every series is always focused.
             focus: { prox: HOVER_PROXIMITY },
             points: { show: false },
+            // The vertical crosshair, and no horizontal one: which *moment* the tooltip is
+            // about is the thing that needs saying, and a value line across a logarithmic
+            // axis invites reading a number off the axis that the tooltip already states.
+            x: true,
+            y: false,
           },
           scales: {
             x: { time: false },
@@ -204,17 +233,28 @@ export const EndpointChart = ({
             })),
           ],
           hooks: {
+            // Which moment the pointer is over. This is what turns the chart from a picture
+            // into something that can be read: the tooltip is built from the slot, not from
+            // whichever line happened to be nearest.
+            setCursor: [
+              (self: uPlot) => {
+                const index = self.cursor.idx;
+                setSlot(index ?? null);
+                setCursorX((self.cursor.left ?? 0) + self.over.offsetLeft);
+              },
+            ],
             setSeries: [
               (_chart: uPlot, seriesIdx: number | null) => {
-                const line = seriesIdx === null ? undefined : currentLines.current[seriesIdx - 1];
-                notifyHover.current(line?.endpoint ?? null);
+                if (seriesIdx === null) return;
+                // uPlot's series indices are one ahead of ours: index zero is the x axis.
+                setFocused(seriesIdx - 1);
               },
             ],
           },
         },
         // Built with the data it will draw, not with empty arrays. A logarithmic scale has
         // no range to compute from nothing, and uPlot decides its scales at construction.
-        alignSeries(currentElapsed.current, drawn) as unknown as uPlot.AlignedData,
+        currentAligned.current as unknown as uPlot.AlignedData,
         element,
       );
     } catch (error) {
@@ -238,31 +278,191 @@ export const EndpointChart = ({
   useEffect(() => {
     const chart = plot.current;
     if (!chart) return;
-    const data = alignSeries(elapsedSecs, lines);
-    if ((data[0]?.length ?? 0) === 0) return;
-    chart.setData(data as unknown as uPlot.AlignedData);
-  }, [elapsedSecs, lines]);
+    if ((aligned[0]?.length ?? 0) === 0) return;
+    chart.setData(aligned as unknown as uPlot.AlignedData);
+  }, [aligned]);
 
   // A redraw rather than a rebuild: the data has not changed, only which line is raised.
   useEffect(() => {
     plot.current?.redraw();
   }, [highlighted]);
 
+  const reading = slot === null ? null : readingAt(aligned, lines, slot);
+  const entries = reading?.entries ?? [];
+  // Which entry the reader is on. The focused *line* is an index into `lines`; the tooltip
+  // is sorted worst first, so it has to be found rather than indexed.
+  const focusedEndpoint = lines[focused]?.endpoint ?? null;
+
+  /** How one line's value at this moment is written, in the tooltip and in the readout. */
+  const entryText = (entry: ChartReadingEntry): string => {
+    if (entry.valueMs === null) return t('apps.chart.entryNone', { endpoint: entry.address });
+    const value = figures.ms(entry.valueMs);
+    // The never-merge rule, applied to the tooltip. A route is a round trip to a router
+    // short of the endpoint, and calling it a ping here would undo everything the dashed
+    // line and the row's own labels do.
+    return entry.isPath
+      ? t('apps.chart.entryRoute', { endpoint: entry.address, value })
+      : t('apps.chart.entryPing', { endpoint: entry.address, value });
+  };
+
+  /** Moves the read moment, opening at the newest slot when nothing was being read. */
+  const stepSlot = (by: number) => {
+    setSlot((current) => {
+      if (slots === 0) return null;
+      const next = (current ?? slots - 1) + by;
+      return Math.min(Math.max(next, 0), slots - 1);
+    });
+  };
+
+  /** Moves between lines, wrapping, so a keyboard reader can reach all of them. */
+  const stepLine = (by: number) => {
+    if (lines.length === 0) return;
+    const next = (focused + by + lines.length) % lines.length;
+    setFocused(next);
+    onHover(lines[next]?.endpoint ?? null);
+  };
+
+  // Keeps the crosshair with the keyboard. uPlot draws its cursor where it was last told
+  // the pointer was, so arrowing through time without this would move the tooltip and leave
+  // the line behind.
+  useEffect(() => {
+    const chart = plot.current;
+    if (!chart || slot === null) return;
+    const x = aligned[0]?.[slot];
+    if (x === null || x === undefined) return;
+    const left = chart.valToPos(x, 'x');
+    if (!Number.isFinite(left)) return;
+    setCursorX(left + chart.over.offsetLeft);
+  }, [slot, aligned]);
+
   return (
     <>
       <div
-        className="nm-endpointchart"
-        ref={host}
-        role="img"
-        aria-label={label}
-        onMouseLeave={() => {
-          onHover(null);
+        className="nm-endpointchart__frame"
+        // Let go of the moment only when focus leaves the chart *and* its tooltip. Clearing
+        // it on the chart's own blur closed the tooltip the instant a reader tabbed or
+        // clicked into it — which is to say, exactly when they were choosing an entry.
+        onBlur={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          setSlot(null);
         }}
-        onClick={() => {
-          // uPlot has already told us which line the cursor is nearest; a click pins it.
-          if (highlighted !== null) onSelect(highlighted);
-        }}
-      />
+      >
+        <div
+          className="nm-endpointchart"
+          ref={host}
+          // One tab stop for the whole chart, with the arrows inside it — the same shape the
+          // check strip on the services page has had all along, and which the far more
+          // important surface here did not.
+          tabIndex={0}
+          role="img"
+          aria-label={label}
+          // How to operate it, said to whoever lands on it and to nobody else. A standing
+          // instruction printed under every chart is the prose the page exists not to carry.
+          aria-describedby={keyboardId}
+          onMouseLeave={() => {
+            onHover(null);
+            setSlot(null);
+          }}
+          onClick={() => {
+            // uPlot has already told us which line the cursor is nearest; a click pins it
+            // and brings its row into view.
+            if (focusedEndpoint !== null) onSelect(focusedEndpoint);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') stepSlot(-1);
+            else if (event.key === 'ArrowRight') stepSlot(1);
+            else if (event.key === 'ArrowUp') stepLine(-1);
+            else if (event.key === 'ArrowDown') stepLine(1);
+            else if (event.key === 'Home') setSlot(0);
+            else if (event.key === 'End') setSlot(slots === 0 ? null : slots - 1);
+            else if (event.key === 'Enter') {
+              if (focusedEndpoint !== null) onSelect(focusedEndpoint);
+            } else if (event.key === 'Escape') {
+              setSlot(null);
+              onHover(null);
+            } else return;
+            // Only for the keys the chart handled: the page must still scroll on the rest.
+            event.preventDefault();
+          }}
+        />
+
+        {/* The legend the chart never had, the readout of the moment, and the way into the
+            row — one thing rather than three. It lists every line, because "which of these
+            is the odd one out" is a question about all of them at that second. */}
+        {reading !== null && entries.length > 0 && (
+          <div
+            className="nm-charttip"
+            role="presentation"
+            style={
+              // Flipped at the right-hand edge, exactly as the explanation panels are: a
+              // tooltip half outside the window is the one thing on screen that cannot be
+              // read.
+              cursorX + TOOLTIP_WIDTH > (host.current?.clientWidth ?? 0)
+                ? { right: `${String(Math.max(0, (host.current?.clientWidth ?? 0) - cursorX))}px` }
+                : { left: `${String(cursorX)}px` }
+            }
+          >
+            <p className="nm-charttip__at">
+              {t('apps.chart.at', { time: formatAxisElapsed(reading.elapsedSecs) })}
+            </p>
+            <ul className="nm-charttip__lines">
+              {entries.map((entry) => (
+                <li
+                  key={`${entry.endpoint}${entry.isPath ? ':path' : ''}`}
+                  className={
+                    entry.endpoint === focusedEndpoint
+                      ? 'nm-charttip__line nm-charttip__line--focused'
+                      : 'nm-charttip__line'
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      // The chart's own click handler would fire too and pin whatever the
+                      // pointer happened to be nearest instead of what was chosen.
+                      event.stopPropagation();
+                      onSelect(entry.endpoint);
+                    }}
+                  >
+                    <span
+                      className="nm-charttip__swatch"
+                      style={{ backgroundColor: entry.colour }}
+                      aria-hidden="true"
+                    />
+                    {entryText(entry)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="nm-charttip__hint">{t('apps.chart.pinHint')}</p>
+          </div>
+        )}
+        <span id={keyboardId} className="nm-visually-hidden">
+          {t('apps.chart.keyboard')}
+        </span>
+      </div>
+
+      {/* Polite rather than assertive: a reading the user asked for by pointing or by
+          arrowing, not an announcement that should interrupt. The focused line is spoken
+          first and the rest follow, so the region carries what the tooltip shows without
+          making a keyboard reader wait through fifteen lines for the one they moved to. */}
+      <p className="nm-endpointchart__readout" role="status">
+        {reading === null
+          ? ''
+          : [
+              t('apps.chart.at', { time: formatAxisElapsed(reading.elapsedSecs) }),
+              ...[...entries]
+                .sort((left, right) =>
+                  left.endpoint === focusedEndpoint
+                    ? -1
+                    : right.endpoint === focusedEndpoint
+                      ? 1
+                      : 0,
+                )
+                .map(entryText),
+            ].join(' · ')}
+      </p>
+
       {failure !== null && (
         <p className="nm-state--degraded" role="alert">
           {t('apps.chart.failed', { reason: failure })}

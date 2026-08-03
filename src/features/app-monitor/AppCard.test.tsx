@@ -13,19 +13,25 @@ vi.mock('./EndpointChart', () => ({
   EndpointChart: ({
     lines,
     label,
+    onSelect,
   }: {
-    lines: { label: string; isPath: boolean }[];
+    lines: { endpoint: string; label: string; isPath: boolean }[];
     label: string;
+    onSelect: (endpoint: string) => void;
   }) => (
     <div data-testid="chart" aria-label={label}>
       {lines.map((line) => (
         // In an attribute rather than as text: the addresses are already on the page, in the
         // list, and a stand-in that repeated them would make every query ambiguous.
-        <span
+        <button
+          type="button"
           key={line.label}
           data-testid="chart-line"
           data-label={line.label}
           data-path={String(line.isPath)}
+          onClick={() => {
+            onSelect(line.endpoint);
+          }}
         />
       ))}
     </div>
@@ -1054,6 +1060,42 @@ describe('AppCard', () => {
     expect(rows[0]?.className).toContain('nm-endpoint--raised');
     expect(rows[1]?.className).toContain('nm-endpoint--dimmed');
     expect(screen.getByText('1.1.1.2:443')).toBeInTheDocument();
+  });
+
+  it('brings a row chosen on the chart into view instead of highlighting it blind', async () => {
+    // The complaint this answers: hovering a line highlighted a row that might be off
+    // screen, so the only effect of touching the chart happened somewhere the reader was not
+    // looking. On selection only — scrolling on hover is nauseating.
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'a', address: '1.1.1.1:27015' }),
+            endpoint({ key: 'b', address: '1.1.1.2:443' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    const [line] = screen
+      .getAllByTestId('chart-line')
+      .filter((node) => node.getAttribute('data-label') === '1.1.1.2:443');
+    if (!line) throw new Error('the chart drew no line for that endpoint');
+    await userEvent.click(line);
+
+    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' });
+    // And it is pinned, so what was scrolled to is also what is raised.
+    const rows = screen
+      .getAllByRole('listitem')
+      .filter((row) => row.className.includes('nm-endpoint'));
+    expect(rows.find((row) => row.id.endsWith('b'))?.className).toContain('nm-endpoint--raised');
   });
 
   it('lets a pinned endpoint be released again', async () => {

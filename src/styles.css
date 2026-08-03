@@ -715,6 +715,12 @@ body {
 /* One chart per application, every endpoint on it. The list below is the authority on
    health; this answers "which of these is the odd one out", which a column of separate
    sparklines cannot. */
+/* The chart and its tooltip share a positioning context: the tooltip is placed in pixels
+   from the left of this frame, at whichever moment is being read. */
+.nm-endpointchart__frame {
+  position: relative;
+}
+
 .nm-endpointchart {
   width: 100%;
   /* Reserves the chart's height before it is drawn. Without it the card jumps as data
@@ -728,6 +734,83 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-2);
+}
+
+/*
+ * The tooltip, which is also the legend and the way into a row.
+ *
+ * The chart had none of the three: no legend, no cursor point, no tooltip, and the only
+ * effect of hovering a line happened in a row that might be off screen. It lists every line
+ * at the pointed moment, because "which of these is the odd one out" is a question about all
+ * of them at that second.
+ */
+.nm-charttip {
+  position: absolute;
+  z-index: 10;
+  top: var(--nm-space-2);
+  width: 16rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
+  padding: var(--nm-space-2);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+  background: var(--nm-surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+  font-size: var(--nm-text-xs);
+  /* It follows the pointer, so it must never be the thing the pointer lands on — except for
+     its own entries, which are how a reader chooses an endpoint. */
+  pointer-events: none;
+}
+
+.nm-charttip__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-hairline);
+}
+
+.nm-charttip__at,
+.nm-charttip__hint {
+  margin: 0;
+  color: var(--nm-muted);
+}
+
+.nm-charttip__line button {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--nm-space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nm-charttip__line--focused {
+  color: var(--nm-text);
+  font-weight: 600;
+}
+
+/* Identity, never state — the same rule the row swatch keeps. */
+.nm-charttip__swatch {
+  width: var(--nm-space-2);
+  height: var(--nm-space-2);
+  border-radius: var(--nm-radius-sm);
+  flex: none;
+}
+
+.nm-endpointchart__readout {
+  margin: 0;
+  min-height: 1.1rem;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-xs);
 }
 
 .nm-appcard__chartnote {

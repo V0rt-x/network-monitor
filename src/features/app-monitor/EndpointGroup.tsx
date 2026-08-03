@@ -3,12 +3,15 @@ import { useTranslation } from 'react-i18next';
 
 import type { EndpointGroupView, FlowStatusView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
+import { rowIdOf } from './chartSeries';
 import { Distribution } from './Distribution';
 import { EndpointRow } from './EndpointRow';
 import { holdPlace } from './holdPlace';
 import { groupKey, groupTopic } from './labels';
 
 interface EndpointGroupProps {
+  /** Which application these rows belong to, so a chart selection can find one. */
+  readonly appId: number;
   readonly group: EndpointGroupView;
   /** Whether per-process flow events are running, which decides why a UDP group is empty. */
   readonly flowStatus: FlowStatusView;
@@ -46,6 +49,7 @@ interface EndpointGroupProps {
  * a game that plays over nothing.
  */
 export const EndpointGroup = ({
+  appId,
   group,
   flowStatus,
   trafficWindowSecs,
@@ -78,6 +82,7 @@ export const EndpointGroup = ({
       {shown.map((endpoint, index) => (
         <EndpointRow
           key={endpoint.key}
+          id={rowIdOf(appId, endpoint.key)}
           endpoint={endpoint}
           trafficWindowSecs={trafficWindowSecs}
           colour={colourOf(endpoint.key)}

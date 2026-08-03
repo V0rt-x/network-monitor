@@ -29,6 +29,8 @@ const egressLine = (endpoint: EndpointView, t: TFunction): string => {
 };
 
 interface EndpointRowProps {
+  /** The row's own identifier, so a selection on the chart can bring it into view. */
+  readonly id: string;
   readonly endpoint: EndpointView;
   /** Span the byte count covers, so the traffic figure can say what it is a count of. */
   readonly trafficWindowSecs: number;
@@ -87,6 +89,7 @@ interface EndpointRowProps {
  * words.
  */
 export const EndpointRow = ({
+  id,
   endpoint,
   trafficWindowSecs,
   colour,
@@ -108,6 +111,7 @@ export const EndpointRow = ({
 
   return (
     <li
+      id={id}
       className={`nm-endpoint ${modifiers}`.trimEnd()}
       onMouseEnter={() => {
         onHover(endpoint.key);

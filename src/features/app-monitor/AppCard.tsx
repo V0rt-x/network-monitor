@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { AppView, FlowStatusView } from '../../shared/ipc';
 import { VerdictBanner } from '../../shared/VerdictBanner';
 import type { ChartLine } from './chartSeries';
+import { rowIdOf } from './chartSeries';
 import { Distribution } from './Distribution';
 import { EndpointChart } from './EndpointChart';
 import { EndpointColours } from './endpointColours';
@@ -100,6 +101,20 @@ export const AppCard = ({
     setPinned((current) => (current?.key === key ? null : { key, at: index }));
   };
 
+  /**
+   * Pins an endpoint chosen on the chart, and brings its row into view.
+   *
+   * The complaint this answers: hovering a line highlighted a row that might be off screen,
+   * so the only effect of touching the chart happened somewhere the reader was not looking.
+   * On selection only — scrolling on hover is nauseating — and `nearest`, so a row already
+   * visible does not move at all.
+   */
+  const chooseFromChart = (key: string) => {
+    pin(key);
+    const row = document.getElementById(rowIdOf(app.id, key));
+    if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+  };
+
   const lines = useMemo(() => {
     colours.current.reconcile(endpoints.map((endpoint) => endpoint.key));
     const drawn: ChartLine[] = [];
@@ -108,6 +123,7 @@ export const AppCard = ({
       if (endpoint.chartRttMs.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
+          address: endpoint.address,
           transport: endpoint.transport,
           label: endpoint.address,
           values: endpoint.chartRttMs,
@@ -121,6 +137,7 @@ export const AppCard = ({
       if (endpoint.chartPathMs.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
+          address: endpoint.address,
           transport: endpoint.transport,
           label: t('apps.chart.pathSeries', { endpoint: endpoint.address }),
           values: endpoint.chartPathMs,
@@ -191,7 +208,7 @@ export const AppCard = ({
             lines={lines}
             highlighted={highlighted}
             onHover={setHovered}
-            onSelect={pin}
+            onSelect={chooseFromChart}
             label={t('apps.chart.label', { name: app.name })}
           />
           {/* A caption, not a paragraph. Six sentences of drawing decisions — the log
@@ -215,6 +232,7 @@ export const AppCard = ({
       {app.groups.map((group) => (
         <EndpointGroup
           key={group.transport}
+          appId={app.id}
           group={group}
           flowStatus={flowStatus}
           trafficWindowSecs={trafficWindowSecs}

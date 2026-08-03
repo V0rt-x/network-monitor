@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChartLine } from './chartSeries';
-import { alignSeries, formatAxisElapsed, formatAxisMs, LOG_FLOOR_MS } from './chartSeries';
+import {
+  alignSeries,
+  formatAxisElapsed,
+  formatAxisMs,
+  LOG_FLOOR_MS,
+  readingAt,
+} from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
   transport: 'udp',
   label: '1.1.1.1:27015',
+  address: '1.1.1.1:27015',
   values,
   colour: '#58a6ff',
   isPath: false,
@@ -128,5 +135,47 @@ describe('formatAxisElapsed', () => {
     expect(formatAxisElapsed(3_600)).toBe('1:00:00');
     expect(formatAxisElapsed(39_130)).toBe('10:52:10');
     expect(formatAxisElapsed(3_599)).toBe('59:59');
+  });
+});
+
+describe('readingAt', () => {
+  const rtt = line([24, 26, 25]);
+  const slow = line([80, 91, null], {
+    endpoint: 'udp/1.1.1.2:27015',
+    address: '1.1.1.2:27015',
+    label: '1.1.1.2:27015',
+  });
+
+  it('reports every line at the moment, not the nearest one', () => {
+    // The chart's stated job is "which of these is the odd one out", and at a given second
+    // that is a question about all of them at once.
+    const reading = readingAt(alignSeries([0, 3, 6], [rtt, slow]), [rtt, slow], 1);
+
+    expect(reading.elapsedSecs).toBe(3);
+    expect(reading.entries).toHaveLength(2);
+  });
+
+  it('orders them worst first, the way the list beside the chart already is', () => {
+    const reading = readingAt(alignSeries([0, 3, 6], [rtt, slow]), [rtt, slow], 1);
+
+    expect(reading.entries.map((entry) => entry.valueMs)).toEqual([91, 26]);
+  });
+
+  it('keeps a slot with nothing in it, last and still absent', () => {
+    // Dropping it would be indistinguishable from a line that is doing fine; turning it into
+    // a zero would be a measurement that did not happen.
+    const reading = readingAt(alignSeries([0, 3, 6], [rtt, slow]), [rtt, slow], 2);
+
+    expect(reading.entries.map((entry) => entry.valueMs)).toEqual([25, null]);
+  });
+
+  it('carries which of its entries is a route, so the tooltip can never call one a ping', () => {
+    const route = line([80], { isPath: true });
+    const reading = readingAt(alignSeries([0], [route]), [route], 0);
+
+    expect(reading.entries[0]?.isPath).toBe(true);
+    // And it is named by the address, not by the "Route to …" label the chart draws with:
+    // the quantity is stated separately, so the entry never says the same thing twice.
+    expect(reading.entries[0]?.address).toBe('1.1.1.1:27015');
   });
 });
