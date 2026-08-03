@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::view::{AppView, DiagnosisView, FlowStatusView, GroupView, ServiceView};
+use crate::view::{AppView, DiagnosisView, FlowStatusView, NetworkSectionView};
 
 /// Liveness signal proving the Rust core is running and the event channel is wired.
 ///
@@ -26,58 +26,38 @@ pub struct CoreHeartbeat {
     pub uptime_secs: u32,
 }
 
-/// The general-health picture: both baselines and every target in them.
+/// The Network page: every target, in four sections, and what they add up to.
 ///
 /// Emitted once a second while the window is visible, and not at all while it is hidden —
-/// see `crate::runtime`.
+/// see `crate::runtime`. Most emissions resend the same numbers, because the slowly checked
+/// sections change on the scale of minutes; that is the right trade against a page that
+/// would otherwise be blank for most of a minute after the user opened it.
+///
+/// One event, where there were two. The baselines and the service list were two payloads
+/// carrying two shapes of the same object, and two of the foreign baseline's four entries
+/// were the same addresses as two service endpoints — probed twice, drawn twice, in two
+/// visual languages, under two names.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
-pub struct NetworkHealth {
+pub struct NetworkSnapshot {
     /// Whole seconds the core has been running, on a monotonic clock.
     pub uptime_secs: u32,
-    /// Length of the window every figure is computed over, in seconds.
-    pub window_secs: u32,
-    /// What the two baselines say together.
-    ///
-    /// The comparison, not either column: domestic and foreign both failing points at the
-    /// user's own line, domestic clean with foreign failing points at the path out of the
-    /// country, and neither group means much on its own. It is the only claim on this page
-    /// that is a conclusion rather than a measurement, and it stays a claim about a
-    /// *network path* — never about a policy, a country or a company.
-    pub diagnosis: DiagnosisView,
-    /// The baselines, domestic first.
-    pub groups: Vec<GroupView>,
-}
-
-/// Whether each service on the status page is reachable from this machine.
-///
-/// Emitted on the same beat as [`NetworkHealth`] and, like it, not at all while the window
-/// is hidden. The checks themselves run far slower — see
-/// [`crate::status::CHECK_INTERVAL`] — so most emissions resend the same numbers; that is
-/// the right trade against a page that would otherwise be blank for most of a minute after
-/// the user opened it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, tauri_specta::Event)]
-#[serde(rename_all = "camelCase")]
-pub struct ServiceStatus {
-    /// How often each endpoint is checked, in seconds.
-    ///
-    /// Stated because it is what makes "last checked" readable: a figure forty seconds old
-    /// is current at this cadence and would be stale at the dashboard's.
-    pub check_interval_secs: u32,
-    /// Span the latency and loss figures are computed over, in seconds.
-    ///
-    /// The same span the strip covers, by construction — the window is defined as however
-    /// long [`crate::status::TIMELINE_POINTS`] checks take — so the figures and the cells
-    /// beside them describe one stretch of time rather than quietly disagreeing.
-    pub window_secs: u32,
     /// How many cells a full strip holds.
     ///
     /// Sent rather than counted from the cells, because a fresh endpoint has fewer of them
     /// and the page's legend states what a *full* strip covers. Without it the legend would
     /// either grow its own claim as the history filled or be arithmetic in the frontend.
     pub timeline_points: u32,
-    /// The services, in list order.
-    pub services: Vec<ServiceView>,
+    /// What the two verdict-bearing sections say together.
+    ///
+    /// The comparison, not either one: domestic and foreign both failing points at the
+    /// user's own line, domestic clean with foreign failing points at the path out of the
+    /// country, and neither means much alone. It is the only claim on this page that is a
+    /// conclusion rather than a measurement, and it stays a claim about a *network path* —
+    /// never about a policy, a country or a company.
+    pub diagnosis: DiagnosisView,
+    /// The sections, in the order the page shows them.
+    pub sections: Vec<NetworkSectionView>,
 }
 
 /// What every monitored application is talking to, and how each of those paths is doing.

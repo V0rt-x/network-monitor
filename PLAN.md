@@ -2166,7 +2166,7 @@ it waits on none of the contested decisions.
 
 ### P5 — the Network page becomes one page
 
-- [ ] **27. Merge the two halves of Network into a single list.** *Instructed by the user on
+- [x] **27. Merge the two halves of Network into a single list.** *Instructed by the user on
       2026-08-03, and it reverses Phase 6.6 item 5's "an arrangement, not a blend".* That item
       put the baselines and the service cards on one page and deliberately left them as two
       compositions. The user's reading of the result: we measure the same thing and draw it
@@ -2218,7 +2218,7 @@ it waits on none of the contested decisions.
       one legend for the whole page, one caveat, and each section stating its own cadence at
       level two. The two baseline sections carry a marker saying they are what the verdict was
       drawn from, so the banner above stays checkable against the rows below.
-- [ ] **28. Rows fold to one line** — name, state, strip, `Ping (RTT)` — with endpoints, badges
+- [x] **28. Rows fold to one line** — name, state, strip, `Ping (RTT)` — with endpoints, badges
       and the remaining figures at level two. Rows worse than `Ok` start open. *Approved
       2026-08-03.* Applies to the whole merged list, not to services alone; twenty-three cards
       each carrying a strip and three figures per endpoint turns "which of these is red" into a
@@ -2247,27 +2247,44 @@ it waits on none of the contested decisions.
   five, and **measures no address twice** — a test walks the bundled target lists and fails on
   a duplicate.
 
-**Phase 6.7 status: 29 of the 31 items are done and every quality gate is green. Two are
-open, both of them P5, and they are the same piece of work.**
+**Phase 6.7 status: every item is done and every quality gate is green.**
 
-- **Item 27, the Network merge, is not started**, and it is deliberately left whole rather
-  than begun. It is the only item in the phase that is not a change to the frontend: it
-  rewrites the target schema so that "domestic baseline" and "foreign baseline" become *tags*
-  rather than inventories, deletes the duplicate entries that currently cause
-  `discord.com` and `api.steampowered.com` to be probed twice, gives baseline targets a
-  history of check marks so the strip can replace the sparkline, and converges
-  `GroupView`/`TargetView` and `ServiceView`/`ServiceEndpointView` onto one row shape. That
-  is `assets/targets/*`, `baselines.rs`, `services.rs`, `monitor.rs`, `view.rs`, and then
-  the whole of both pages and their tests — comparable in size to the rest of this phase put
-  together. Half-landing it would leave two target schemas and two row components, which is
-  the state the item exists to end.
-- **Item 28 waits on it**, and not only for convenience. A service card's headline figure is
-  a *median across its endpoints*; the review's folded row shows `Ping (RTT)`, which is a
-  single round trip. Folding the cards before the merge would therefore put the wrong name on
-  the most prominent figure of the page — exactly the class of mistake this phase is
-  correcting. After item 27 each endpoint is a row and the name is true.
-- Items 29 and 30 landed on the pages as they stand, and the merge inherits them: the count
-  chips and `MetricRow` are shared components used by all three pages already.
+What item 27 actually cost, recorded because the shape of it was not obvious from the
+review: it is the only item in the phase that was not a change to the frontend.
+
+- **One inventory replaced two schemas.** `baselines.rs` and `services.rs` became
+  `targets.rs`, schema v2, where a target names the [`Section`] it is listed under and the
+  file may state one for all of its entries. "Domestic" and "foreign" stopped being separate
+  inventories and became two of the four sections — which is what they always were, and
+  exactly why two of them had turned out to be copies of service entries.
+- **No address is measured twice, and a test walks the bundled lists to keep it that way.**
+  `discord.com` and `api.steampowered.com` were in `foreign.json` *and* in `services.json`.
+  A hard error rather than a deduplication: which of two entries the reader is meant to see
+  is a question only a person can answer.
+- **The foreign sample is not two DNS resolvers in a trenchcoat.** Deleting the duplicates
+  naïvely would have collapsed the foreign evidence to two anycast resolvers, which are
+  reachable almost everywhere — a thin and biased sample for the one verdict that decides
+  whether to suggest a VPN. Steam, Discord, Epic and Riot moved into the foreign section
+  wholesale, probed once, and a test asserts the sample stays wider than its resolvers.
+- **One monitor replaced two.** `monitor.rs` and `status.rs` became `network.rs`. They had
+  been the same shape all along — an entry per endpoint, a row per named thing, a history
+  each — over two target schemas.
+- **The measurement layer did *not* merge, and that is now stated in one place.**
+  `Section::judged_by_window` decides whether a section is judged by `nm_core::health`'s
+  window or `nm_core::status`'s reaction rule. A figure computed across both would be the
+  smoothing 6.6 forbade. The cadence difference stopped being two subsystems and became
+  `targets::interval_for` — a number, as the review said.
+- **`Sparkline` is the one thing that went rather than moved down a level**, and it went
+  because the element replacing it carries more: it stroked round-trip time in a colour that
+  *stated health*, the one rule about colour this product keeps everywhere else, while
+  `CheckTimeline` names six distinguishable outcomes in words.
+- **Item 28 landed with it**, and it had to: a service card's headline is a median across its
+  endpoints, and folding the cards before the merge would have put `Ping (RTT)` — a single
+  round trip — on it. After the merge each row's endpoints are level two and the name is true.
+
+Not verified, and not verifiable here: how any of it looks. The chart draws nothing under
+jsdom and no headless renderer can answer that question — Phase 7's five-title pass is where
+the whole page is read on a running build.
 
 ## Phase 7 — Polish, persistence, packaging
 

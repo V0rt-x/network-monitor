@@ -1,30 +1,47 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "foreign",
+  "section": "foreign",
   "targets": [
     {
       "id": "cloudflare-dns",
       "label": "Cloudflare DNS",
-      "address": "1.1.1.1",
-      "port": 443
+      "endpoints": [{ "id": "anycast", "address": "1.1.1.1", "port": 443 }]
     },
     {
       "id": "google-dns",
       "label": "Google DNS",
-      "address": "8.8.8.8",
-      "port": 443
-    },
-    {
-      "id": "discord",
-      "label": "Discord",
-      "address": "discord.com",
-      "port": 443
+      "endpoints": [{ "id": "anycast", "address": "8.8.8.8", "port": 443 }]
     },
     {
       "id": "steam",
       "label": "Steam",
-      "address": "api.steampowered.com",
-      "port": 443
+      "probeKind": "tcpConnect",
+      "endpoints": [
+        { "id": "api", "address": "api.steampowered.com", "port": 443 },
+        { "id": "store", "address": "store.steampowered.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "discord",
+      "label": "Discord",
+      "probeKind": "tcpConnect",
+      "endpoints": [
+        { "id": "web", "address": "discord.com", "port": 443 },
+        { "id": "gateway", "address": "gateway.discord.gg", "port": 443 }
+      ]
+    },
+    {
+      "id": "epic",
+      "label": "Epic Games",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "store", "address": "store.epicgames.com", "port": 443 }]
+    },
+    {
+      "id": "riot",
+      "label": "Riot Games",
+      "probeKind": "tcpConnect",
+      "endpoints": [{ "id": "web", "address": "www.riotgames.com", "port": 443 }]
     }
   ]
 }

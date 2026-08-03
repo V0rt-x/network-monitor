@@ -77,8 +77,7 @@ export const commands = {
 export const events = {
 	appEndpoints: makeEvent<AppEndpoints>("app-endpoints"),
 	coreHeartbeat: makeEvent<CoreHeartbeat>("core-heartbeat"),
-	networkHealth: makeEvent<NetworkHealth>("network-health"),
-	serviceStatus: makeEvent<ServiceStatus>("service-status"),
+	networkSnapshot: makeEvent<NetworkSnapshot>("network-snapshot"),
 };
 
 /* Types */
@@ -290,13 +289,6 @@ export type ApplicationListView = {
 	 */
 	problem: ApplicationListProblem | null,
 };
-
-/**  Which baseline a target belongs to. */
-export type BaselineGroup = 
-/**  Expected to be reachable inside the user's country. */
-"domestic" | 
-/**  Typically degraded or blocked at the country's border. */
-"foreign";
 
 /**
  *  How one status check read.
@@ -727,24 +719,6 @@ export type FlowView = {
 	receiveShortfallPct: number | null,
 };
 
-/**  One baseline, taken together. */
-export type GroupView = {
-	/**  Which baseline this is. */
-	group: BaselineGroup,
-	/**  The headline verdict. */
-	verdict: HealthView,
-	/**  The distribution behind it. Shown, never collapsed into the verdict. */
-	counts: HealthCountsView,
-	/**  Median round-trip time across the answering members, in milliseconds. */
-	rttMs: number | null,
-	/**  Median jitter across the answering members, in milliseconds. */
-	jitterMs: number | null,
-	/**  Loss across the group, weighted by probes. */
-	lossPct: number | null,
-	/**  The members, in list order. */
-	targets: TargetView[],
-};
-
 /**  How many members of a group are in each state. */
 export type HealthCountsView = {
 	/**  Members answering within every threshold. */
@@ -784,28 +758,111 @@ export type LivenessView =
 "idle";
 
 /**
- *  The general-health picture: both baselines and every target in them.
+ *  One row of the Network page: a named thing and its endpoints.
+ * 
+ *  The single row shape for the whole page. A baseline target and a gaming platform were two
+ *  view types drawn by two components in two visual languages, and half of one baseline was
+ *  literally a second copy of two service entries.
+ */
+export type NetworkRowView = {
+	/**  Identifier unique across the whole inventory. A React key. */
+	key: string,
+	/**  The operator's name for it, shown as written. A proper noun, never translated. */
+	label: string,
+	/**  The headline verdict for the row. */
+	health: HealthView,
+	/**
+	 *  The distribution behind it, shown whenever the row has more than one endpoint and
+	 *  never collapsed into the verdict — a storefront that answers while the gateway does
+	 *  not is the finding, and one amber dot would hide which half is broken.
+	 */
+	counts: HealthCountsView,
+	/**
+	 *  Median round-trip time across the answering endpoints, in milliseconds.
+	 * 
+	 *  *Ping (RTT)* on the row. One of exactly two names this product gives a round trip on
+	 *  this page; the other is *Ping, median* on a section heading.
+	 */
+	rttMs: number | null,
+	/**
+	 *  How many seconds ago the freshest check of this row completed.
+	 * 
+	 *  Stated because a page whose data has quietly stopped arriving looks exactly like one
+	 *  reporting good news. `null` before anything has been checked at all.
+	 */
+	lastCheckedSecs: number | null,
+	/**  Its endpoints, in list order. */
+	endpoints: RowEndpointView[],
+};
+
+/**  One section of the Network page, taken together. */
+export type NetworkSectionView = {
+	/**  Which section this is. */
+	section: Section,
+	/**
+	 *  Whether a verdict is drawn from it.
+	 * 
+	 *  Sent rather than derived in the frontend, because it is the same judgement the
+	 *  diagnosis engine makes and the page marks these sections so the banner above stays
+	 *  checkable against the rows below.
+	 */
+	readByVerdict: boolean,
+	/**  The headline verdict for the section. */
+	verdict: HealthView,
+	/**  The distribution behind it. Shown, never collapsed into the verdict. */
+	counts: HealthCountsView,
+	/**  Median round-trip time across the answering rows, in milliseconds. */
+	rttMs: number | null,
+	/**
+	 *  How often each of its targets is probed, in seconds.
+	 * 
+	 *  Per section rather than per page: the cadence difference between a baseline and a
+	 *  platform is now a number on a target rather than two subsystems, and each section
+	 *  states its own at level two.
+	 */
+	cadenceSecs: number,
+	/**  Span the figures in this section are computed over, in seconds. */
+	windowSecs: number,
+	/**  Its rows, in list order. */
+	rows: NetworkRowView[],
+};
+
+/**
+ *  The Network page: every target, in four sections, and what they add up to.
  * 
  *  Emitted once a second while the window is visible, and not at all while it is hidden —
- *  see `crate::runtime`.
+ *  see `crate::runtime`. Most emissions resend the same numbers, because the slowly checked
+ *  sections change on the scale of minutes; that is the right trade against a page that
+ *  would otherwise be blank for most of a minute after the user opened it.
+ * 
+ *  One event, where there were two. The baselines and the service list were two payloads
+ *  carrying two shapes of the same object, and two of the foreign baseline's four entries
+ *  were the same addresses as two service endpoints — probed twice, drawn twice, in two
+ *  visual languages, under two names.
  */
-export type NetworkHealth = {
+export type NetworkSnapshot = {
 	/**  Whole seconds the core has been running, on a monotonic clock. */
 	uptimeSecs: number,
-	/**  Length of the window every figure is computed over, in seconds. */
-	windowSecs: number,
 	/**
-	 *  What the two baselines say together.
+	 *  How many cells a full strip holds.
 	 * 
-	 *  The comparison, not either column: domestic and foreign both failing points at the
+	 *  Sent rather than counted from the cells, because a fresh endpoint has fewer of them
+	 *  and the page's legend states what a *full* strip covers. Without it the legend would
+	 *  either grow its own claim as the history filled or be arithmetic in the frontend.
+	 */
+	timelinePoints: number,
+	/**
+	 *  What the two verdict-bearing sections say together.
+	 * 
+	 *  The comparison, not either one: domestic and foreign both failing points at the
 	 *  user's own line, domestic clean with foreign failing points at the path out of the
-	 *  country, and neither group means much on its own. It is the only claim on this page
-	 *  that is a conclusion rather than a measurement, and it stays a claim about a
-	 *  *network path* — never about a policy, a country or a company.
+	 *  country, and neither means much alone. It is the only claim on this page that is a
+	 *  conclusion rather than a measurement, and it stays a claim about a *network path* —
+	 *  never about a policy, a country or a company.
 	 */
 	diagnosis: DiagnosisView,
-	/**  The baselines, domestic first. */
-	groups: GroupView[],
+	/**  The sections, in the order the page shows them. */
+	sections: NetworkSectionView[],
 };
 
 /**
@@ -1021,12 +1078,12 @@ export type ProbingView =
  */
 "demoted";
 
-/**  One endpoint of one status-page service. */
-export type ServiceEndpointView = {
-	/**  Identifier unique across the whole service list. */
+/**  One endpoint of one target on the Network page. */
+export type RowEndpointView = {
+	/**  Identifier unique across the whole inventory. */
 	key: string,
 	/**
-	 *  The address the list file named — almost always a host name.
+	 *  The address the list file named — a literal or, usually, a host name.
 	 * 
 	 *  Shown rather than the resolved address, because that is what the user recognises and
 	 *  because a platform's front door sits on a content network whose address changes by
@@ -1034,35 +1091,55 @@ export type ServiceEndpointView = {
 	 */
 	writtenAddress: string,
 	/**
-	 *  The address actually being checked, once resolved. `null` means the name did not
+	 *  The address actually being probed, once resolved. `null` means the name did not
 	 *  resolve — under censorship that is itself a finding, not a reason to hide the row.
 	 */
 	resolvedAddress: string | null,
 	/**
 	 *  Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
-	 *  rather than a round trip to the service.
+	 *  rather than a round trip to the target.
 	 */
 	tunnelled: boolean,
-	/**  Whether any probe kind can still check it honestly. */
+	/**  Whether any probe kind can still measure it honestly. */
 	measurable: boolean,
-	/**  Which kind is checking it now. */
+	/**  Which kind is measuring it now. */
 	probeKind: ProbeKindView | null,
-	/**  Whether a probe kind has been *proven* filtered here. */
+	/**
+	 *  Whether a probe kind has been *proven* filtered here — a later kind succeeded after
+	 *  an earlier one was set aside. Never claimed on silence alone.
+	 */
 	filteringConfirmed: boolean,
-	/**  The verdict, from the most recent checks. */
+	/**  The verdict for this endpoint alone. */
 	health: HealthView,
-	/**  The most recent answer's round-trip time, in milliseconds. */
+	/**
+	 *  The most recent answer's round-trip time, in milliseconds.
+	 * 
+	 *  *Ping, last check* on the page, and named that way for a reason: it is one check and
+	 *  nothing else folded in, which is what answers "how is it responding right now".
+	 */
 	rttMs: number | null,
 	/**  Mean round-trip time across the window, in milliseconds. */
 	meanRttMs: number | null,
+	/**  Jitter across the window, in milliseconds. */
+	jitterMs: number | null,
 	/**  Loss across the window, as a percentage. */
 	lossPct: number | null,
 	/**  The recent checks, oldest first. */
 	checks: CheckView[],
 };
 
-/**  Which shelf of the status page a service sits on. */
-export type ServiceGroup = 
+/**
+ *  Which section of the Network page a target is listed under.
+ * 
+ *  One list, four headings, in the order the page shows them. The first two are the ones a
+ *  verdict is drawn from, and they say so on the page so the banner above stays checkable
+ *  against the rows below.
+ */
+export type Section = 
+/**  Expected to be reachable inside the user's country. */
+"domestic" | 
+/**  Typically degraded or blocked at the country's border. */
+"foreign" | 
 /**  A platform a player signs in to and buys or launches games through. */
 "gamingPlatform" | 
 /**
@@ -1073,74 +1150,6 @@ export type ServiceGroup =
  *  quiet at once is the user's route out.
  */
 "infrastructure";
-
-/**
- *  Whether each service on the status page is reachable from this machine.
- * 
- *  Emitted on the same beat as [`NetworkHealth`] and, like it, not at all while the window
- *  is hidden. The checks themselves run far slower — see
- *  [`crate::status::CHECK_INTERVAL`] — so most emissions resend the same numbers; that is
- *  the right trade against a page that would otherwise be blank for most of a minute after
- *  the user opened it.
- */
-export type ServiceStatus = {
-	/**
-	 *  How often each endpoint is checked, in seconds.
-	 * 
-	 *  Stated because it is what makes "last checked" readable: a figure forty seconds old
-	 *  is current at this cadence and would be stale at the dashboard's.
-	 */
-	checkIntervalSecs: number,
-	/**
-	 *  Span the latency and loss figures are computed over, in seconds.
-	 * 
-	 *  The same span the strip covers, by construction — the window is defined as however
-	 *  long [`crate::status::TIMELINE_POINTS`] checks take — so the figures and the cells
-	 *  beside them describe one stretch of time rather than quietly disagreeing.
-	 */
-	windowSecs: number,
-	/**
-	 *  How many cells a full strip holds.
-	 * 
-	 *  Sent rather than counted from the cells, because a fresh endpoint has fewer of them
-	 *  and the page's legend states what a *full* strip covers. Without it the legend would
-	 *  either grow its own claim as the history filled or be arithmetic in the frontend.
-	 */
-	timelinePoints: number,
-	/**  The services, in list order. */
-	services: ServiceView[],
-};
-
-/**  One status-page service, taken together. */
-export type ServiceView = {
-	/**  Its identifier from the list. A React key, and the tag a verdict names. */
-	id: string,
-	/**  The operator's name for it, shown as written. */
-	label: string,
-	/**  Which shelf of the page it sits on. */
-	group: ServiceGroup,
-	/**  The headline verdict. */
-	verdict: HealthView,
-	/**
-	 *  The distribution behind it. Shown whenever a service has more than one endpoint,
-	 *  never collapsed into the verdict — a storefront that answers while the gateway does
-	 *  not is the finding, and one amber dot would hide which half is broken.
-	 */
-	counts: HealthCountsView,
-	/**  Median round-trip time across the answering endpoints, in milliseconds. */
-	rttMs: number | null,
-	/**  Loss across the service, weighted by checks. */
-	lossPct: number | null,
-	/**
-	 *  How many seconds ago the freshest check completed.
-	 * 
-	 *  Stated because a status page whose data has quietly stopped arriving looks exactly
-	 *  like one reporting good news. `null` before anything has been checked at all.
-	 */
-	lastCheckedSecs: number | null,
-	/**  Its endpoints, in list order. */
-	endpoints: ServiceEndpointView[],
-};
 
 /**
  *  Everything the user can configure.
@@ -1226,49 +1235,6 @@ export type SettingsView = {
 	 *  changed hands since is explained by this date and by nothing else on the page.
 	 */
 	networkSnapshot: string,
-};
-
-/**  One baseline target as the dashboard shows it. */
-export type TargetView = {
-	/**  Identifier unique across both baselines. */
-	key: string,
-	/**  The operator's name for the service, shown as written. */
-	label: string,
-	/**  The address the list file named — a literal or a host name. */
-	writtenAddress: string,
-	/**  The address actually being probed, once resolved. */
-	resolvedAddress: string | null,
-	/**
-	 *  Whether a local tunnel remaps this endpoint, so its figure is end-to-end through
-	 *  the tunnel rather than a round trip to the server.
-	 */
-	tunnelled: boolean,
-	/**  Whether any probe kind can still measure it honestly. */
-	measurable: boolean,
-	/**  Which kind is measuring it now. */
-	probeKind: ProbeKindView | null,
-	/**
-	 *  Whether a probe kind has been *proven* filtered — a later kind succeeded after an
-	 *  earlier one was set aside. Never claimed on silence alone.
-	 */
-	filteringConfirmed: boolean,
-	/**  The verdict. */
-	health: HealthView,
-	/**  Mean round-trip time over the window, in milliseconds. */
-	rttMs: number | null,
-	/**  Jitter over the window, in milliseconds. */
-	jitterMs: number | null,
-	/**  Packet loss over the window, as a percentage. */
-	lossPct: number | null,
-	/**
-	 *  Seconds before now for each point of the series — negative, ascending.
-	 * 
-	 *  A real time axis rather than sample indices: probe intervals stretch under backoff,
-	 *  so evenly spaced points would draw a chart that lies about when things happened.
-	 */
-	seriesAgeSecs: (number | null)[],
-	/**  Round-trip time at each point, or `null` where the probe did not come back. */
-	seriesRttMs: (number | null)[],
 };
 
 /**  Transport an application reaches an endpoint over. */

@@ -36,27 +36,25 @@ mod view;
 pub mod applications;
 pub mod apps;
 pub mod asn;
-pub mod baselines;
 pub mod discovery;
-pub mod monitor;
+pub mod network;
 pub mod pools;
 pub mod presets;
-pub mod services;
 pub mod settings;
-pub mod status;
+pub mod targets;
 
 pub use commands::{
     core_status, list_applications, CoreReadiness, CoreStatus, PlatformKind, SettingsView,
 };
 pub use error::Error;
-pub use events::{AppEndpoints, CoreHeartbeat, NetworkHealth, ServiceStatus};
+pub use events::{AppEndpoints, CoreHeartbeat, NetworkSnapshot};
 pub use shell::TrayLabels;
 pub use view::{
     AppProcessView, AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView,
     CheckMarkView, CheckView, EndpointAgeKindView, EndpointAgeView, EndpointGroupView,
-    EndpointView, FlowStatusView, FlowView, GroupView, HealthCountsView, HealthView, LivenessView,
-    PassiveRttView, ProbeKindView, ProbingView, ServiceEndpointView, ServiceView, TargetView,
-    TransportView, VerdictView, SERIES_POINTS,
+    EndpointView, FlowStatusView, FlowView, HealthCountsView, HealthView, LivenessView,
+    NetworkRowView, NetworkSectionView, PassiveRttView, ProbeKindView, ProbingView,
+    RowEndpointView, TransportView, VerdictView,
 };
 
 use std::path::PathBuf;
@@ -90,9 +88,8 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
         ])
         .events(collect_events![
             events::CoreHeartbeat,
-            events::NetworkHealth,
-            events::AppEndpoints,
-            events::ServiceStatus
+            events::NetworkSnapshot,
+            events::AppEndpoints
         ])
 }
 

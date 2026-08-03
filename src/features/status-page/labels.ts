@@ -1,4 +1,4 @@
-import type { CheckMarkView, ServiceGroup } from '../../shared/ipc';
+import type { CheckMarkView } from '../../shared/ipc';
 
 /**
  * Maps the status page's IPC enums to i18next keys.
@@ -7,24 +7,6 @@ import type { CheckMarkView, ServiceGroup } from '../../shared/ipc';
  * TypeScript union and these functions stop compiling — which is how a new state gets a
  * translation instead of silently rendering a raw identifier.
  */
-export const serviceGroupKey = (group: ServiceGroup) => {
-  switch (group) {
-    case 'gamingPlatform':
-      return 'status.group.gamingPlatform' as const;
-    case 'infrastructure':
-      return 'status.group.infrastructure' as const;
-  }
-};
-
-export const serviceGroupHintKey = (group: ServiceGroup) => {
-  switch (group) {
-    case 'gamingPlatform':
-      return 'status.groupHint.gamingPlatform' as const;
-    case 'infrastructure':
-      return 'status.groupHint.infrastructure' as const;
-  }
-};
-
 /**
  * Every state a cell can be in, in the order the legend names them.
  *

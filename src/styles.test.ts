@@ -95,9 +95,9 @@ describe('the design system', () => {
     // unpredictably as well.
     for (const card of [
       '.nm-appcard',
-      '.nm-group',
       '.nm-picker',
-      '.nm-service',
+      '.nm-row__detail',
+      '.nm-section',
       '.nm-help-page__section',
     ]) {
       const rule = BODY.slice(BODY.indexOf(`${card} {`));

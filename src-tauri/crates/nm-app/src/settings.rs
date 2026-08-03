@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::baselines;
+use crate::targets;
 
 /// Name of the settings file inside the application's configuration directory.
 pub const FILE_NAME: &str = "settings.json";
@@ -114,7 +114,7 @@ impl Settings {
             } else {
                 DEFAULT_LANGUAGE.to_owned()
             },
-            country: if baselines::has_country(&self.country) {
+            country: if targets::has_country(&self.country) {
                 self.country
             } else {
                 DEFAULT_COUNTRY.to_owned()

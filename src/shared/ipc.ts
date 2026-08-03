@@ -6,8 +6,7 @@ import type {
   ApplicationListView,
   CoreHeartbeat,
   CoreStatus,
-  NetworkHealth,
-  ServiceStatus,
+  NetworkSnapshot,
   Settings,
   SettingsView,
   TrayLabels,
@@ -27,7 +26,6 @@ export type {
   ApplicationListProblem,
   ApplicationListView,
   AppView,
-  BaselineGroup,
   CheckMarkView,
   CheckView,
   CoreHeartbeat,
@@ -41,11 +39,12 @@ export type {
   FlowStatusView,
   PassiveRttView,
   FlowView,
-  GroupView,
   HealthCountsView,
   HealthView,
   LivenessView,
-  NetworkHealth,
+  NetworkRowView,
+  NetworkSectionView,
+  NetworkSnapshot,
   NetworkView,
   PathPositionView,
   PathQualityView,
@@ -54,14 +53,11 @@ export type {
   PoolView,
   ProbeKindView,
   ProbingView,
-  ServiceEndpointView,
-  ServiceGroup,
-  ServiceStatus,
-  ServiceView,
+  RowEndpointView,
+  Section,
   Settings,
   SettingsProblem,
   SettingsView,
-  TargetView,
   TransportView,
   TrayLabels,
   VerdictView,
@@ -74,18 +70,11 @@ export const subscribeToHeartbeat = (onBeat: (beat: CoreHeartbeat) => void): Pro
     onBeat(event.payload);
   });
 
-export const subscribeToNetworkHealth = (
-  onHealth: (health: NetworkHealth) => void,
+export const subscribeToNetwork = (
+  onSnapshot: (snapshot: NetworkSnapshot) => void,
 ): Promise<UnlistenFn> =>
-  events.networkHealth.listen((event) => {
-    onHealth(event.payload);
-  });
-
-export const subscribeToServiceStatus = (
-  onStatus: (status: ServiceStatus) => void,
-): Promise<UnlistenFn> =>
-  events.serviceStatus.listen((event) => {
-    onStatus(event.payload);
+  events.networkSnapshot.listen((event) => {
+    onSnapshot(event.payload);
   });
 
 export const subscribeToAppEndpoints = (

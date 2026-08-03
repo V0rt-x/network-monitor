@@ -1,7 +1,7 @@
 //! The tokio side of measurement: probing the baselines and the monitored applications'
 //! endpoints, and pushing the result.
 //!
-//! One task owns everything mutable — the [`BaselineMonitor`], the [`AppMonitor`], the
+//! One task owns everything mutable — the [`NetworkMonitor`], the [`AppMonitor`], the
 //! target registry they share, and the channel that keeps the probe engine's own loop
 //! alive — so nothing is shared between threads and no lock is ever held across an
 //! `.await`. It talks to the rest of the app through [`MonitorCommand`].
@@ -34,7 +34,7 @@ use nm_core::endpoint::{AppId, LifecyclePolicy};
 use nm_core::health::HealthThresholds;
 use nm_core::sample::ProbeSample;
 use nm_core::status::StatusThresholds;
-use nm_core::target::{TargetId, TargetRegistry, TargetTag};
+use nm_core::target::{TargetId, TargetRegistry};
 use nm_platform::interface::InterfaceNames;
 use nm_platform::process::{Pid, ProcessInfo};
 use nm_probes::icmp::IcmpEchoProber;
@@ -51,15 +51,13 @@ use tokio::sync::{mpsc, watch};
 use crate::applications::{Application, Applications};
 use crate::apps::{AppMonitor, TargetChange};
 use crate::asn::{self, NetworkNames};
-use crate::baselines::{self, BaselineGroup, BaselineTarget};
 use crate::discovery::{Discovery, FlowStatus, Sighting};
 use crate::events::AppEndpoints;
-use crate::monitor::{health_window, BaselineMonitor};
+use crate::network::{health_window, NetworkMonitor};
 use crate::pools::{LearnedPools, PoolMonitor, PoolSeeds};
 use crate::presets::PresetList;
-use crate::services::{self, ResolvedService};
 use crate::settings::Settings;
-use crate::status::ServiceMonitor;
+use crate::targets::{self, ResolvedTarget};
 use crate::view::{AppProcessView, AppView};
 use crate::Error;
 
@@ -248,8 +246,13 @@ async fn session(
     let interval = settings.baseline_interval();
     let policy = AddressPolicy::default();
     let lifecycle = LifecyclePolicy::default();
-    let mut baselines = BaselineMonitor::new(HealthThresholds::default(), health_window(interval));
-    let mut services = ServiceMonitor::new(StatusThresholds::default());
+    // One monitor for the whole Network page. The two it replaced held the same shape over
+    // two target schemas, one of which carried entries that were copies of the other's.
+    let mut network = NetworkMonitor::new(
+        HealthThresholds::default(),
+        StatusThresholds::default(),
+        health_window(interval),
+    );
     let mut pools = PoolMonitor::new(
         seeds.clone(),
         HealthThresholds::default(),
@@ -277,15 +280,7 @@ async fn session(
     let (report_sender, mut reports) = mpsc::channel::<Completed>(REPORT_QUEUE);
     let (refusals, mut refused) = mpsc::channel::<TargetId>(COMMAND_QUEUE);
 
-    match build(
-        settings,
-        &mut baselines,
-        &mut services,
-        &mut registry,
-        &policy,
-    )
-    .await
-    {
+    match build(settings, &mut network, &mut registry, &policy).await {
         Ok(engine) => {
             tauri::async_runtime::spawn(nm_probes::runner::drive(
                 engine.runner,
@@ -331,13 +326,12 @@ async fn session(
             command = commands.recv() => match command {
                 Some(MonitorCommand::Reconfigure(next)) => return SessionEnd::Reconfigure(*next),
                 Some(MonitorCommand::WindowRevealed) => {
-                    emit_health(app, &baselines, started);
-                    emit_services(app, &services);
+                    emit_network(app, &network, started);
                     emit_apps(
                         app,
                         &mut apps,
                         &pools,
-                        &baselines,
+                        &network,
                         applications,
                         &interfaces,
                         &names.borrow(),
@@ -378,8 +372,7 @@ async fn session(
             },
             Some(completed) = reports.recv() => {
                 let changes = fold_in(
-                    &mut baselines,
-                    &mut services,
+                    &mut network,
                     &mut pools,
                     &mut apps,
                     &mut registry,
@@ -418,13 +411,12 @@ async fn session(
                 let changes = apps.sweep(&mut registry, Instant::now());
                 queue(&mut pending, changes, &refusals);
                 if visible.load(Ordering::Relaxed) {
-                    emit_health(app, &baselines, started);
-                    emit_services(app, &services);
+                    emit_network(app, &network, started);
                     emit_apps(
                         app,
                         &mut apps,
                         &pools,
-                        &baselines,
+                        &network,
                         applications,
                         &interfaces,
                         &names.borrow(),
@@ -688,22 +680,14 @@ fn flush(pending: &mut VecDeque<ProbeCommand>, probe_commands: &mpsc::Sender<Pro
 /// Returns whatever the probe engine must be told as a result, which is how a walked route
 /// turns into the hops that will be probed along it.
 fn fold_in(
-    baselines: &mut BaselineMonitor,
-    services: &mut ServiceMonitor,
+    network: &mut NetworkMonitor,
     pools: &mut PoolMonitor,
     apps: &mut AppMonitor,
     registry: &mut TargetRegistry,
     completed: &Completed,
 ) -> Vec<TargetChange> {
     let id = completed.report.id;
-    baselines.note_probe_state(
-        id,
-        completed.progress.kind,
-        completed.progress.tunnelled,
-        completed.progress.filtering_confirmed,
-        completed.progress.measurable,
-    );
-    services.note_probe_state(
+    network.note_probe_state(
         id,
         completed.progress.kind,
         completed.progress.tunnelled,
@@ -725,8 +709,7 @@ fn fold_in(
     match &completed.report.measured {
         Measured::Probe { outcome, .. } => {
             let sample = ProbeSample::new(completed.report.at, *outcome);
-            baselines.record(id, sample);
-            services.record(id, sample);
+            network.record(id, sample);
             pools.record(id, sample);
             apps.record(id, sample);
             Vec::new()
@@ -738,22 +721,17 @@ fn fold_in(
     }
 }
 
-/// Pushes the general-health snapshot to the window.
-fn emit_health(app: &AppHandle<Wry>, monitor: &BaselineMonitor, started: Instant) {
+/// Pushes the Network page to the window.
+///
+/// Sent on the ordinary beat even though the slower sections are checked minutes apart: the
+/// page must be filled the moment it is opened, and a row whose only news is that its last
+/// check is now a minute older is still news — a page whose data quietly stopped arriving
+/// looks exactly like one reporting that everything is fine.
+fn emit_network(app: &AppHandle<Wry>, monitor: &NetworkMonitor, started: Instant) {
     let uptime = nm_core::time::elapsed_secs(started.elapsed());
     // A failed emit means the window is gone; the next tick finds that out too, and there
     // is nothing to recover.
     let _ = monitor.snapshot(Instant::now(), uptime).emit(app);
-}
-
-/// Pushes the status page to the window.
-///
-/// Sent on the ordinary beat even though checks are minutes apart: the page must be filled
-/// the moment it is opened, and a card whose only news is that its last check is now a
-/// minute older is still news — a status page whose data quietly stopped arriving looks
-/// exactly like one reporting that everything is fine.
-fn emit_services(app: &AppHandle<Wry>, monitor: &ServiceMonitor) {
-    let _ = monitor.snapshot(Instant::now()).emit(app);
 }
 
 /// Pushes every monitored application's endpoints to the window.
@@ -766,7 +744,7 @@ fn emit_apps(
     app: &AppHandle<Wry>,
     apps: &mut AppMonitor,
     pools: &PoolMonitor,
-    baselines: &BaselineMonitor,
+    network: &NetworkMonitor,
     applications: &Applications,
     interfaces: &InterfaceNames,
     names: &NetworkNames,
@@ -776,7 +754,7 @@ fn emit_apps(
     // Read once for the whole emission rather than per application: it is the same answer
     // for all of them, and it is what stops an application being blamed for a network that
     // is failing underneath it.
-    let verdicts = baselines.evidence(now);
+    let verdicts = network.evidence(now);
     let views = applications
         .iter()
         .map(|application| {
@@ -826,8 +804,7 @@ struct Engine {
 /// Builds the probe engine and registers every baseline and status-page target with it.
 async fn build(
     settings: &Settings,
-    monitor: &mut BaselineMonitor,
-    services: &mut ServiceMonitor,
+    network: &mut NetworkMonitor,
     registry: &mut TargetRegistry,
     policy: &AddressPolicy,
 ) -> Result<Engine, Error> {
@@ -844,120 +821,91 @@ async fn build(
         runner = runner.with_routes(routes);
     }
 
-    let domestic = baselines::domestic(&settings.country)?;
-    let foreign = baselines::foreign()?;
-    let mut targets = baselines::resolve_list(BaselineGroup::Domestic, &domestic).await;
-    targets.extend(baselines::resolve_list(BaselineGroup::Foreign, &foreign).await);
-
-    for target in &targets {
-        register(registry, &mut runner, monitor, policy, target, now)?;
-    }
-
-    // The status page shares this engine and its rate cap, which is the whole reason it is
-    // registered here rather than given a runner of its own: a second token bucket would
-    // quietly double the traffic the product promises not to send.
-    let list = services::ServiceList::bundled()?;
-    for service in &services::resolve_list(&list).await {
-        register_service(registry, &mut runner, services, service, now)?;
+    // One inventory, one engine, one rate cap. The slow sections share this engine for the
+    // reason the fast ones do: a second token bucket would quietly double the traffic the
+    // product promises not to send. `bundled` also refuses a list that would measure one
+    // address twice, which is the failure the merge exists to end.
+    for list in &targets::bundled(&settings.country)? {
+        for target in &targets::resolve_list(list).await {
+            register(
+                registry,
+                &mut runner,
+                network,
+                policy,
+                target,
+                settings.baseline_interval(),
+                now,
+            )?;
+        }
     }
 
     Ok(Engine { runner, probers })
 }
 
-/// Registers one status-page service with the registry, the runner and the monitor.
+/// Registers one target and every one of its endpoints.
 ///
-/// Each endpoint is checked at [`crate::status::CHECK_INTERVAL`] rather than the baselines'
-/// cadence: a platform being up changes on the scale of minutes, and this list is probed
-/// whether or not the user is doing anything.
-fn register_service(
+/// One path for the whole page, where there were two. The cadence is the only thing that
+/// differs between a baseline and a platform, and it is now a field on the section rather
+/// than a second function — see [`crate::targets::interval_for`].
+///
+/// An endpoint whose name never resolved, or that no probe kind can honestly measure, stays
+/// on the page unmeasured and saying so: a list that quietly shrank to its working members
+/// would read as good news.
+fn register(
     registry: &mut TargetRegistry,
     runner: &mut ProbeRunner,
-    monitor: &mut ServiceMonitor,
-    service: &ResolvedService,
+    monitor: &mut NetworkMonitor,
+    policy: &AddressPolicy,
+    target: &ResolvedTarget,
+    baseline_interval: Duration,
     now: Instant,
 ) -> Result<(), Error> {
-    let mut handles = Vec::with_capacity(service.endpoints.len());
-    let mut tunnelled = Vec::new();
+    let tag = target.section.tag();
+    let interval = targets::interval_for(target.section, baseline_interval);
 
-    for endpoint in &service.endpoints {
-        // The name never resolved. The endpoint stays on the page, visible and unchecked,
-        // because under censorship a lookup that fails is itself the finding.
+    let mut handles = Vec::with_capacity(target.endpoints.len());
+    let mut tunnelled = Vec::new();
+    let mut unmeasurable = Vec::new();
+
+    for endpoint in &target.endpoints {
         let Some(address) = endpoint.address else {
             handles.push(None);
             continue;
         };
 
-        let id = registry.insert(address, TargetTag::StatusService)?;
+        let id = registry.insert(address, tag)?;
         // The list's probe-kind hint only reorders the kinds the address class already
-        // allows — see `FallbackChain::starting_with`. It is here to save a status page
+        // allows — see `FallbackChain::starting_with`. It is here to save a slow section
         // several whole check intervals of silence on a front door that does not answer
         // echoes, not to let a data file choose a figure a tunnel would invent.
-        if runner
-            .add_preferring(id, address, None, service.probe_kind, now)
-            .is_err()
-        {
-            handles.push(None);
-            continue;
-        }
-        // Asked of the runner rather than derived from the address here, because only the
-        // runner has consulted the route: an ordinary public address reached through a TUN
-        // client is tunnelled and nothing about the address says so. Seeded now so the
-        // first card is right before any probe has landed; kept right afterwards by
-        // `note_probe_state`, which carries the same fact on every report.
-        if runner
-            .class_of(id)
-            .is_some_and(AddressClass::is_behind_a_tunnel)
-        {
+        let registered = runner
+            .add_preferring(id, address, None, target.probe_kind, now)
+            .is_ok();
+        // Asked of the runner rather than derived from the address, because only the runner
+        // has consulted the route: an ordinary public address reached through a TUN client is
+        // tunnelled and nothing about the address says so. Falls back to the address alone
+        // when registration was refused, since there is then no chain to ask.
+        if runner.class_of(id).map_or_else(
+            || policy.classify(address.ip).is_behind_a_tunnel(),
+            AddressClass::is_behind_a_tunnel,
+        ) {
             tunnelled.push(id);
         }
-        let _ = runner.set_interval(id, crate::status::CHECK_INTERVAL, now);
+        if registered {
+            let _ = runner.set_interval(id, interval, now);
+        } else {
+            // No probe kind can honestly measure this address. Said out loud rather than
+            // shown as a target that mysteriously never updates.
+            unmeasurable.push(id);
+        }
         handles.push(Some(id));
     }
 
-    monitor.add(service, &handles)?;
+    monitor.add(target, &handles)?;
     for id in tunnelled {
         monitor.note_tunnelled(id);
     }
-    Ok(())
-}
-
-/// Registers one baseline target with the registry, the runner and the monitor.
-fn register(
-    registry: &mut TargetRegistry,
-    runner: &mut ProbeRunner,
-    monitor: &mut BaselineMonitor,
-    policy: &AddressPolicy,
-    target: &BaselineTarget,
-    now: Instant,
-) -> Result<(), Error> {
-    let tag = match target.group {
-        BaselineGroup::Domestic => TargetTag::DomesticBaseline,
-        BaselineGroup::Foreign => TargetTag::ForeignBaseline,
-    };
-
-    let Some(address) = target.address else {
-        // The name never resolved. The entry stays on the list, visible and unmeasured,
-        // because a foreign baseline that quietly shrank would read as good news.
-        monitor.add(target, None, false)?;
-        return Ok(());
-    };
-
-    let id = registry.insert(address, tag)?;
-    let registered = runner.add(id, address, None, now).is_ok();
-    // The runner's answer rather than the address's: it has consulted the route, and an
-    // ordinary public address reached through a TUN client is tunnelled without anything
-    // about the address saying so. Falls back to the address alone when registration was
-    // refused, since there is then no chain to ask.
-    let tunnelled = runner.class_of(id).map_or_else(
-        || policy.classify(address.ip).is_behind_a_tunnel(),
-        AddressClass::is_behind_a_tunnel,
-    );
-    monitor.add(target, Some(id), tunnelled)?;
-
-    if !registered {
-        // No probe kind can honestly measure this address — a tunnelled endpoint with no
-        // end-to-end prober, or a range not worth probing at all. Said out loud rather
-        // than shown as a target that mysteriously never updates.
+    for id in unmeasurable {
         monitor.note_unmeasurable(id);
     }
     Ok(())

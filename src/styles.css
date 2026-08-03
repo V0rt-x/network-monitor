@@ -95,6 +95,10 @@
   /* One figure and its label. Narrower than a layout column because it is not one: it is
      what keeps ping, jitter and loss in the same place on every card of every page. */
   --nm-col-metric: 7rem;
+  /* A row's name, and the strip beside it. Narrower than a layout column for the same
+     reason: they keep every row's parts in the same place down the page. */
+  --nm-col-name: 8rem;
+  --nm-col-strip: 6rem;
 
   font-family:
     'Segoe UI',
@@ -208,85 +212,6 @@ body {
   margin-bottom: var(--nm-space-5);
 }
 
-.nm-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-4);
-  background: var(--nm-surface);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-lg);
-  padding: var(--nm-space-4) var(--nm-space-5);
-}
-
-.nm-group__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--nm-space-4);
-}
-
-.nm-group__title {
-  margin: 0;
-  font-size: var(--nm-text-lg);
-}
-
-.nm-group__identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-1);
-}
-
-.nm-group__hint {
-  margin: 0;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-  max-width: 22rem;
-}
-
-.nm-group__targets {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-2);
-}
-
-.nm-target {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--nm-space-1) var(--nm-space-4);
-  align-items: center;
-  padding: var(--nm-space-2) var(--nm-space-3);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-md);
-}
-
-.nm-target__identity {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.nm-target__label {
-  font-weight: 600;
-}
-
-.nm-target__address {
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nm-target__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--nm-space-1);
-  justify-content: flex-end;
-}
-
 .nm-badge {
   border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-pill);
@@ -332,11 +257,6 @@ body {
 
 .nm-health--unknown {
   color: var(--nm-unknown);
-}
-
-.nm-sparkline {
-  grid-column: 1 / -1;
-  height: 34px;
 }
 
 .nm-settings {
@@ -1221,121 +1141,138 @@ details.nm-endpointgroup > summary {
 }
 
 /*
- * The Network page: the baselines and the service cards, one above the other.
+ * The Network page: the verdict, one legend, and four sections of one row.
  *
- * They were two tabs, and the question they answer between them — is it me, the border, or
- * that service — needed both of them at once. The halves are separated by their headings
- * rather than blended, because they are measured on different cadences by different rules
- * and each states its own.
+ * It was two halves drawn by two sets of components over two IPC shapes, and two of the
+ * foreign baseline's four entries were the same addresses as two service endpoints. One
+ * list, one row, one history.
  */
 .nm-network {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-6);
-}
-
-.nm-network__half {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-3);
-}
-
-.nm-network__heading {
-  margin: 0;
-  font-size: var(--nm-text-md);
-  font-weight: 600;
-}
-
-/*
- * The service half of it.
- *
- * Cards are a grid rather than a list: the question is "which of these is red", which is a
- * scanning task, and a column of full-width rows makes it a scrolling one.
- */
-.nm-status {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-5);
 }
 
-.nm-status__cadence,
-.nm-status__caveat {
-  margin: 0;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-}
-
-.nm-status__shelf {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-3);
-}
-
-.nm-status__shelfhead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--nm-space-3);
-  flex-wrap: wrap;
-}
-
-.nm-status__shelftitle {
-  margin: 0;
-  font-size: var(--nm-text-md);
-}
-
-.nm-status__shelfhint {
-  margin: 0;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-}
-
-.nm-status__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--nm-col-narrow), 1fr));
-  gap: var(--nm-space-3);
-}
-
-.nm-service {
+.nm-section {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-2);
-  padding: var(--nm-space-3) var(--nm-space-4);
-  background: var(--nm-surface);
-  border: 1px solid var(--nm-border);
-  border-radius: var(--nm-radius-lg);
 }
 
-.nm-service__header {
+.nm-section__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--nm-space-3);
+  gap: var(--nm-space-2) var(--nm-space-3);
 }
 
-.nm-service__title {
+.nm-section__title {
   margin: 0;
-  font-size: var(--nm-text-md);
-}
-
-.nm-service__meta {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--nm-space-3);
-}
-
-/* The headline figure was a bare number: which round trip on this card, over what, across
-   what, was nowhere on screen. It now travels with its own label. */
-.nm-service__rttlabel {
-  color: var(--nm-text-secondary);
   font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
 }
 
-.nm-service__rtt {
+/* What keeps the banner at the top checkable against the rows below: these are the sections
+   the conclusion was drawn from, and the other two are not. */
+.nm-section__evidence {
+  font-size: var(--nm-text-xs);
+  color: var(--nm-accent);
+}
+
+.nm-section__rtt {
+  margin-inline-start: auto;
   font-variant-numeric: tabular-nums;
-  font-size: var(--nm-text-lg);
-  margin-inline-end: auto;
+}
+
+.nm-section__rttlabel {
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-secondary);
+}
+
+.nm-section__cadence {
+  font-size: var(--nm-text-xs);
+  color: var(--nm-muted);
+}
+
+.nm-section__cadence > summary {
+  cursor: pointer;
+}
+
+.nm-section__cadence p {
+  margin: var(--nm-space-1) 0 0;
+}
+
+.nm-section__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
+}
+
+/*
+ * One row, folded.
+ *
+ * Twenty-three rows each carrying a strip and three figures per endpoint turns "which of
+ * these is red" into a scrolling task. Closed it is a name, a state, the strip and the round
+ * trip; everything else is one click away.
+ */
+.nm-row {
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+  background: var(--nm-surface);
+}
+
+.nm-row__head {
+  display: grid;
+  grid-template-columns: minmax(var(--nm-col-name), 1fr) auto minmax(var(--nm-col-strip), 2fr) auto;
+  align-items: center;
+  gap: var(--nm-space-3);
+  padding: var(--nm-space-2) var(--nm-space-3);
+  cursor: pointer;
+}
+
+.nm-row__label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nm-row__rtt {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nm-row__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+  padding: 0 var(--nm-space-3) var(--nm-space-3);
+}
+
+.nm-row__endpoints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-3);
+}
+
+.nm-row__endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
+}
+
+.nm-row__endpointhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--nm-space-2);
+  flex-wrap: wrap;
 }
 
 .nm-service__checked {
@@ -1402,29 +1339,6 @@ details.nm-endpointgroup > summary {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
-}
-
-.nm-service__endpoints {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-2);
-}
-
-.nm-service__endpoint {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-2);
-}
-
-.nm-service__endpointhead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--nm-space-2);
-  flex-wrap: wrap;
 }
 
 .nm-service__address {

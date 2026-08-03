@@ -27,7 +27,7 @@ use crate::settings::{
 use crate::shell::TrayLabels;
 use crate::state::AppState;
 use crate::view::{ApplicationChoiceView, ApplicationListProblem, ApplicationListView};
-use crate::{applications, baselines, shell};
+use crate::{applications, shell, targets};
 
 /// Platform backend the core will use, as seen across the IPC boundary.
 ///
@@ -142,7 +142,7 @@ impl SettingsView {
         Self {
             settings,
             problem,
-            countries: baselines::countries()
+            countries: targets::countries()
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),

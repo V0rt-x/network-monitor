@@ -56,7 +56,7 @@ fn the_defaults_are_usable_and_conservative() {
 #[test]
 fn the_default_country_has_a_bundled_list() {
     // Otherwise a fresh install would monitor nothing on its first run.
-    assert!(nm_app::baselines::has_country(DEFAULT_COUNTRY));
+    assert!(nm_app::targets::has_country(DEFAULT_COUNTRY));
 }
 
 #[test]

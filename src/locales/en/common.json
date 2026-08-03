@@ -22,8 +22,19 @@
     "settings": "Settings"
   },
   "network": {
-    "baselines": "Your connection and the way out",
-    "services": "Services"
+    "subtitle": "Your connection and the way out",
+    "distribution": "Target states in {{row}}",
+    "section": {
+      "domestic": "Domestic",
+      "foreign": "Foreign",
+      "gamingPlatform": "Gaming platforms",
+      "infrastructure": "Infrastructure",
+      "readByVerdict": "Read by the verdict"
+    },
+    "cadence": {
+      "summary": "How often this is checked",
+      "detail": "Each target here is probed every {{seconds}} s. The figures cover the last {{window}} s, which is also the stretch a full strip of {{checks}} checks reaches back."
+    }
   },
   "tray": {
     "show": "Show Network Monitor",

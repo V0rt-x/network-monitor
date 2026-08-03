@@ -1,30 +1,51 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "ir",
+  "section": "domestic",
   "targets": [
     {
       "id": "shecan-primary",
       "label": "Shecan DNS",
-      "address": "178.22.122.100",
-      "port": 443
+      "endpoints": [
+        {
+          "id": "host",
+          "address": "178.22.122.100",
+          "port": 443
+        }
+      ]
     },
     {
       "id": "begzar-primary",
       "label": "Begzar DNS",
-      "address": "185.55.226.26",
-      "port": 443
+      "endpoints": [
+        {
+          "id": "host",
+          "address": "185.55.226.26",
+          "port": 443
+        }
+      ]
     },
     {
       "id": "digikala",
       "label": "Digikala",
-      "address": "www.digikala.com",
-      "port": 443
+      "endpoints": [
+        {
+          "id": "host",
+          "address": "www.digikala.com",
+          "port": 443
+        }
+      ]
     },
     {
       "id": "aparat",
       "label": "Aparat",
-      "address": "www.aparat.com",
-      "port": 443
+      "endpoints": [
+        {
+          "id": "host",
+          "address": "www.aparat.com",
+          "port": 443
+        }
+      ]
     }
   ]
 }

@@ -18,7 +18,7 @@ use std::time::Duration;
 use nm_core::diagnosis::{AppEvidence, BaselineEvidence, Diagnosis, Evidence, Verdict};
 use nm_core::edge::{EdgeReading, PathQuality};
 use nm_core::endpoint::{Liveness, Probing, Transport};
-use nm_core::health::{GroupHealth, Health, HealthCounts};
+use nm_core::health::{Health, HealthCounts};
 use nm_core::path::PathEnd;
 use nm_core::pool::PoolReading;
 use nm_core::status::CheckMark;
@@ -29,16 +29,8 @@ use specta::Type;
 
 use crate::apps::{EndpointAge, EndpointReport, PassiveRttReading};
 use crate::asn::{NetworkNames, NetworkView};
-use crate::baselines::BaselineGroup;
 use crate::discovery::FlowStatus;
-use crate::services::ServiceGroup;
-
-/// How many samples of a target's history the sparkline carries.
-///
-/// Sixty points is a legible sparkline and, at the default five-second baseline interval,
-/// five minutes of history. Larger would cost IPC bandwidth every second for detail no
-/// pixel could show.
-pub const SERIES_POINTS: usize = 60;
+use crate::targets::Section;
 
 /// How something is doing — one target or a whole group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -134,79 +126,108 @@ impl From<HealthCounts> for HealthCountsView {
     }
 }
 
-/// One baseline target as the dashboard shows it.
+/// One endpoint of one target on the Network page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct TargetView {
-    /// Identifier unique across both baselines.
+pub struct RowEndpointView {
+    /// Identifier unique across the whole inventory.
     pub key: String,
-    /// The operator's name for the service, shown as written.
-    pub label: String,
-    /// The address the list file named — a literal or a host name.
+    /// The address the list file named — a literal or, usually, a host name.
+    ///
+    /// Shown rather than the resolved address, because that is what the user recognises and
+    /// because a platform's front door sits on a content network whose address changes by
+    /// the hour.
     pub written_address: String,
-    /// The address actually being probed, once resolved.
+    /// The address actually being probed, once resolved. `null` means the name did not
+    /// resolve — under censorship that is itself a finding, not a reason to hide the row.
     pub resolved_address: Option<String>,
-    /// Whether a local tunnel remaps this endpoint, so its figure is end-to-end through
-    /// the tunnel rather than a round trip to the server.
+    /// Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
+    /// rather than a round trip to the target.
     pub tunnelled: bool,
     /// Whether any probe kind can still measure it honestly.
     pub measurable: bool,
     /// Which kind is measuring it now.
     pub probe_kind: Option<ProbeKindView>,
-    /// Whether a probe kind has been *proven* filtered — a later kind succeeded after an
-    /// earlier one was set aside. Never claimed on silence alone.
+    /// Whether a probe kind has been *proven* filtered here — a later kind succeeded after
+    /// an earlier one was set aside. Never claimed on silence alone.
     pub filtering_confirmed: bool,
-    /// The verdict.
+    /// The verdict for this endpoint alone.
     pub health: HealthView,
-    /// Mean round-trip time over the window, in milliseconds.
-    pub rtt_ms: Option<f64>,
-    /// Jitter over the window, in milliseconds.
-    pub jitter_ms: Option<f64>,
-    /// Packet loss over the window, as a percentage.
-    pub loss_pct: Option<f64>,
-    /// Seconds before now for each point of the series — negative, ascending.
+    /// The most recent answer's round-trip time, in milliseconds.
     ///
-    /// A real time axis rather than sample indices: probe intervals stretch under backoff,
-    /// so evenly spaced points would draw a chart that lies about when things happened.
-    pub series_age_secs: Vec<f64>,
-    /// Round-trip time at each point, or `null` where the probe did not come back.
-    pub series_rtt_ms: Vec<Option<f64>>,
+    /// *Ping, last check* on the page, and named that way for a reason: it is one check and
+    /// nothing else folded in, which is what answers "how is it responding right now".
+    pub rtt_ms: Option<f64>,
+    /// Mean round-trip time across the window, in milliseconds.
+    pub mean_rtt_ms: Option<f64>,
+    /// Jitter across the window, in milliseconds.
+    pub jitter_ms: Option<f64>,
+    /// Loss across the window, as a percentage.
+    pub loss_pct: Option<f64>,
+    /// The recent checks, oldest first.
+    pub checks: Vec<CheckView>,
 }
 
-/// One baseline, taken together.
+/// One row of the Network page: a named thing and its endpoints.
+///
+/// The single row shape for the whole page. A baseline target and a gaming platform were two
+/// view types drawn by two components in two visual languages, and half of one baseline was
+/// literally a second copy of two service entries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct GroupView {
-    /// Which baseline this is.
-    pub group: BaselineGroup,
-    /// The headline verdict.
+pub struct NetworkRowView {
+    /// Identifier unique across the whole inventory. A React key.
+    pub key: String,
+    /// The operator's name for it, shown as written. A proper noun, never translated.
+    pub label: String,
+    /// The headline verdict for the row.
+    pub health: HealthView,
+    /// The distribution behind it, shown whenever the row has more than one endpoint and
+    /// never collapsed into the verdict — a storefront that answers while the gateway does
+    /// not is the finding, and one amber dot would hide which half is broken.
+    pub counts: HealthCountsView,
+    /// Median round-trip time across the answering endpoints, in milliseconds.
+    ///
+    /// *Ping (RTT)* on the row. One of exactly two names this product gives a round trip on
+    /// this page; the other is *Ping, median* on a section heading.
+    pub rtt_ms: Option<f64>,
+    /// How many seconds ago the freshest check of this row completed.
+    ///
+    /// Stated because a page whose data has quietly stopped arriving looks exactly like one
+    /// reporting good news. `null` before anything has been checked at all.
+    pub last_checked_secs: Option<f64>,
+    /// Its endpoints, in list order.
+    pub endpoints: Vec<RowEndpointView>,
+}
+
+/// One section of the Network page, taken together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkSectionView {
+    /// Which section this is.
+    pub section: Section,
+    /// Whether a verdict is drawn from it.
+    ///
+    /// Sent rather than derived in the frontend, because it is the same judgement the
+    /// diagnosis engine makes and the page marks these sections so the banner above stays
+    /// checkable against the rows below.
+    pub read_by_verdict: bool,
+    /// The headline verdict for the section.
     pub verdict: HealthView,
     /// The distribution behind it. Shown, never collapsed into the verdict.
     pub counts: HealthCountsView,
-    /// Median round-trip time across the answering members, in milliseconds.
+    /// Median round-trip time across the answering rows, in milliseconds.
     pub rtt_ms: Option<f64>,
-    /// Median jitter across the answering members, in milliseconds.
-    pub jitter_ms: Option<f64>,
-    /// Loss across the group, weighted by probes.
-    pub loss_pct: Option<f64>,
-    /// The members, in list order.
-    pub targets: Vec<TargetView>,
-}
-
-impl GroupView {
-    /// Builds a group view from its computed health and its members.
-    #[must_use]
-    pub fn new(group: BaselineGroup, health: GroupHealth, targets: Vec<TargetView>) -> Self {
-        Self {
-            group,
-            verdict: health.verdict.into(),
-            counts: health.counts.into(),
-            rtt_ms: health.rtt_ms,
-            jitter_ms: health.jitter_ms,
-            loss_pct: health.loss_pct,
-            targets,
-        }
-    }
+    /// How often each of its targets is probed, in seconds.
+    ///
+    /// Per section rather than per page: the cadence difference between a baseline and a
+    /// platform is now a number on a target rather than two subsystems, and each section
+    /// states its own at level two.
+    pub cadence_secs: u32,
+    /// Span the figures in this section are computed over, in seconds.
+    pub window_secs: u32,
+    /// Its rows, in list order.
+    pub rows: Vec<NetworkRowView>,
 }
 
 /// What the evidence adds up to, as a network-level statement.
@@ -391,96 +412,6 @@ pub struct CheckView {
     pub age_secs: f64,
     /// What it produced.
     pub mark: CheckMarkView,
-}
-
-/// One endpoint of one status-page service.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ServiceEndpointView {
-    /// Identifier unique across the whole service list.
-    pub key: String,
-    /// The address the list file named — almost always a host name.
-    ///
-    /// Shown rather than the resolved address, because that is what the user recognises and
-    /// because a platform's front door sits on a content network whose address changes by
-    /// the hour.
-    pub written_address: String,
-    /// The address actually being checked, once resolved. `null` means the name did not
-    /// resolve — under censorship that is itself a finding, not a reason to hide the row.
-    pub resolved_address: Option<String>,
-    /// Whether a local tunnel remaps it, making the figure end-to-end through that tunnel
-    /// rather than a round trip to the service.
-    pub tunnelled: bool,
-    /// Whether any probe kind can still check it honestly.
-    pub measurable: bool,
-    /// Which kind is checking it now.
-    pub probe_kind: Option<ProbeKindView>,
-    /// Whether a probe kind has been *proven* filtered here.
-    pub filtering_confirmed: bool,
-    /// The verdict, from the most recent checks.
-    pub health: HealthView,
-    /// The most recent answer's round-trip time, in milliseconds.
-    pub rtt_ms: Option<f64>,
-    /// Mean round-trip time across the window, in milliseconds.
-    pub mean_rtt_ms: Option<f64>,
-    /// Loss across the window, as a percentage.
-    pub loss_pct: Option<f64>,
-    /// The recent checks, oldest first.
-    pub checks: Vec<CheckView>,
-}
-
-/// One status-page service, taken together.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ServiceView {
-    /// Its identifier from the list. A React key, and the tag a verdict names.
-    pub id: String,
-    /// The operator's name for it, shown as written.
-    pub label: String,
-    /// Which shelf of the page it sits on.
-    pub group: ServiceGroup,
-    /// The headline verdict.
-    pub verdict: HealthView,
-    /// The distribution behind it. Shown whenever a service has more than one endpoint,
-    /// never collapsed into the verdict — a storefront that answers while the gateway does
-    /// not is the finding, and one amber dot would hide which half is broken.
-    pub counts: HealthCountsView,
-    /// Median round-trip time across the answering endpoints, in milliseconds.
-    pub rtt_ms: Option<f64>,
-    /// Loss across the service, weighted by checks.
-    pub loss_pct: Option<f64>,
-    /// How many seconds ago the freshest check completed.
-    ///
-    /// Stated because a status page whose data has quietly stopped arriving looks exactly
-    /// like one reporting good news. `null` before anything has been checked at all.
-    pub last_checked_secs: Option<f64>,
-    /// Its endpoints, in list order.
-    pub endpoints: Vec<ServiceEndpointView>,
-}
-
-impl ServiceView {
-    /// Builds a service view from its computed health and its endpoints.
-    #[must_use]
-    pub fn new(
-        id: String,
-        label: String,
-        group: ServiceGroup,
-        health: GroupHealth,
-        last_checked_secs: Option<f64>,
-        endpoints: Vec<ServiceEndpointView>,
-    ) -> Self {
-        Self {
-            id,
-            label,
-            group,
-            verdict: health.verdict.into(),
-            counts: health.counts.into(),
-            rtt_ms: health.rtt_ms,
-            loss_pct: health.loss_pct,
-            last_checked_secs,
-            endpoints,
-        }
-    }
 }
 
 /// Transport an application reaches an endpoint over.

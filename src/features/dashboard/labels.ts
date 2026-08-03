@@ -1,5 +1,4 @@
 import type {
-  BaselineGroup,
   CoreReadiness,
   HealthView,
   PlatformKind,
@@ -33,24 +32,6 @@ export const platformKey = (platform: PlatformKind) => {
       return 'core.platform.macOs' as const;
     case 'unsupported':
       return 'core.platform.unsupported' as const;
-  }
-};
-
-export const groupKey = (group: BaselineGroup) => {
-  switch (group) {
-    case 'domestic':
-      return 'dashboard.group.domestic' as const;
-    case 'foreign':
-      return 'dashboard.group.foreign' as const;
-  }
-};
-
-export const groupHintKey = (group: BaselineGroup) => {
-  switch (group) {
-    case 'domestic':
-      return 'dashboard.groupHint.domestic' as const;
-    case 'foreign':
-      return 'dashboard.groupHint.foreign' as const;
   }
 };
 
