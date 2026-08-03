@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import '../../i18n';
+import { countChips } from '../../shared/testing';
 import { ServiceCard } from './ServiceCard';
 import type { CheckView, ServiceEndpointView, ServiceView } from '../../shared/ipc';
 
@@ -110,8 +111,7 @@ describe('ServiceCard', () => {
       />,
     );
 
-    expect(screen.getByText('1 OK')).toBeInTheDocument();
-    expect(screen.getByText('1 Unreachable')).toBeInTheDocument();
+    expect(countChips(document)).toEqual(['1 Unreachable', '1 OK']);
     expect(screen.getByText('store.steampowered.com')).toBeInTheDocument();
   });
 

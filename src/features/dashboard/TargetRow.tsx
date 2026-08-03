@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useFigures } from '../../shared/useFigures';
 import type { TargetView } from '../../shared/ipc';
+import { MetricRow } from '../../shared/MetricRow';
 import { MetricHelp } from '../help/MetricHelp';
 import { healthKey, healthModifier, probeKindKey } from './labels';
 import { Sparkline } from './Sparkline';
@@ -62,26 +63,25 @@ export const TargetRow = ({ target }: TargetRowProps) => {
       {/* The same three quantities the applications page shows, under the same names and
           with the same ⓘ. They were the one set of figures on the merged Network page that
           could not explain itself — which the page beside them could. */}
-      <dl className="nm-target__metrics">
-        <div>
-          <dt>
-            <MetricHelp topic="rtt">{t('dashboard.metric.rtt')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(target.rttMs)}</dd>
-        </div>
-        <div>
-          <dt>
-            <MetricHelp topic="jitter">{t('dashboard.metric.jitter')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(target.jitterMs)}</dd>
-        </div>
-        <div>
-          <dt>
-            <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>
-          </dt>
-          <dd>{figures.pct(target.lossPct)}</dd>
-        </div>
-      </dl>
+      <MetricRow
+        metrics={[
+          {
+            key: 'rtt',
+            label: <MetricHelp topic="rtt">{t('dashboard.metric.rtt')}</MetricHelp>,
+            value: figures.ms(target.rttMs),
+          },
+          {
+            key: 'jitter',
+            label: <MetricHelp topic="jitter">{t('dashboard.metric.jitter')}</MetricHelp>,
+            value: figures.ms(target.jitterMs),
+          },
+          {
+            key: 'loss',
+            label: <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>,
+            value: figures.pct(target.lossPct),
+          },
+        ]}
+      />
 
       <Sparkline
         ageSecs={target.seriesAgeSecs}

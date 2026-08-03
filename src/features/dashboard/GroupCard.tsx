@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
 
+import { MetricRow } from '../../shared/MetricRow';
 import { useFigures } from '../../shared/useFigures';
 import type { GroupView } from '../../shared/ipc';
+import { Distribution } from '../app-monitor/Distribution';
 import { MetricHelp } from '../help/MetricHelp';
 import { groupHintKey, groupKey, healthKey, healthModifier } from './labels';
 import { TargetRow } from './TargetRow';
@@ -9,16 +11,6 @@ import { TargetRow } from './TargetRow';
 interface GroupCardProps {
   readonly group: GroupView;
 }
-
-/** Which counts are worth showing, and in what order of severity. */
-const DISTRIBUTION = [
-  { key: 'unreachable', labelKey: 'dashboard.health.unreachable' },
-  { key: 'blocked', labelKey: 'dashboard.health.blocked' },
-  { key: 'degraded', labelKey: 'dashboard.health.degraded' },
-  { key: 'carryingTraffic', labelKey: 'dashboard.health.carryingTraffic' },
-  { key: 'ok', labelKey: 'dashboard.health.ok' },
-  { key: 'unknown', labelKey: 'dashboard.health.unknown' },
-] as const;
 
 /**
  * One baseline — domestic or foreign — with its headline verdict and the distribution
@@ -32,11 +24,6 @@ const DISTRIBUTION = [
 export const GroupCard = ({ group }: GroupCardProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
-
-  const counts = DISTRIBUTION.map((entry) => ({
-    ...entry,
-    value: group.counts[entry.key],
-  })).filter((entry) => entry.value > 0);
 
   return (
     <section className="nm-group">
@@ -52,39 +39,33 @@ export const GroupCard = ({ group }: GroupCardProps) => {
 
       {/* Medians, and they say so: a group figure is not one measurement, and one member on
           a bad path must not drag the headline away from what everyone else sees. */}
-      <dl className="nm-group__metrics">
-        <div>
-          <dt>
-            <MetricHelp topic="medianRtt">{t('dashboard.metric.rttMedian')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(group.rttMs)}</dd>
-        </div>
-        <div>
-          <dt>
-            <MetricHelp topic="jitter">{t('dashboard.metric.jitterMedian')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(group.jitterMs)}</dd>
-        </div>
-        <div>
-          <dt>
-            <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>
-          </dt>
-          <dd>{figures.pct(group.lossPct)}</dd>
-        </div>
-      </dl>
+      <MetricRow
+        size="headline"
+        metrics={[
+          {
+            key: 'rtt',
+            label: <MetricHelp topic="medianRtt">{t('dashboard.metric.rttMedian')}</MetricHelp>,
+            value: figures.ms(group.rttMs),
+          },
+          {
+            key: 'jitter',
+            label: <MetricHelp topic="jitter">{t('dashboard.metric.jitterMedian')}</MetricHelp>,
+            value: figures.ms(group.jitterMs),
+          },
+          {
+            key: 'loss',
+            label: <MetricHelp topic="loss">{t('dashboard.metric.loss')}</MetricHelp>,
+            value: figures.pct(group.lossPct),
+          },
+        ]}
+      />
 
-      {counts.length > 0 && (
-        <ul className="nm-group__distribution">
-          {counts.map((entry) => (
-            <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
-              {t('dashboard.distributionEntry', {
-                amount: figures.count(entry.value),
-                state: t(entry.labelKey),
-              })}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* One component for the count chips across the whole product: the same object was
+          drawn by three components in two visual languages. */}
+      <Distribution
+        counts={group.counts}
+        label={t('dashboard.distribution', { group: t(groupKey(group.group)) })}
+      />
 
       {group.targets.length === 0 ? (
         <p className="nm-state--pending">{t('dashboard.noTargets')}</p>

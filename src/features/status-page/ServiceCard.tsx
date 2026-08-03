@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
+import { Distribution } from '../app-monitor/Distribution';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
+import { MetricRow } from '../../shared/MetricRow';
 import { useFigures } from '../../shared/useFigures';
 import { MetricHelp } from '../help/MetricHelp';
 import type { ServiceEndpointView, ServiceView } from '../../shared/ipc';
@@ -10,15 +12,6 @@ interface ServiceCardProps {
   readonly service: ServiceView;
   readonly checkIntervalSecs: number;
 }
-
-/** Which counts are worth showing, and in what order of severity. */
-const DISTRIBUTION = [
-  { key: 'unreachable', labelKey: 'dashboard.health.unreachable' },
-  { key: 'blocked', labelKey: 'dashboard.health.blocked' },
-  { key: 'degraded', labelKey: 'dashboard.health.degraded' },
-  { key: 'ok', labelKey: 'dashboard.health.ok' },
-  { key: 'unknown', labelKey: 'dashboard.health.unknown' },
-] as const;
 
 interface EndpointRowProps {
   readonly endpoint: ServiceEndpointView;
@@ -88,29 +81,28 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
         })}
       />
 
-      <dl className="nm-service__metrics">
-        <div>
-          <dt>
-            <MetricHelp topic="latestCheck">{t('status.metric.latest')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(endpoint.rttMs)}</dd>
-        </div>
-        {/* The span these cover is stated once, in the page's legend, rather than on both
-            figures of all twenty-three cards — where it wrapped onto three lines and pushed
-            the numbers out of line with each other. The ⓘ says it too. */}
-        <div>
-          <dt>
-            <MetricHelp topic="meanRtt">{t('status.metric.mean')}</MetricHelp>
-          </dt>
-          <dd>{figures.ms(endpoint.meanRttMs)}</dd>
-        </div>
-        <div>
-          <dt>
-            <MetricHelp topic="loss">{t('status.metric.loss')}</MetricHelp>
-          </dt>
-          <dd>{figures.pct(endpoint.lossPct)}</dd>
-        </div>
-      </dl>
+      {/* The span these cover is stated once, in the page's legend, rather than on both
+          figures of all twenty-three cards — where it wrapped onto three lines and pushed the
+          numbers out of line with each other. The label's own explanation says it too. */}
+      <MetricRow
+        metrics={[
+          {
+            key: 'latest',
+            label: <MetricHelp topic="latestCheck">{t('status.metric.latest')}</MetricHelp>,
+            value: figures.ms(endpoint.rttMs),
+          },
+          {
+            key: 'mean',
+            label: <MetricHelp topic="meanRtt">{t('status.metric.mean')}</MetricHelp>,
+            value: figures.ms(endpoint.meanRttMs),
+          },
+          {
+            key: 'loss',
+            label: <MetricHelp topic="loss">{t('status.metric.loss')}</MetricHelp>,
+            value: figures.pct(endpoint.lossPct),
+          },
+        ]}
+      />
     </li>
   );
 };
@@ -131,11 +123,6 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
 export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
-
-  const counts = DISTRIBUTION.map((entry) => ({
-    ...entry,
-    value: service.counts[entry.key],
-  })).filter((entry) => entry.value > 0);
 
   const lastChecked =
     service.lastCheckedSecs === null
@@ -166,17 +153,13 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
         <span className={stale ? 'nm-service__stale' : 'nm-service__checked'}>{lastChecked}</span>
       </p>
 
-      {counts.length > 1 && (
-        <ul className="nm-group__distribution">
-          {counts.map((entry) => (
-            <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
-              {t('dashboard.distributionEntry', {
-                amount: figures.count(entry.value),
-                state: t(entry.labelKey),
-              })}
-            </li>
-          ))}
-        </ul>
+      {/* The same chips the applications page uses, from the same component: a count of
+          endpoints in a state is the same object on both pages and was drawn twice. */}
+      {service.endpoints.length > 1 && (
+        <Distribution
+          counts={service.counts}
+          label={t('status.distribution', { service: service.label })}
+        />
       )}
 
       <ul className="nm-service__endpoints">

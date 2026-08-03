@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
+import { countChips, stateBadges } from '../../shared/testing';
 import { GroupCard } from './GroupCard';
 import type { GroupView, HealthView, TargetView } from '../../shared/ipc';
 
@@ -86,8 +87,9 @@ describe('GroupCard', () => {
       />,
     );
 
-    expect(screen.getByText('3 OK')).toBeInTheDocument();
-    expect(screen.getByText('1 Unreachable')).toBeInTheDocument();
+    // Chips, not badges: "this baseline is unreachable" and "one of its targets is" are
+    // different claims and must not be the same shape.
+    expect(countChips(document)).toEqual(['1 Unreachable', '3 OK']);
   });
 
   it('omits states no member is in', () => {
@@ -103,7 +105,9 @@ describe('GroupCard', () => {
     ['unknown', 'Not measured yet'],
   ])('renders the %s verdict as words, not only colour', (verdict, expected) => {
     render(<GroupCard group={group({ verdict, targets: [] })} />);
-    expect(screen.getByText(expected)).toBeInTheDocument();
+    // The badge specifically. A count chip carries the same words about a different subject,
+    // which is why the two stopped looking alike.
+    expect(stateBadges(document)).toContain(expected);
   });
 
   it('shows a dash rather than a zero where nothing was measured', () => {

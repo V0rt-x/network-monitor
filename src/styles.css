@@ -92,6 +92,9 @@
    */
   --nm-col-narrow: 18rem;
   --nm-col-wide: 26rem;
+  /* One figure and its label. Narrower than a layout column because it is not one: it is
+     what keeps ping, jitter and loss in the same place on every card of every page. */
+  --nm-col-metric: 7rem;
 
   font-family:
     'Segoe UI',
@@ -136,11 +139,17 @@ body {
   padding: var(--nm-space-5);
 }
 
+/*
+ * Three columns, on a grid.
+ *
+ * It was a wrapping flex row with `margin-left: auto` on the actions, so the tabs and the
+ * buttons reflowed past each other at unpredictable widths as the window narrowed.
+ */
 .nm-app__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--nm-space-4) var(--nm-space-6);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--nm-space-4);
   margin-bottom: var(--nm-space-5);
 }
 
@@ -149,22 +158,17 @@ body {
   font-size: var(--nm-text-xl);
 }
 
-.nm-app__tagline {
-  margin: var(--nm-space-1) 0 0;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-}
-
 .nm-app__actions {
-  margin-left: auto;
   display: flex;
+  justify-content: flex-end;
   gap: var(--nm-space-2);
 }
 
 .nm-nav {
   display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: var(--nm-space-1);
-  align-self: center;
 }
 
 .nm-nav__tab,
@@ -178,9 +182,13 @@ body {
   cursor: pointer;
 }
 
+/* Filled rather than merely recoloured: text and border colour alone is the weakest
+   possible way to say which page you are on. */
 .nm-nav__tab--active {
   border-color: var(--nm-accent);
-  color: var(--nm-accent);
+  background: var(--nm-accent);
+  color: var(--nm-bg);
+  font-weight: 600;
 }
 
 .nm-button--quiet {
@@ -235,40 +243,6 @@ body {
   max-width: 22rem;
 }
 
-.nm-group__metrics,
-.nm-target__metrics {
-  display: flex;
-  gap: var(--nm-space-5);
-  margin: 0;
-}
-
-.nm-group__metrics dt,
-.nm-target__metrics dt {
-  color: var(--nm-text-secondary);
-  font-size: var(--nm-text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.nm-group__metrics dd,
-.nm-target__metrics dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.nm-group__metrics dd {
-  font-size: var(--nm-text-xl);
-}
-
-.nm-group__distribution {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--nm-space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .nm-group__targets {
   list-style: none;
   margin: 0;
@@ -311,10 +285,6 @@ body {
   flex-wrap: wrap;
   gap: var(--nm-space-1);
   justify-content: flex-end;
-}
-
-.nm-target__metrics {
-  gap: var(--nm-space-4);
 }
 
 .nm-badge {
@@ -412,6 +382,17 @@ body {
   border-radius: var(--nm-radius-md);
   padding: var(--nm-space-2) var(--nm-space-2);
   max-width: 18rem;
+}
+
+/* At the bottom of a page a user goes to on purpose, rather than beside Minimize in the
+   header where a mis-click ended the monitoring. */
+.nm-settings__quit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nm-space-2);
+  border-top: 1px solid var(--nm-border);
+  padding-top: var(--nm-space-4);
 }
 
 .nm-settings__privacy {
@@ -948,13 +929,39 @@ body {
   border: 0;
 }
 
-.nm-distribution {
+/*
+ * A count is not a verdict, and it must not look like one.
+ *
+ * These were `.nm-health` pills — the same shape and colour as the state badges beside them —
+ * so "this service is degraded" and "two of its endpoints are degraded" read as the same
+ * claim. A count chip leads with its number, at a larger size than its word, and carries no
+ * border: an arithmetic fact about a set rather than a state of one thing.
+ */
+.nm-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--nm-space-2);
+  gap: var(--nm-space-1) var(--nm-space-3);
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.nm-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--nm-space-1);
+  white-space: nowrap;
+}
+
+.nm-count__value {
+  font-size: var(--nm-text-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.nm-count__state {
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-secondary);
 }
 
 /* The match traffic first, the supporting connections below and folded when they are all
@@ -1109,22 +1116,40 @@ details.nm-endpointgroup > summary {
   justify-content: flex-end;
 }
 
+/*
+ * The same three quantities, laid out the same way, wherever they appear.
+ *
+ * There were two layouts for one thing — a rigid three-column grid on the services page and
+ * a wrapping flex row on the applications page — so ping, jitter and loss did not line up
+ * with each other between two pages of the same product.
+ *
+ * A fixed column width rather than `1fr`: the figures are what a reader compares down a page,
+ * and columns that resize to their contents put them in a different place on every card.
+ */
+.nm-metrics,
 .nm-endpoint__metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--nm-space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--nm-col-metric), max-content));
+  gap: var(--nm-space-1) var(--nm-space-4);
   margin: 0;
-  grid-column: 1 / -1;
 }
 
+.nm-metrics dt,
 .nm-endpoint__metrics dt {
   color: var(--nm-text-secondary);
   font-size: var(--nm-text-xs);
 }
 
+.nm-metrics dd,
 .nm-endpoint__metrics dd {
   margin: 0;
+  /* A figure alternating between a number and a dash must not change the line height. */
+  min-height: 1.35rem;
   font-variant-numeric: tabular-nums;
+}
+
+.nm-metrics--headline dd {
+  font-size: var(--nm-text-xl);
 }
 
 .nm-endpoint__egress {
@@ -1406,23 +1431,6 @@ details.nm-endpointgroup > summary {
   color: var(--nm-muted);
   font-size: var(--nm-text-xs);
   word-break: break-all;
-}
-
-.nm-service__metrics {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--nm-space-1) var(--nm-space-2);
-  font-size: var(--nm-text-xs);
-}
-
-.nm-service__metrics dt {
-  color: var(--nm-text-secondary);
-}
-
-.nm-service__metrics dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
 }
 
 /*

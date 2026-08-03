@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
+import { stateBadges } from '../../shared/testing';
 import { DashboardPage } from './DashboardPage';
 import type { NetworkHealth } from '../../shared/ipc';
 
@@ -92,8 +93,10 @@ describe('DashboardPage', () => {
     // The comparison is the diagnosis: the domestic side is fine, the way out is not.
     expect(await screen.findByRole('heading', { name: 'Domestic' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Foreign' })).toBeInTheDocument();
-    expect(screen.getByText('OK')).toBeInTheDocument();
-    expect(screen.getByText('Unreachable')).toBeInTheDocument();
+    // The badges, not the count chips: the two carry the same words and make different
+    // claims, which is exactly why they no longer look alike.
+    expect(stateBadges(document)).toContain('OK');
+    expect(stateBadges(document)).toContain('Unreachable');
     expect(screen.getByText('Figures cover the last 60 s')).toBeInTheDocument();
   });
 

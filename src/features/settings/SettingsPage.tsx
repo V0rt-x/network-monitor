@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { quitApp } from '../../shared/ipc';
 import { settingsProblemKey } from '../dashboard/labels';
 import { useSettings } from './useSettings';
 
@@ -136,6 +137,24 @@ export const SettingsPage = () => {
       </div>
 
       <p className="nm-settings__privacy">{t('settings.privacyNote')}</p>
+
+      {/* Quitting lives here, at the bottom of the page a user goes to on purpose.
+          It used to sit in the header beside Minimize — two adjacent buttons, one of which
+          hides the window and the other of which ends the monitoring, told apart by the
+          muted colour of the second. Settings is reachable from every page, so the guarantee
+          that a user is never stuck survives the move. */}
+      <div className="nm-settings__quit">
+        <p className="nm-field__hint">{t('settings.quitHint')}</p>
+        <button
+          type="button"
+          className="nm-button"
+          onClick={() => {
+            void quitApp();
+          }}
+        >
+          {t('app.quit')}
+        </button>
+      </div>
     </section>
   );
 };

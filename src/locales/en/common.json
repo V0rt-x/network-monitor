@@ -1,7 +1,6 @@
 {
   "app": {
     "name": "Network Monitor",
-    "tagline": "Local, private network diagnostics",
     "minimize": "Minimize to tray",
     "quit": "Quit"
   },
@@ -60,6 +59,7 @@
     "window": "Figures cover the last {{seconds}} s",
     "noTargets": "No targets in this baseline",
     "distributionEntry": "{{amount}} {{state}}",
+    "distribution": "Target states in the {{group}} baseline",
     "sparklineLabel": "Round-trip time over time for {{target}}",
     "group": {
       "domestic": "Domestic",
@@ -489,6 +489,7 @@
     "cadence": "Each service is checked every {{seconds}} s",
     "caveat": "These checks say whether this machine can reach each service. A service you cannot reach may be running normally for everyone else.",
     "noServices": "No services in this group",
+    "distribution": "Endpoint states of {{service}}",
     "noChecks": "Not checked yet",
     "neverChecked": "Not checked yet",
     "lastChecked": "Checked {{seconds}} s ago",
@@ -542,6 +543,7 @@
     "rememberGameServers": "Remember the servers your games connect to",
     "rememberGameServersHint": "Kept on this machine and sent nowhere. It is what lets the app tell \"this game's servers are down\" apart from \"you cannot reach them\". Turning it off deletes what was already remembered.",
     "privacyNote": "All measurements stay on this machine. The app sends nothing anywhere except the probes on these lists.",
+    "quitHint": "Closing the window keeps the monitoring running in the tray. This stops it.",
     "problem": {
       "unreadable": "The settings file could not be read; defaults are in use.",
       "malformed": "The settings file could not be understood; defaults are in use and your file was left untouched.",

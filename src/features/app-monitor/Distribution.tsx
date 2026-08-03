@@ -36,12 +36,20 @@ interface DistributionProps {
 }
 
 /**
- * How many endpoints are in each state — never a single colour standing for all of them.
+ * How many members are in each state — never a single colour standing for all of them.
  *
  * "4 clean, 2 degraded, 1 unreachable" is a fact a user can act on. One badge for a whole
  * application, or for a whole group of its endpoints, is either an outage that is not
  * happening or a failure being hidden, and partial failure is the normal case under
  * filtering rather than an edge one.
+ *
+ * **A count is not a verdict, and it must not look like one.** These used to be `.nm-health`
+ * pills — the same shape and colour as the state badges beside them — so "this service is
+ * degraded" and "two of its endpoints are degraded" read as the same claim, which they are
+ * emphatically not. A count chip leads with its number, at a larger size than its word, and
+ * carries no border: an arithmetic fact about a set rather than a state of one thing. The
+ * colour stays, because it is what ties a count to the badges it counts, and it is a second
+ * channel here rather than the only one — every chip says its state in words.
  *
  * States with no members are left out rather than shown as zeros: the point is what *is*
  * happening.
@@ -56,13 +64,14 @@ export const Distribution = ({ counts, label, className }: DistributionProps) =>
   if (present.length === 0) return null;
 
   return (
-    <ul className={`nm-distribution ${className ?? ''}`.trimEnd()} aria-label={label}>
+    <ul className={`nm-counts ${className ?? ''}`.trimEnd()} aria-label={label}>
       {present.map((entry) => (
-        <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
-          {t('dashboard.distributionEntry', {
-            amount: formatCount(entry.value, locale),
-            state: t(entry.labelKey),
-          })}
+        <li key={entry.key} className={`nm-count ${healthModifier(entry.key)}`}>
+          {/* Written as two elements rather than as one interpolated sentence: the number is
+              the part that is scanned, and it has to be able to be larger than the word. The
+              screen-reader reading is unchanged — they are adjacent inline elements. */}
+          <span className="nm-count__value">{formatCount(entry.value, locale)}</span>{' '}
+          <span className="nm-count__state">{t(entry.labelKey)}</span>
         </li>
       ))}
     </ul>

@@ -2223,16 +2223,16 @@ it waits on none of the contested decisions.
       2026-08-03.* Applies to the whole merged list, not to services alone; twenty-three cards
       each carrying a strip and three figures per endpoint turns "which of these is red" into a
       scrolling task.
-- [ ] **29. A count chip must not look like a state badge.** Both use `.nm-health` today, so
+- [x] **29. A count chip must not look like a state badge.** Both use `.nm-health` today, so
       "this service is degraded" and "two of its endpoints are degraded" are visually the
       same claim.
-- [ ] **30. One `MetricRow` for all pages.** The same three quantities are laid out by a rigid
+- [x] **30. One `MetricRow` for all pages.** The same three quantities are laid out by a rigid
       3-column grid on one page and by wrapping flex on another, so they do not line up. The
       merge settles this for Network; the item remains because Applications shares it.
 
 ### P6 — the shell
 
-- [ ] **31. Header on a grid; `Quit` moves to Settings; the tagline leaves the header.**
+- [x] **31. Header on a grid; `Quit` moves to Settings; the tagline leaves the header.**
       *Approved 2026-08-03.* `Quit` currently sits next to `Minimize`, distinguished by
       muted text — two adjacent buttons where one hides the window and the other ends the
       monitoring. Settings is always reachable, so the guarantee that a user is never stuck
@@ -2246,6 +2246,28 @@ it waits on none of the contested decisions.
   Network page draws every target with one component, names the round trip two ways rather than
   five, and **measures no address twice** — a test walks the bundled target lists and fails on
   a duplicate.
+
+**Phase 6.7 status: 29 of the 31 items are done and every quality gate is green. Two are
+open, both of them P5, and they are the same piece of work.**
+
+- **Item 27, the Network merge, is not started**, and it is deliberately left whole rather
+  than begun. It is the only item in the phase that is not a change to the frontend: it
+  rewrites the target schema so that "domestic baseline" and "foreign baseline" become *tags*
+  rather than inventories, deletes the duplicate entries that currently cause
+  `discord.com` and `api.steampowered.com` to be probed twice, gives baseline targets a
+  history of check marks so the strip can replace the sparkline, and converges
+  `GroupView`/`TargetView` and `ServiceView`/`ServiceEndpointView` onto one row shape. That
+  is `assets/targets/*`, `baselines.rs`, `services.rs`, `monitor.rs`, `view.rs`, and then
+  the whole of both pages and their tests — comparable in size to the rest of this phase put
+  together. Half-landing it would leave two target schemas and two row components, which is
+  the state the item exists to end.
+- **Item 28 waits on it**, and not only for convenience. A service card's headline figure is
+  a *median across its endpoints*; the review's folded row shows `Ping (RTT)`, which is a
+  single round trip. Folding the cards before the merge would therefore put the wrong name on
+  the most prominent figure of the page — exactly the class of mistake this phase is
+  correcting. After item 27 each endpoint is a row and the name is true.
+- Items 29 and 30 landed on the pages as they stand, and the merge inherits them: the count
+  chips and `MetricRow` are shared components used by all three pages already.
 
 ## Phase 7 — Polish, persistence, packaging
 

@@ -8,7 +8,7 @@ import type { HelpTopic } from './features/help/topics';
 import { NetworkPage } from './features/network/NetworkPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
-import { hideToTray, quitApp } from './shared/ipc';
+import { hideToTray } from './shared/ipc';
 
 /**
  * The pages the app ships. A router would be a dependency for one switch.
@@ -72,11 +72,13 @@ export const App = () => {
 
   return (
     <div className="nm-app">
+      {/* Three columns on a grid, not a wrapping flex row with `margin-left: auto` on the
+          actions: the tabs and the buttons used to reflow past each other unpredictably as
+          the window narrowed. The tagline is gone from here — it took a line on every screen
+          to say something a reader knows within ten seconds, and the page carries figures and
+          findings rather than descriptions of itself. */}
       <header className="nm-app__header">
-        <div>
-          <h1 className="nm-app__title">{t('app.name')}</h1>
-          <p className="nm-app__tagline">{t('app.tagline')}</p>
-        </div>
+        <h1 className="nm-app__title">{t('app.name')}</h1>
 
         <nav className="nm-nav" aria-label={t('nav.label')}>
           {PAGES.map((entry) => (
@@ -102,8 +104,10 @@ export const App = () => {
         </nav>
 
         <div className="nm-app__actions">
-          {/* Both stay reachable from the window: the tray menu only exists once the
-              translated labels have reached Rust, and a user must never be stuck. */}
+          {/* Only one action here now. `Quit` sat beside it, distinguished by muted text —
+              two adjacent buttons where one hides the window and the other ends the
+              monitoring — and it has moved to the bottom of Settings, which is reachable
+              from every page, so the guarantee that a user is never stuck survives. */}
           <button
             type="button"
             className="nm-button"
@@ -112,15 +116,6 @@ export const App = () => {
             }}
           >
             {t('app.minimize')}
-          </button>
-          <button
-            type="button"
-            className="nm-button nm-button--quiet"
-            onClick={() => {
-              void quitApp();
-            }}
-          >
-            {t('app.quit')}
           </button>
         </div>
       </header>

@@ -77,7 +77,7 @@ describe('the design system', () => {
       const value = (base[1] ?? '').trim();
       // `minmax(0, 1fr)` is a column that may shrink, not a breakpoint.
       if (value === '0') continue;
-      expect(value).toMatch(/var\(--nm-col-(narrow|wide)\)/);
+      expect(value).toMatch(/var\(--nm-col-[a-z]+\)/);
     }
   });
 

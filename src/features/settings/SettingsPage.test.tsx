@@ -6,12 +6,13 @@ import '../../i18n';
 import { SettingsPage } from './SettingsPage';
 import type { Settings, SettingsView } from '../../shared/ipc';
 
-const { fetchSettings, storeSettings } = vi.hoisted(() => ({
+const { fetchSettings, storeSettings, quitApp } = vi.hoisted(() => ({
   fetchSettings: vi.fn(),
   storeSettings: vi.fn(),
+  quitApp: vi.fn(),
 }));
 
-vi.mock('../../shared/ipc', () => ({ fetchSettings, storeSettings }));
+vi.mock('../../shared/ipc', () => ({ fetchSettings, storeSettings, quitApp }));
 
 const view = (overrides: Partial<SettingsView> = {}): SettingsView => ({
   settings: {
@@ -133,5 +134,20 @@ describe('SettingsPage', () => {
     await userEvent.click(toggle);
 
     expect(storeSettings).toHaveBeenCalledWith(expect.objectContaining({ nameNetworks: false }));
+  });
+});
+
+describe('SettingsPage, ending the monitoring', () => {
+  it('is where quitting lives, away from the button that only hides the window', async () => {
+    // They sat side by side in the header, told apart by the muted colour of the second:
+    // one hides the window and the other ends the monitoring. Settings is reachable from
+    // every page, so the guarantee that a user is never stuck survives the move.
+    fetchSettings.mockResolvedValue(view());
+    render(<SettingsPage />);
+    await screen.findByLabelText('Language');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Quit' }));
+
+    expect(quitApp).toHaveBeenCalled();
   });
 });

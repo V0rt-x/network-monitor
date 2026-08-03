@@ -1,8 +1,9 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
+import { countChips, stateBadges } from '../../shared/testing';
 import { AppCard } from './AppCard';
 import type { AppView, EndpointGroupView, EndpointView, HealthCountsView } from '../../shared/ipc';
 
@@ -222,12 +223,8 @@ describe('AppCard', () => {
 
     // The application's own tally, not a group's: each transport group carries one too, and
     // they are different statements about different sets of endpoints.
-    const total = within(
-      screen.getByRole('list', { name: 'Endpoint states across this application' }),
-    );
-    expect(total.getByText('1 Unreachable')).toBeInTheDocument();
-    expect(total.getByText('2 Degraded')).toBeInTheDocument();
-    expect(total.getByText('4 OK')).toBeInTheDocument();
+    const total = screen.getByRole('list', { name: 'Endpoint states across this application' });
+    expect(countChips(total)).toEqual(['1 Unreachable', '2 Degraded', '4 OK']);
   });
 
   it('groups the endpoints by transport, UDP first, and claims no role from it', () => {
@@ -261,10 +258,9 @@ describe('AppCard', () => {
     expect(screen.queryByText(/Match traffic/)).not.toBeInTheDocument();
     expect(screen.queryByText(/plays over|not where the game is played/)).not.toBeInTheDocument();
 
-    const supporting = within(
-      screen.getByRole('list', { name: 'Endpoint states in TCP connections' }),
-    );
-    expect(supporting.getByText('1 Degraded')).toBeInTheDocument();
+    expect(
+      countChips(screen.getByRole('list', { name: 'Endpoint states in TCP connections' })),
+    ).toEqual(['1 Degraded']);
   });
 
   it('explains a group heading rather than captioning it on the page', async () => {
@@ -362,10 +358,8 @@ describe('AppCard', () => {
     // group is open or shut.
     expect(screen.getByText('TCP connections').closest('details')).not.toHaveAttribute('open');
     expect(
-      within(screen.getByRole('list', { name: 'Endpoint states in TCP connections' })).getByText(
-        '1 Probe blocked',
-      ),
-    ).toBeInTheDocument();
+      countChips(screen.getByRole('list', { name: 'Endpoint states in TCP connections' })),
+    ).toEqual(['1 Probe blocked']);
   });
 
   it('renders each endpoint with its own state', () => {
@@ -386,8 +380,8 @@ describe('AppCard', () => {
 
     expect(screen.getByText('1.1.1.1:27015')).toBeInTheDocument();
     expect(screen.getByText('1.1.1.2:443')).toBeInTheDocument();
-    expect(screen.getByText('Unreachable')).toBeInTheDocument();
-    expect(screen.getByText('OK')).toBeInTheDocument();
+    expect(stateBadges(document)).toContain('Unreachable');
+    expect(stateBadges(document)).toContain('OK');
   });
 
   it('keeps the path figure beside a silent endpoint rather than standing in for it', async () => {
@@ -1401,6 +1395,6 @@ describe('AppCard, holding the list still', () => {
 
     // The order is held; the figures are not.
     expect(addresses()).toEqual(['1.1.1.1:1', '1.1.1.2:2']);
-    expect(screen.getByText('Unreachable')).toBeVisible();
+    expect(stateBadges(document)).toContain('Unreachable');
   });
 });
