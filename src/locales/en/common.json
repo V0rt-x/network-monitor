@@ -1,8 +1,6 @@
 {
   "app": {
-    "name": "Network Monitor",
-    "minimize": "Minimize to tray",
-    "quit": "Quit"
+    "name": "Network Monitor"
   },
   "unit": {
     "ms": "{{value}} ms",
@@ -37,7 +35,7 @@
     }
   },
   "tray": {
-    "show": "Show Network Monitor",
+    "show": "Open",
     "quit": "Quit"
   },
   "core": {
@@ -554,7 +552,6 @@
     "rememberGameServers": "Remember the servers your games connect to",
     "rememberGameServersHint": "Kept on this machine and sent nowhere. It is what lets the app tell \"this game's servers are down\" apart from \"you cannot reach them\". Turning it off deletes what was already remembered.",
     "privacyNote": "All measurements stay on this machine. The app sends nothing anywhere except the probes on these lists.",
-    "quitHint": "Closing the window keeps the monitoring running in the tray. This stops it.",
     "problem": {
       "unreadable": "The settings file could not be read; defaults are in use.",
       "malformed": "The settings file could not be understood; defaults are in use and your file was left untouched.",

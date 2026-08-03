@@ -95,30 +95,36 @@ export const EndpointRow = ({
           onHover(null);
         }}
       >
+        {/* The flex layout lives on a wrapper inside the cell, never on the cell. A `<td>`
+            that is a flex container leaves table layout, stops sharing the row's box, and
+            draws its own bottom border at its own height — which is the stepped rule that
+            was visible between `Endpoint` and `Network` on the running build. */}
         <td className="nm-endpoint__identity">
-          <button
-            type="button"
-            className="nm-endpoint__select"
-            aria-pressed={pinned}
-            onClick={onPin}
-            onFocus={() => {
-              onHover(endpoint.key);
-            }}
-            onBlur={() => {
-              onHover(null);
-            }}
-          >
-            {/* Ties the row to its line. Shape as well as colour, because this was the one
-                place in the product where colour carried meaning entirely by itself. */}
-            <span
-              className={`nm-endpoint__swatch nm-endpoint__swatch--${shape}`}
-              style={{ backgroundColor: colour }}
-              aria-hidden="true"
-            />
-            <span className="nm-endpoint__address">{endpoint.address}</span>
-            <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
-          </button>
-          <span className="nm-endpoint__transport">{endpoint.transport.toUpperCase()}</span>
+          <span className="nm-endpoint__names">
+            <button
+              type="button"
+              className="nm-endpoint__select"
+              aria-pressed={pinned}
+              onClick={onPin}
+              onFocus={() => {
+                onHover(endpoint.key);
+              }}
+              onBlur={() => {
+                onHover(null);
+              }}
+            >
+              {/* Ties the row to its line. Shape as well as colour, because this was the one
+                  place in the product where colour carried meaning entirely by itself. */}
+              <span
+                className={`nm-endpoint__swatch nm-endpoint__swatch--${shape}`}
+                style={{ backgroundColor: colour }}
+                aria-hidden="true"
+              />
+              <span className="nm-endpoint__address">{endpoint.address}</span>
+              <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
+            </button>
+            <span className="nm-endpoint__transport">{endpoint.transport.toUpperCase()}</span>
+          </span>
         </td>
 
         {/* The only thing on the row a reader can recognise without knowing what a single one
@@ -130,10 +136,12 @@ export const EndpointRow = ({
         </td>
 
         <td className="nm-endpoint__state">
-          <span className={`nm-health ${healthModifier(endpoint.health)}`}>
-            {t(healthKey(endpoint.health))}
+          <span className="nm-endpoint__states">
+            <span className={`nm-health ${healthModifier(endpoint.health)}`}>
+              {t(healthKey(endpoint.health))}
+            </span>
+            <EndpointBadges endpoint={endpoint} />
           </span>
-          <EndpointBadges endpoint={endpoint} />
         </td>
 
         {/* Absent entirely where no probe will ever fill them in, and absent *silently*.

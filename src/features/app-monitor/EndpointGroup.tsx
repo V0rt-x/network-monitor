@@ -154,22 +154,31 @@ export const EndpointGroup = ({
     </>
   );
 
-  if (isMatchTraffic) {
+  // A group with nothing in it is not drawn at all — not even its heading and its count chip.
+  // An application that only ever speaks TCP was showing an empty `UDP flows` heading, which
+  // reads as "your game has no match traffic" about an application that never had any.
+  //
+  // The one exception is knowledge that is *missing* rather than absent: without the one-time
+  // tracing setup there are no UDP endpoints on this machine whatever the application does,
+  // and that is a finding with something to do about it. It keeps its sentence.
+  if (group.endpoints.length === 0) {
+    if (!isMatchTraffic || flowStatus === 'active') return null;
     return (
       <section className="nm-endpointgroup">
         <header className="nm-endpointgroup__header">{heading}</header>
-        {group.endpoints.length === 0 ? (
-          <p className="nm-state--pending">
-            {flowStatus === 'active' ? t('apps.group.udpEmpty') : t('apps.group.udpUnobservable')}
-          </p>
-        ) : (
-          rows
-        )}
+        <p className="nm-state--pending">{t('apps.group.udpUnobservable')}</p>
       </section>
     );
   }
 
-  if (group.endpoints.length === 0) return null;
+  if (isMatchTraffic) {
+    return (
+      <section className="nm-endpointgroup">
+        <header className="nm-endpointgroup__header">{heading}</header>
+        {rows}
+      </section>
+    );
+  }
 
   return (
     <details

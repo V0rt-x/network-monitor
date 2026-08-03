@@ -107,6 +107,51 @@ describe('the design system', () => {
     }
   });
 
+  it('never makes a table cell a flex container', () => {
+    // `display: flex` on a `<td>` takes it out of table layout: the cell stops sharing the
+    // row's box and draws its own bottom border at its own height, so the rule under a row
+    // steps in the middle of it. The flex layout belongs on a wrapper inside the cell.
+    //
+    // Selectors that *end* in a cell are what matters — `.nm-endpoint__columns > .nm-path`
+    // is a rule about a panel, and `td button` is a rule about a button.
+    const CELL = /(^|[\s,>+~])(td|\.nm-endpoint__(identity|state|network|figure|disclose))$/;
+    for (const { selector, value } of declarations('display')) {
+      if (!value.startsWith('flex') && !value.startsWith('inline-flex')) continue;
+      for (const one of selector.split(',').map((part) => part.trim())) {
+        expect(`${one} { display: ${value} }`).not.toMatch(CELL);
+      }
+    }
+  });
+
+  it('gives every row of the connection table the same height', () => {
+    // A row carrying a warm-up badge and a row carrying none must be the same size, or the
+    // list changes shape as badges expire under the reader.
+    const rule = BODY.slice(BODY.indexOf('.nm-endpoints tbody tr {'));
+    expect(rule.slice(0, rule.indexOf('}'))).toContain('height: var(--nm-row-height)');
+  });
+
+  it('keeps a floating panel inside the window, whatever is in it', () => {
+    // jsdom measures every rectangle as zero, so the *placement* cannot be asserted by
+    // rendering. What can be asserted is the declared maximum, which is what stops a long
+    // sentence running past the panel and the panel running past the window — and it is the
+    // half of the defect that no amount of flipping fixes.
+    for (const floating of ['.nm-help__panel', '.nm-charttip']) {
+      const rule = BODY.slice(BODY.indexOf(`${floating} {`));
+      const block = rule.slice(0, rule.indexOf('}'));
+      expect(`${floating}: ${block}`).toMatch(/max-width: min\(.+, calc\(100vw - /);
+      expect(`${floating}: ${block}`).toContain('overflow-wrap: anywhere');
+    }
+    // And both flip on both axes: 6.7 handled the right edge and left the bottom one, so a
+    // panel opened on the last row of a long table still hung outside the window.
+    for (const flipped of [
+      '.nm-help__panel--flipped',
+      '.nm-help__panel--above',
+      '.nm-charttip--above',
+    ]) {
+      expect(BODY).toContain(`${flipped} {`);
+    }
+  });
+
   it('says where the focus is, for everything that can take it', () => {
     expect(BODY).toContain(
       ':where(button, a, input, select, textarea, summary, [tabindex]):focus-visible',

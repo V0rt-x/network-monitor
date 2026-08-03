@@ -266,20 +266,3 @@ pub fn forget_app(state: State<'_, AppState>, app: u32) {
 pub fn apply_tray_labels(app: AppHandle<Wry>, labels: TrayLabels) -> bool {
     shell::apply_tray_labels(&app, &labels).is_ok()
 }
-
-/// Hides the window, leaving the core measuring.
-#[tauri::command]
-#[specta::specta]
-pub fn hide_to_tray(app: AppHandle<Wry>) {
-    shell::hide_window(&app);
-}
-
-/// Ends the application.
-///
-/// Exists so the UI can offer a quit that is always reachable, whatever state the tray menu
-/// is in.
-#[tauri::command]
-#[specta::specta]
-pub fn quit_app(app: AppHandle<Wry>) {
-    app.exit(0);
-}

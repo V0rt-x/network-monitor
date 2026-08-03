@@ -59,6 +59,57 @@ describe('MetricHelp', () => {
     expect(openHelp).toHaveBeenCalledWith('dropOff');
   });
 
+  it('flips off both edges of the window, not just the right one', async () => {
+    // 6.7 measured the horizontal overflow and left the vertical one, so a panel opened on
+    // the last row of a long table hung below the window — where the sentence explaining a
+    // figure is exactly as unreadable as it is past the right edge. jsdom lays nothing out,
+    // so the rectangle is the thing under test and it is supplied.
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 352,
+      height: 120,
+      top: 700,
+      bottom: window.innerHeight + 120,
+      left: window.innerWidth - 40,
+      right: window.innerWidth + 312,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    render(<MetricHelp topic="jitter" />);
+    await userEvent.tab();
+
+    expect(await screen.findByRole('note')).toHaveClass(
+      'nm-help__panel',
+      'nm-help__panel--flipped',
+      'nm-help__panel--above',
+    );
+    rect.mockRestore();
+  });
+
+  it('flips nowhere when the panel is taller than the room above it', async () => {
+    // Flipping upwards a panel with nowhere to go trades one clipped sentence for another.
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 352,
+      height: 900,
+      top: 40,
+      bottom: window.innerHeight + 400,
+      left: 0,
+      right: 352,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    render(<MetricHelp topic="jitter" />);
+    await userEvent.tab();
+
+    const note = await screen.findByRole('note');
+    expect(note).not.toHaveClass('nm-help__panel--above');
+    expect(note).not.toHaveClass('nm-help__panel--flipped');
+    rect.mockRestore();
+  });
+
   it('does not throw when rendered outside the shell', async () => {
     // A missing provider must not be an exception in the middle of a measurement someone is
     // reading. It simply does nothing.

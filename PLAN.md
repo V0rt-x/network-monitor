@@ -2286,6 +2286,267 @@ Not verified, and not verifiable here: how any of it looks. The chart draws noth
 jsdom and no headless renderer can answer that question — Phase 7's five-title pass is where
 the whole page is read on a running build.
 
+## Phase 6.8 — The page stops shouting (design review, 2026-08-04)
+
+Seventeen corrections stated by the user after reading the running Phase 6.7 build, with no
+priorities attached and the ordering left to the design. The ordering below is by *what the
+next reader of the page pays for*: defects that make the page look broken, then the shell
+whose exits multiplied, then the visual noise that survived 6.7, then the chart, then the
+picker, and last the Network page — largest, and the only one carrying backend work.
+
+Nothing measured changes here either. One thing genuinely **leaves the page** rather than
+moving down a level — the check legend's prose (item 21) — and it leaves for the help, which
+is where the two-level rule has always said explanations go.
+
+Two entries in this plan are amended by the phase, and both are recorded on the items that
+amend them: Phase 4's amendment 1 ("the UI must show which processes an application consists
+of") loses the per-process identity and keeps the count (item 11), and Phase 6.7 item 27's
+four-section Network page becomes three editable groups of tiles with the verdict's evidence
+moved inside the banner's own expander (items 17–20).
+
+**Six items carried variants and all six were decided by the user on 2026-08-04**: the
+segmented navigation (8), the hairline underline (9), a token for every state (10), separation
+by surface (12), a picker of named applications only (15), and the evidence inside the verdict
+(20). Each records which variant won and what the rejected ones would have bought.
+
+### P0 — defects (no decision needed, and the page looks broken until they land)
+
+- [ ] **1. The connection table's rows have ragged heights.** `.nm-endpoint__identity` and
+      `.nm-endpoint__state` are `display: flex` **on a `<td>`**, which takes those cells out of
+      table layout: they stop sharing the row's baseline box, so each draws its own bottom
+      border at its own height and the horizontal rule steps in the middle of the row — visible
+      on the user's screenshot between `Endpoint` and `Network`. The cells go back to
+      `display: table-cell` with `vertical-align: middle`; the flex layout moves to an inner
+      wrapper; one `min-height` on the row so that a row carrying badges and a row carrying
+      none are the same height. `styles.test.ts` asserts no `<td>` rule in the stylesheet
+      declares `display: flex`.
+- [ ] **2. Explanations overflow their panel, and the panel overflows the window.**
+      `.nm-help__panel` states a width and lets a long sentence run past it, and 6.7's flip
+      handles the right edge only — a panel opened low on the page still leaves the bottom.
+      The panel takes `max-width: min(26rem, calc(100vw - 2 * var(--nm-space-5)))`,
+      `overflow-wrap: anywhere`, and a vertical flip on the same measured-before-paint rule as
+      the horizontal one. The chart's tooltip gets the same treatment, since it is positioned
+      by the same hand-rolled arithmetic.
+- [ ] **3. The chart's horizontal rules go.** They are the loudest ink on the page and they
+      carry nothing: the y axis is logarithmic, so the rules do not even sit at round
+      distances. What survives is the axis labels, the tick marks, and the crosshair — which
+      is the thing a reader actually uses to place a value, and it is already there.
+- [ ] **4. A group with no connections is not drawn.** An application with only TCP shows an
+      empty `UDP flows` heading with a count chip beside it, which reads as "your game has no
+      match traffic" about an application that never had any. A group with no rows is absent;
+      where both are absent the card keeps its existing "nothing connected yet" state, which is
+      a finding rather than an empty container.
+
+### P1 — the shell has two exits, not four
+
+- [ ] **5. `Minimize to tray` leaves the header.** The window's own close button already hides
+      to the tray (`lib.rs` prevents the close and hides, once the tray has its menu), so the
+      button is a second control for something every desktop user does with the X — and it sits
+      in the header of every screen to do it.
+- [ ] **6. `Quit` leaves Settings.** It moved there in 6.7 item 31 to get it away from
+      `Minimize`; with `Minimize` gone the pair is gone, and quitting belongs to the tray, which
+      is where an application that lives in the tray is quit from. The hint that explained the
+      difference (`settings.quitHint`) goes with it.
+- [ ] **7. The tray reads `Open` and `Quit`.** Two words, both verbs, no explanation — the tray
+      is not a surface that can carry one. `tray.show` becomes "Open"; `tray.quit` stays.
+      **Together items 5–7 leave exactly two exits**, and they must both be true after the
+      change: the window's close button hides to the tray, and the tray's `Quit` ends the
+      monitoring. A test asserts the tray labels command is still called on mount and on a
+      language change — that call is what makes closing the window a hide rather than a quit.
+- [ ] **8. The navigation becomes a segmented control.** *Variant A, chosen by the user on
+      2026-08-04.* Each tab is a bordered, filled control today, so four adjacent buttons compete
+      with each other and with the two in the corner. One container with one background and one
+      hairline border, the tabs inside carrying no chrome of their own, the active one filled
+      with the accent — it says "these four are one thing, pick one" with the least ink, and
+      unlike a sidebar it costs no width in a window a player alt-tabs into. The keyboard
+      behaviour does not change: four tab stops, `aria-current` on the active page.
+
+### P2 — the page stops underlining itself
+
+- [ ] **9. The dotted underline becomes a hairline that wakes up.** *Variant A, chosen by the
+      user on 2026-08-04.* 6.7 moved the explanation onto the label and cut the marks from ~260
+      to 9, which was the right move; the *style* is what was left over, and a dotted rule under
+      every heading reads as a page of links from 1998. The label keeps its own colour and
+      weight and takes a 1 px **solid** underline in `--nm-border` at
+      `text-underline-offset: 3px`; hover and focus raise it to `--nm-accent` and open the
+      panel. Visible when looked for, invisible when scanned past. The one sentence that says
+      what the mark means stays where it is — the empty state and the help introduction — and is
+      still said once rather than on every label.
+- [ ] **10. Every state becomes a token; the word is one interaction away.** *Variant B, chosen
+      by the user on 2026-08-04.* On the screenshot one endpoint's state occupies more width
+      than every figure on the row combined: `OK`, `Warming up · 46 s` and `Through a tunnel`,
+      three bordered pills, on every row of every group. Each state becomes a token — a glyph
+      whose **shape differs as well as its colour**, since colour may never be the sole carrier
+      — with the state's word on hover, on focus, in the row's expander, and always in the
+      accessible name, so nothing is hidden from a screen reader at any level.
+      **What keeps the page honest with the words gone from the row**: the group heading's count
+      chips still say "4 clean, 2 degraded, 1 unreachable" in words at level one, and Rust's
+      worst-first order still puts the bad rows at the top. The token is a second channel for a
+      distribution that is already stated, not the only place the state exists.
+      Two things do not become tokens. **The qualifiers become icon chips** with their name on
+      hover and focus (`Through a tunnel`, `Warming up · 46 s`), because they change what the
+      figure beside them means rather than reporting a state. **The warnings keep their words**
+      — a freeze, an egress conflict, an endpoint nothing can measure — because a warning is
+      never demoted, whatever a layout costs, and the test for level one is whether there is
+      something to do about it.
+      A test asserts every state token carries its word as an accessible name, and that the
+      distribution chips still render the state names as text.
+- [ ] **11. No process identifiers and no executable names anywhere in the UI.** They are the
+      product's implementation showing through: a player picks *Discord*, and `Discord.exe`
+      beside it, `PID 25572` beside that, and `Part of Google Chrome` beside that are three
+      restatements of a fact they did not ask for.
+      **This amends Phase 4's amendment 1**, which said a grouping the user cannot inspect is
+      one they cannot correct. What survives of that is the *count* — "6 processes" — which is
+      the part that would look wrong if the grouping were wrong; what goes is the per-process
+      identity, at every level including the card's expander.
+      **One case is not decoration and must survive**: an application the bundled catalogue has
+      no name for has nothing else to be called, and there its file name **is** its name, shown
+      as the name rather than beside one. That case's reachability is item 15's decision.
+- [ ] **12. Containers are told apart by surface, not by border.** *Variant A, chosen by the
+      user on 2026-08-04.* 6.7 gave the page one spacing scale, one type scale and one palette,
+      and the result still reads as a form rather than an instrument: every container is a 1 px
+      box on a flat background, so a card, a panel, a table and a details block all weigh the
+      same and nothing is obviously more important than anything else. Containers drop their
+      borders and are told apart by background (`--nm-bg` for the page, `--nm-surface` for a
+      card), a 12 px radius and the spacing scale; **hairlines survive only inside tables**,
+      where they separate rows; one accent per screen. Elevation was the alternative and was
+      rejected: a shadow on a `#0d1117` canvas is nearly invisible and costs a repaint on every
+      scroll, while surface-versus-page reads instantly at any screen brightness, which is what
+      an audience reading this in a dark room mid-match actually needs.
+      Three things land with it: figures stay tabular-numeric and gain one step of size over
+      their labels, so the numbers are the first thing seen on a card; group headings drop to
+      `--nm-text-sm` uppercase with letter-spacing, so a heading stops competing with a figure;
+      and `.nm-badge`, `.nm-health` and `.nm-count` end up with one geometry between them.
+
+### P3 — the chart becomes navigable
+
+- [ ] **13. The x axis shows the time of day.** "−45 s" answers "how long ago" and the reader's
+      question after a stutter is "was that when it happened" — which needs a clock. Absolute,
+      no date, seconds shown (`14:32:05`), formatted through `Intl` with the active locale.
+      The event carries the wall-clock stamp of the newest slot; wall clock **for display
+      only**, which is what `CLAUDE.md` permits — the measurement and the alignment stay on the
+      monotonic clock, and a system clock adjusted mid-session must not move a sample relative
+      to its neighbours.
+- [ ] **14. Twenty minutes by default, scrollable back and zoomable.** The chart holds two
+      minutes today (`SERIES_POINTS = 40` at `CHART_STEP = 3 s`), which cannot answer "is this
+      worse than it was at the start of the match".
+      **The payload is the whole design problem here**, and it is why this is not simply a
+      larger constant: the `AppEndpoints` event carries every endpoint's whole series on every
+      emission, so twenty minutes at the enforced ceiling would be 400 slots × 2 series × 16
+      endpoints × 5 applications, once a second, into a `WebView` that is supposed to cost less
+      than 1 % of a core. The shape that survives the budget:
+      – Rust keeps a **60-minute ring** per endpoint (1 200 slots × 2 × 8 B ≈ 19 KB per
+        endpoint, ≈ 1.5 MB at the enforced ceiling — inside the 50 MB core budget).
+      – The **event keeps sending the last 40 slots**, exactly as today, so the steady-state
+        cost of a running session does not change at all.
+      – A **`chart_history` command** returns the ring for one application on demand: when the
+        card mounts, when the window is shown again after being hidden, and when the reader
+        scrolls past what they hold. Fetched, not pushed — a history is asked for a handful of
+        times per session, and pushing it would spend the budget continuously to answer a
+        question asked rarely.
+      – The UI stitches by slot stamp, which is not business logic: Rust decides slot
+        boundaries and the value in each slot, and the frontend concatenates aligned arrays.
+      – **A window that was hidden leaves no gap**: the backfill on show is what closes it, and
+        that matters because a gap on this chart means packets that did not come back. A gap the
+        UI created by not listening would be a fabricated loss — the exact failure the
+        three-second slot was introduced to prevent.
+      Interaction: drag to pan, wheel to zoom (floor two minutes, ceiling the whole ring), a
+      "Now" control that returns to live and is the only state in which the view follows new
+      samples, and `←`/`→`/`Home`/`End` doing the same from the keyboard, alongside the
+      crosshair keys 6.7 gave it. Level two states the span and the resolution.
+      The zoom does **not** change the resolution: a slot is three seconds at every zoom level,
+      because a chart that re-buckets under the reader shows a different spike from the one they
+      zoomed in on.
+
+### P4 — the picker
+
+- [ ] **15. The picker offers named applications only.** *Variant C, chosen by the user on
+      2026-08-04, after the cost was stated.* "Show everything running" plus "89 processes
+      hidden — nothing here knows a name for them" is the product explaining its own catalogue
+      to someone who wants to click their game. The checkbox, the hidden-count, and the two
+      strings that explain them all go; `list_applications` stops returning unnamed candidates
+      rather than the UI filtering them, so the payload shrinks with the list.
+      **The cost, recorded rather than implied**: an application the bundled index has no name
+      for becomes unwatchable, and the user cannot fix that themselves — the fix is an entry in
+      `assets/apps/labels.json` or `assets/apps/presets.json` in a release. The index holds
+      ~7 270 executables, so the hidden ninety on the dev machine are overwhelmingly system
+      processes and toolchains rather than games; what this really risks is a title newer than
+      the release, or a regional client. **The five-title pass in Phase 7 is where that risk
+      gets measured**: if any of the five is missing from the index, the index is what gets
+      fixed, and if more than one is, this decision comes back.
+- [ ] **16. The picker's layout is a grid.** Every row is a wrapping flex line today, so the
+      action button lands under a different word on every row, the name and the file name have
+      the same weight, and the entry is 4 rem tall for one line of content (the user's second
+      screenshot). It becomes a two-column grid — identity on the left, one action on the right,
+      one row per application, aligned down the list — with the count as a chip rather than a
+      sentence, and the header's `Refresh`/`Done` pair sharing the page's one button geometry.
+      With item 11 landed an entry is a name, a count chip, an ownership chip where it applies,
+      and one button.
+
+### P5 — Network becomes the user's own page again
+
+- [ ] **17. Rows become tiles with their check strips.** *Reverses Phase 6.7 item 28 for this
+      page.* Folding twenty-three services into one-line rows made the page scannable and made
+      it a spreadsheet: the strip is this page's only picture, and a page whose question is
+      "which of these is red" reads faster as a grid of tiles than as a column of lines. A tile
+      is the service's name, its state, its strip, `Ping (RTT)`, and a count chip where its
+      endpoints disagree; endpoints and the remaining figures stay at level two, in the tile's
+      own expander. Level three is the group heading, once per group, as 6.7 established.
+- [ ] **18. Three groups: `Gaming platforms`, `Infrastructure`, `Other`.** `Section` gains
+      `Other` for an entry that fits neither, and the bundled lists say which group each entry
+      belongs to as they already do. An empty group is not drawn, for item 4's reason.
+- [ ] **19. The page is edited, not fixed.** A user starts with a bundled set and an `Edit`
+      control on the page opens a chooser over the **bundled catalogue** — a checklist, grouped
+      the same three ways, with no free-text address field. That restriction is deliberate and
+      is a privacy decision as much as a scope one: an address a user types is a target this app
+      would then probe on their behalf, and the bundled lists are auditable precisely because
+      they are bundled. The selection persists with the settings (debounced, as everything else
+      there), an unknown identifier in a stored selection is ignored rather than fatal, and the
+      probe budget is enforced against the *selection*, so a user who ticks everything gets a
+      longer cadence rather than more traffic.
+- [ ] **20. The verdict's evidence moves inside the verdict's own expander.** *Variant B, chosen
+      by the user on 2026-08-04.* `Domestic` and `Foreign` are not services and are not the
+      user's to remove: the banner at the top of the page is drawn from them, and 6.7 item 27
+      went to some trouble to keep it checkable against the rows below. It stays checkable, one
+      level down — the banner grows a "What this is drawn from" expander holding both sections
+      (state, distribution, `Ping, median`, and their members), and the page below becomes the
+      user's own services alone. The evidence is then one click from the claim it supports
+      rather than a second inventory beside it, and the page loses two headings and up to ten
+      rows that no reader was choosing between.
+      **The rule that must hold, and is tested**: editing changes what is *shown*, never what is
+      *measured* for the verdict. A target the diagnosis reads is probed and reported whether or
+      not the user's selection includes it — Steam and Discord are foreign evidence *and* gaming
+      platforms after the 6.7 merge, so unticking a tile must not thin the sample the VPN advice
+      is drawn from. `Section::read_by_verdict` already marks exactly those targets; the
+      selection applies to the other sections only.
+- [ ] **21. "What one cell is" moves into the help, with the numbers it never carried.** The
+      legend block is a heading, six named marks and a paragraph, above the page's own content —
+      an explanation at level one, which the standing rule forbids. In the help it becomes a
+      topic that can afford to be exact: what a check is, that a strip is oldest-on-the-left and
+      how long it covers, and what each mark means — including that **`Answered slowly` is a
+      check that came back at or above 400 ms** (`nm_core::status::Thresholds::slow_rtt_ms`),
+      that `Refused` is an answer and therefore not loss, that `Probe filtered` is knowledge
+      withheld rather than a service being down, and that `Your tunnel answered` means the round
+      trip stopped inside this machine's own tunnel.
+      **Colour does not become the sole channel by this move**: every cell keeps its accessible
+      name and its hover, which is where a cell's state has always been read from, the marks
+      differ in shape as well as in colour (item 10's rule, applied to the strip), and the group
+      heading's count chips still name the states in words. The help topic and the marks read from one list,
+      as `CLAUDE.md` requires, so a mark can never point at a section that does not exist.
+
+- **Accept**: no `<td>` in the stylesheet is a flex container and a row with badges is the same
+  height as one without; an explanation panel opened at any corner of the window stays inside it
+  (asserted on the declared maximum, since jsdom measures every rectangle as zero); a card whose
+  application has no UDP flows renders no UDP group at all; the header carries no button and
+  Settings carries no `Quit`, while the tray carries both `Open` and `Quit`; no rendered string
+  anywhere contains a process identifier or an executable name for an application the catalogue
+  named; every state token carries its state's word as an accessible name and the group headings
+  still name the distribution in words; the chart's axis reads clock time, opens on twenty
+  minutes, and a chart returning from a hidden window shows no gap it did not measure; the
+  Network page draws tiles in at most three groups with the verdict's evidence inside the
+  banner's expander, its selection survives a restart, and a test asserts the verdict's evidence
+  is probed and reported whether or not the user's selection includes it.
+
 ## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view

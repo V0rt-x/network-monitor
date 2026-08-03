@@ -16,10 +16,19 @@ import { EndpointChart } from './EndpointChart';
  * which is what makes it testable at all — and what the chart looked like was checked by eye
  * on a real render, because no headless renderer can answer that question.
  */
+/**
+ * What the chart *asked* to be drawn, which is the only way a drawing decision can be
+ * asserted at all when nothing draws.
+ */
+const { built } = vi.hoisted(() => ({ built: [] as Record<string, unknown>[] }));
+
 vi.mock('uplot', () => {
   class FakePlot {
     readonly cursor = { idx: null, left: 0 };
     readonly over = { offsetLeft: 0 };
+    constructor(options: Record<string, unknown>) {
+      built.push(options);
+    }
     setData() {
       /* the data is asserted through the tooltip, not through the canvas */
     }
@@ -38,6 +47,13 @@ vi.mock('uplot', () => {
   }
   return { default: FakePlot };
 });
+
+/** The options the most recent chart was built with. */
+const lastBuild = (): { axes: { grid?: { show?: boolean } }[] } => {
+  const options = built.at(-1);
+  if (options === undefined) throw new Error('no chart was built');
+  return options as { axes: { grid?: { show?: boolean } }[] };
+};
 
 const line = (overrides: Partial<ChartLine> = {}): ChartLine => ({
   endpoint: 'udp/1.1.1.1:27015',
@@ -70,6 +86,17 @@ const readNewest = async () => {
 };
 
 describe('EndpointChart', () => {
+  it('draws no rules across the plot', () => {
+    // They were the loudest ink on the card and they carried nothing: the y axis is
+    // logarithmic, so the rules did not even fall at round distances. What a reader actually
+    // places a value with is the crosshair, and that is already there.
+    render(chart());
+
+    for (const axis of lastBuild().axes) {
+      expect(axis.grid?.show).toBe(false);
+    }
+  });
+
   it('lists every line at the moment being read, not only the nearest one', async () => {
     // The chart's stated job is "which of these is the odd one out", and at a given second
     // that is a question about all of them at once — so the tooltip is the legend the chart

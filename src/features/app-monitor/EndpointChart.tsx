@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import uPlot from 'uplot';
 
@@ -193,7 +193,11 @@ export const EndpointChart = ({
           axes: [
             {
               stroke: AXIS_STROKE,
-              grid: { stroke: GRID_STROKE },
+              // No rules across the plot. They were the loudest ink on the card and carried
+              // nothing: the y axis is logarithmic, so they do not even fall at round
+              // distances, and what a reader actually places a value with is the crosshair,
+              // which is already there. The tick marks and the labels stay.
+              grid: { show: false },
               ticks: { stroke: GRID_STROKE },
               // Time since monitoring began, as minutes and seconds. Not an age: the axis is
               // anchored at the start, which is what lets the drawing grow from the left.
@@ -205,7 +209,7 @@ export const EndpointChart = ({
             },
             {
               stroke: AXIS_STROKE,
-              grid: { stroke: GRID_STROKE },
+              grid: { show: false },
               ticks: { stroke: GRID_STROKE },
               // Plain milliseconds rather than uPlot's exponent notation: the reader is
               // comparing latencies, not reading a science plot.
@@ -289,6 +293,25 @@ export const EndpointChart = ({
 
   const reading = slot === null ? null : readingAt(aligned, lines, slot);
   const entries = reading?.entries ?? [];
+
+  // Whether the tooltip hangs above the cursor rather than below it. Sixteen endpoints make a
+  // tall list, and a chart near the bottom of the window put it past the bottom edge — the
+  // same defect the explanation panels had at the right edge, and it is fixed the same way:
+  // measured after layout and before paint, always from the unflipped position so it cannot
+  // oscillate, and left alone where a renderer reports no layout at all.
+  const tip = useRef<HTMLDivElement>(null);
+  const [tipAbove, setTipAbove] = useState(false);
+  useLayoutEffect(() => {
+    if (reading === null || entries.length === 0) {
+      setTipAbove(false);
+      return;
+    }
+    const box = tip.current?.getBoundingClientRect();
+    if (box === undefined || box.height === 0) return;
+    // Only when there is room above. Flipping a list taller than the window would trade one
+    // clipped end for the other.
+    setTipAbove(box.bottom > window.innerHeight && box.height < box.top);
+  }, [reading, entries.length]);
   // Which entry the reader is on. The focused *line* is an index into `lines`; the tooltip
   // is sorted worst first, so it has to be found rather than indexed.
   const focusedEndpoint = lines[focused]?.endpoint ?? null;
@@ -391,8 +414,9 @@ export const EndpointChart = ({
             is the odd one out" is a question about all of them at that second. */}
         {reading !== null && entries.length > 0 && (
           <div
-            className="nm-charttip"
+            className={tipAbove ? 'nm-charttip nm-charttip--above' : 'nm-charttip'}
             role="presentation"
+            ref={tip}
             style={
               // Flipped at the right-hand edge, exactly as the explanation panels are: a
               // tooltip half outside the window is the one thing on screen that cannot be

@@ -83,8 +83,6 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::monitor_app,
             commands::forget_app,
             commands::apply_tray_labels,
-            commands::hide_to_tray,
-            commands::quit_app,
         ])
         .events(collect_events![
             events::CoreHeartbeat,

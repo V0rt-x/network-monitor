@@ -6,13 +6,12 @@ import '../../i18n';
 import { SettingsPage } from './SettingsPage';
 import type { Settings, SettingsView } from '../../shared/ipc';
 
-const { fetchSettings, storeSettings, quitApp } = vi.hoisted(() => ({
+const { fetchSettings, storeSettings } = vi.hoisted(() => ({
   fetchSettings: vi.fn(),
   storeSettings: vi.fn(),
-  quitApp: vi.fn(),
 }));
 
-vi.mock('../../shared/ipc', () => ({ fetchSettings, storeSettings, quitApp }));
+vi.mock('../../shared/ipc', () => ({ fetchSettings, storeSettings }));
 
 const view = (overrides: Partial<SettingsView> = {}): SettingsView => ({
   settings: {
@@ -138,16 +137,17 @@ describe('SettingsPage', () => {
 });
 
 describe('SettingsPage, ending the monitoring', () => {
-  it('is where quitting lives, away from the button that only hides the window', async () => {
-    // They sat side by side in the header, told apart by the muted colour of the second:
-    // one hides the window and the other ends the monitoring. Settings is reachable from
-    // every page, so the guarantee that a user is never stuck survives the move.
+  it('does not carry a quit, because the tray does', async () => {
+    // Quitting came here in 6.7 only to get away from `Minimize` in the header. With
+    // `Minimize` gone the pair is gone: the window's close button hides to the tray and the
+    // tray's own `Quit` ends the monitoring. Two exits, both where a desktop user already
+    // looks for them — and a settings page is not one of those places.
     fetchSettings.mockResolvedValue(view());
     render(<SettingsPage />);
     await screen.findByLabelText('Language');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Quit' }));
-
-    expect(quitApp).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Quit' })).toBeNull();
+    // Nor the hint that existed only to tell the two apart.
+    expect(screen.queryByText(/Closing the window keeps/)).toBeNull();
   });
 });

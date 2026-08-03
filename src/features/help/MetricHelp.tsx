@@ -50,16 +50,19 @@ export const MetricHelp = ({ topic, children }: MetricHelpProps) => {
   const [hovered, setHovered] = useState(false);
   const shown = pinned || hovered;
 
-  // Which side the panel hangs from. Anchored left by default; flipped when it would
-  // otherwise run past the right edge of the window, which is where every explanation in a
-  // right-hand column was being clipped. Measured after layout and before paint, so the
-  // panel is never seen in the wrong place, and always from the unflipped position so the
-  // decision cannot oscillate.
+  // Which corner the panel hangs from. Anchored below-left by default; flipped on either
+  // axis when it would otherwise leave the window — the right edge is where every
+  // explanation in a right-hand column was being clipped, and the bottom edge is where one
+  // opened on the last row of a long table went. Measured after layout and before paint, so
+  // the panel is never seen in the wrong place, and always from the unflipped position so
+  // the decision cannot oscillate.
   const panel = useRef<HTMLSpanElement>(null);
   const [flipped, setFlipped] = useState(false);
+  const [above, setAbove] = useState(false);
   useLayoutEffect(() => {
     if (!shown) {
       setFlipped(false);
+      setAbove(false);
       return;
     }
     const box = panel.current?.getBoundingClientRect();
@@ -67,7 +70,18 @@ export const MetricHelp = ({ topic, children }: MetricHelpProps) => {
     // would be worse than flipping none, so a zero-width measurement decides nothing.
     if (box === undefined || box.width === 0) return;
     setFlipped(box.right > window.innerWidth);
+    // Only when there is somewhere to go: a panel taller than the window would flip upwards
+    // and leave the *top* instead, which trades one clipped sentence for another.
+    setAbove(box.bottom > window.innerHeight && box.height < box.top);
   }, [shown]);
+
+  const panelClass = [
+    'nm-help__panel',
+    flipped ? 'nm-help__panel--flipped' : '',
+    above ? 'nm-help__panel--above' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <span
@@ -100,11 +114,7 @@ export const MetricHelp = ({ topic, children }: MetricHelpProps) => {
         {children ?? t(titleKey(topic))}
       </button>
       {shown && (
-        <span
-          className={flipped ? 'nm-help__panel nm-help__panel--flipped' : 'nm-help__panel'}
-          role="note"
-          ref={panel}
-        >
+        <span className={panelClass} role="note" ref={panel}>
           <span className="nm-help__text">{t(shortKey(topic))}</span>
           <button
             type="button"

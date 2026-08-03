@@ -100,6 +100,11 @@
   --nm-col-name: 8rem;
   --nm-col-strip: 6rem;
 
+  /* One height for every row of the connection table. Not spacing — it is the box a row's
+     contents sit in, and it exists so that a row carrying badges and a row carrying none do
+     not differ by the height of a badge. */
+  --nm-row-height: 2.5rem;
+
   font-family:
     'Segoe UI',
     system-ui,
@@ -149,9 +154,11 @@ body {
  * It was a wrapping flex row with `margin-left: auto` on the actions, so the tabs and the
  * buttons reflowed past each other at unpredictable widths as the window narrowed.
  */
+/* Two columns now: the title, and the navigation. The actions column held one button that
+   duplicated the window's own close, and it took a corner of every screen to do it. */
 .nm-app__header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: var(--nm-space-4);
   margin-bottom: var(--nm-space-5);
@@ -162,39 +169,67 @@ body {
   font-size: var(--nm-text-xl);
 }
 
-.nm-app__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--nm-space-2);
-}
-
+/*
+ * One control with four positions, not four controls.
+ *
+ * Each tab used to be a bordered, filled box of its own, so four adjacent buttons competed
+ * with each other and with the two in the corner — six pieces of chrome to say which of four
+ * pages you are on. One container, one hairline, one background; the tabs inside carry
+ * nothing of their own until one is chosen. It says "these four are one thing, pick one" with
+ * the least ink, and unlike a sidebar it costs no width in a window a player alt-tabs into.
+ *
+ * The keyboard behaviour is unchanged: four tab stops, `aria-current` on the active page.
+ */
 .nm-nav {
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
+  justify-self: center;
   flex-wrap: wrap;
   gap: var(--nm-space-1);
+  padding: var(--nm-space-1);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+  background: var(--nm-surface);
 }
 
-.nm-nav__tab,
+.nm-nav__tab {
+  font: inherit;
+  color: var(--nm-text-secondary);
+  background: none;
+  border: 0;
+  border-radius: var(--nm-radius-sm);
+  padding: var(--nm-space-1) var(--nm-space-3);
+  cursor: pointer;
+}
+
+.nm-nav__tab:hover {
+  color: var(--nm-text);
+}
+
+/* Filled rather than merely recoloured: text colour alone is the weakest possible way to
+   say which page you are on. */
+.nm-nav__tab--active {
+  background: var(--nm-accent);
+  color: var(--nm-bg);
+  font-weight: 600;
+}
+
+/* One button geometry for the whole product: `Stop watching`, `Refresh`, `Done`, `Back`
+   and `Edit` are the same size and the same shape wherever they appear. */
 .nm-button {
   font: inherit;
   color: var(--nm-text);
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
   border-radius: var(--nm-radius-md);
-  padding: var(--nm-space-2) var(--nm-space-3);
+  padding: var(--nm-space-1) var(--nm-space-3);
   cursor: pointer;
 }
 
-/* Filled rather than merely recoloured: text and border colour alone is the weakest
-   possible way to say which page you are on. */
-.nm-nav__tab--active {
-  border-color: var(--nm-accent);
-  background: var(--nm-accent);
-  color: var(--nm-bg);
-  font-weight: 600;
+.nm-button:hover {
+  border-color: var(--nm-text-secondary);
 }
 
+/* The secondary of a pair — same geometry, quieter word. */
 .nm-button--quiet {
   color: var(--nm-muted);
 }
@@ -302,17 +337,6 @@ body {
   border-radius: var(--nm-radius-md);
   padding: var(--nm-space-2) var(--nm-space-2);
   max-width: 18rem;
-}
-
-/* At the bottom of a page a user goes to on purpose, rather than beside Minimize in the
-   header where a mis-click ended the monitoring. */
-.nm-settings__quit {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--nm-space-2);
-  border-top: 1px solid var(--nm-border);
-  padding-top: var(--nm-space-4);
 }
 
 .nm-settings__privacy {
@@ -650,6 +674,11 @@ body {
   z-index: 10;
   top: var(--nm-space-2);
   width: 16rem;
+  /* Never wider than the window, and it breaks a long address rather than growing past it —
+     the same treatment the explanation panels get, because the arithmetic that places both
+     is the same hand-rolled arithmetic. */
+  max-width: min(16rem, calc(100vw - 2 * var(--nm-space-5)));
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-1);
@@ -662,6 +691,15 @@ body {
   /* It follows the pointer, so it must never be the thing the pointer lands on — except for
      its own entries, which are how a reader chooses an endpoint. */
   pointer-events: none;
+}
+
+/* Sixteen endpoints make a tall tooltip, and a chart near the bottom of a window put it
+   past the bottom edge. Flipped above the cursor when there is room above and not below —
+   and left where it is when there is room in neither, since that trades one clipped list
+   for another. */
+.nm-charttip--above {
+  top: auto;
+  bottom: var(--nm-space-2);
 }
 
 .nm-charttip__lines {
@@ -943,10 +981,25 @@ details.nm-endpointgroup > summary {
   white-space: nowrap;
 }
 
+/*
+ * A cell is a cell, and never a flex container.
+ *
+ * `display: flex` on a `<td>` takes the cell out of table layout altogether: it stops sharing
+ * the row's box, so each cell draws its own bottom border at its own height and the rule under
+ * a row steps in the middle of it. That was visible on the running build between `Endpoint`
+ * and `Network`. The flex layout the two cells wanted moves to a wrapper inside them, which is
+ * where it belongs — a `<td>` is a slot in a grid the table owns.
+ */
 .nm-endpoints td {
   padding: var(--nm-space-2);
   border-bottom: 1px solid var(--nm-border);
-  vertical-align: baseline;
+  vertical-align: middle;
+}
+
+/* One height for every row, so a row carrying two badges and a row carrying none are the
+   same size. Without it the list changes shape as warm-up badges expire under the reader. */
+.nm-endpoints tbody tr {
+  height: var(--nm-row-height);
 }
 
 .nm-endpoint--raised > td {
@@ -964,9 +1017,9 @@ details.nm-endpointgroup > summary {
   white-space: nowrap;
 }
 
-.nm-endpoint__state {
+/* The flex row the state cell wants, one element inside the cell rather than on it. */
+.nm-endpoint__states {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--nm-space-1);
 }
@@ -989,7 +1042,8 @@ details.nm-endpointgroup > summary {
   padding-bottom: var(--nm-space-4);
 }
 
-.nm-endpoint__identity {
+/* Likewise: the wrapper flexes, the cell it sits in stays a cell. */
+.nm-endpoint__names {
   display: flex;
   align-items: baseline;
   gap: var(--nm-space-2);
@@ -1563,7 +1617,16 @@ details.nm-endpointgroup > summary {
   z-index: 20;
   top: var(--nm-space-5);
   left: 0;
-  width: min(22rem, 60vw);
+  width: 22rem;
+  /*
+   * Never wider than the window, and never narrower than its own sentence needs.
+   *
+   * It stated a width and then let a long sentence run past it — an explanation clipped at
+   * the edge of the panel that exists to carry it. `overflow-wrap: anywhere` is what breaks
+   * an address or a long identifier rather than pushing the box outwards.
+   */
+  max-width: min(26rem, calc(100vw - 2 * var(--nm-space-5)));
+  overflow-wrap: anywhere;
   display: block;
   padding: var(--nm-space-2) var(--nm-space-2);
   border: 1px solid var(--nm-border);
@@ -1581,6 +1644,14 @@ details.nm-endpointgroup > summary {
 .nm-help__panel--flipped {
   left: auto;
   right: 0;
+}
+
+/* And the same for the bottom edge. A panel opened on the last row of a long table hung
+   below the window, where the sentence is exactly as unreadable as it is past the right
+   edge — 6.7 flipped one axis and left the other. */
+.nm-help__panel--above {
+  top: auto;
+  bottom: var(--nm-space-5);
 }
 
 .nm-help__text {

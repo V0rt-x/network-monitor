@@ -100,7 +100,3 @@ export const storeSettings = (settings: Settings): Promise<SettingsView> =>
 
 export const registerTrayLabels = (labels: TrayLabels): Promise<boolean> =>
   commands.applyTrayLabels(labels);
-
-export const hideToTray = (): Promise<void> => commands.hideToTray();
-
-export const quitApp = (): Promise<void> => commands.quitApp();

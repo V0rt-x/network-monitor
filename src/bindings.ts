@@ -62,15 +62,6 @@ export const commands = {
 	 *  succeeds, closing the window quits instead of minimizing.
 	 */
 	applyTrayLabels: (labels: TrayLabels) => __TAURI_INVOKE<boolean>("apply_tray_labels", { labels }),
-	/**  Hides the window, leaving the core measuring. */
-	hideToTray: () => __TAURI_INVOKE<void>("hide_to_tray"),
-	/**
-	 *  Ends the application.
-	 * 
-	 *  Exists so the UI can offer a quit that is always reachable, whatever state the tray menu
-	 *  is in.
-	 */
-	quitApp: () => __TAURI_INVOKE<void>("quit_app"),
 };
 
 /** Events */

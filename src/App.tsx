@@ -8,7 +8,6 @@ import type { HelpTopic } from './features/help/topics';
 import { NetworkPage } from './features/network/NetworkPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useTrayLabels } from './features/shell/useTrayLabels';
-import { hideToTray } from './shared/ipc';
 
 /**
  * The pages the app ships. A router would be a dependency for one switch.
@@ -72,11 +71,12 @@ export const App = () => {
 
   return (
     <div className="nm-app">
-      {/* Three columns on a grid, not a wrapping flex row with `margin-left: auto` on the
-          actions: the tabs and the buttons used to reflow past each other unpredictably as
-          the window narrowed. The tagline is gone from here — it took a line on every screen
-          to say something a reader knows within ten seconds, and the page carries figures and
-          findings rather than descriptions of itself. */}
+      {/* The title and the navigation, and nothing else.
+          There were two buttons in a third column: `Minimize to tray`, which duplicated what
+          the window's own close button already does, and — before 6.7 moved it to Settings —
+          `Quit` beside it, so two adjacent controls in the corner of every screen hid the
+          window and ended the monitoring. Both are gone. The two exits left are the ones a
+          desktop user already knows: the window closes to the tray, and the tray quits. */}
       <header className="nm-app__header">
         <h1 className="nm-app__title">{t('app.name')}</h1>
 
@@ -102,22 +102,6 @@ export const App = () => {
             </button>
           ))}
         </nav>
-
-        <div className="nm-app__actions">
-          {/* Only one action here now. `Quit` sat beside it, distinguished by muted text —
-              two adjacent buttons where one hides the window and the other ends the
-              monitoring — and it has moved to the bottom of Settings, which is reachable
-              from every page, so the guarantee that a user is never stuck survives. */}
-          <button
-            type="button"
-            className="nm-button"
-            onClick={() => {
-              void hideToTray();
-            }}
-          >
-            {t('app.minimize')}
-          </button>
-        </div>
       </header>
 
       <main className="nm-app__body">

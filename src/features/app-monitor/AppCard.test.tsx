@@ -300,6 +300,48 @@ describe('AppCard', () => {
     expect(screen.getByText(/UDP flows cannot be discovered on this machine/)).toBeInTheDocument();
   });
 
+  it('draws no group at all where there is nothing to put in it', () => {
+    // An application that only ever speaks TCP was showing an empty `UDP flows` heading with
+    // a count chip beside it, which reads as "your game has no match traffic" about an
+    // application that never had any. Absent knowledge and an absent group are different
+    // things, and only the first is worth a heading — which is why the case above keeps its
+    // sentence and this one does not.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp' })],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    const headings = [...document.querySelectorAll('.nm-endpointgroup__title')].map(
+      (node) => node.firstChild?.textContent,
+    );
+    expect(headings).toEqual(['TCP connections']);
+    expect(screen.queryByRole('list', { name: 'Endpoint states in UDP flows' })).toBeNull();
+  });
+
+  it('keeps its own empty state when neither group has anything', () => {
+    // A card with nothing in either group is a finding — the monitor is armed and the
+    // application has not opened a connection — rather than two empty containers.
+    render(
+      <AppCard
+        app={app({ endpoints: [] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelectorAll('.nm-endpointgroup__title')).toHaveLength(0);
+    expect(screen.getByText(/Nothing discovered yet/)).toBeInTheDocument();
+  });
+
   it('opens the supporting connections when they already need attention, and only then', () => {
     // TCP is demoted, never hidden: a login service with a filter on it is exactly what
     // "I cannot get into the game" looks like — so a group that needs attention when the
