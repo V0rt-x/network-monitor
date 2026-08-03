@@ -1871,6 +1871,83 @@ Still **not** verified: the merged Network page and the picker were not opened �
 window would have taken focus from a running game — so items 5 and 6 have been seen only in
 tests. That, and the four remaining titles, is the Phase 7 pass.
 
+### Amendment from use (2026-08-03): a tunnel that takes traffic by routing, not by DNS
+
+Found by the user running the build with a local TUN client active and reading the status
+page: **twenty services, worldwide, all between 1.0 and 2.5 ms, all green.** The number is
+impossible and the page was stating it with confidence — the exact failure this product exists
+to prevent, and worse than a fake-bad reading because it says the user's network is fine.
+
+The spike (`docs/measurement-reality-check.md`) had already met this behaviour and had drawn
+the boundary in the wrong place. It found a *router* running sing-box with fake-IP, so it
+concluded the tell was the **address**: a synthetic address out of `198.18.0.0/15`, detected by
+`AddressPolicy` and routed to a TLS probe. A TUN client on the machine itself takes traffic the
+other way — by installing a fan of routes (`0.0.0.0/5`, `8.0.0.0/7`, … `240.0.0.0/5`) that
+covers the whole public internet at a better metric while the real default route stays where it
+was. Every name resolves to the real public address of the real service. Nothing about the
+address is unusual, and everything about the route is. The lie is identical: the tunnel's own
+stack completes the handshake and answers the echo without a packet leaving the machine.
+
+Measured on the development machine before writing anything, because the design rests on it:
+
+| | through the tunnel | bound to the physical adapter |
+|---|---|---|
+| TCP connect to a public resolver | 0.6–1.1 ms | 4.2–4.6 ms |
+| ICMP echo to the same | <1 ms, **TTL 128** | 3–14 ms, TTL 57 |
+
+The TTL is the part worth keeping. 128 is Windows' *initial* hop limit, so the reply crossed no
+router; from a public address that is not a suspicious reading but an impossible one. It is
+proof rather than inference, it is free — the field is already in `ICMP_ECHO_REPLY` — and it
+needs no route table, which is what makes it the backstop on platforms that have none.
+
+- [x] **`nm-core`: an endpoint is its address *and* the start of its route.**
+      `AddressClass::TunnelledEgress`, reached by `through(Egress)`. Held apart from
+      `TunnelSentinel` rather than folded into it: measured identically, but a sentinel means
+      the *name* was answered with a stand-in and this means the name was answered truthfully
+      and the *packets* are being taken. A real machine has both at once.
+      `Egress::Unknown` deliberately decides nothing — read as a tunnel it would refuse the
+      cheap kinds on every platform without a route backend, which today is two of three.
+      `nm_core::forgery` is the rule above, pure and exhaustively tested, including the case it
+      knowingly gets wrong: a machine genuinely sharing a segment with a public address. That
+      is accepted because of *which way* it fails — a false positive costs a more expensive
+      probe, a false negative costs the whole product.
+- [x] **`nm-platform`: a route lookup.** `GetBestRoute2` for the adapter, `GetIfEntry2` for what
+      it is. The deciding rule takes plain numbers and lives outside the Windows module so it is
+      tested anywhere; a Windows-only test asserts the constants against the headers so they
+      cannot rot. An adapter carrying **bare IP rather than frames** is a tunnel — that is every
+      TUN-shaped client of this generation, and it separated cleanly on a machine that also has
+      a Hyper-V switch, a bridge and an idle TAP adapter. Measured at **80 µs**, and it runs once
+      per target registration, not per probe. Linux reads the same from netlink, macOS from the
+      route socket. A layer-2 TAP adapter is *not* caught here and is not chased with a list of
+      driver names that would rot; the hop-limit proof covers it instead.
+- [x] **`nm-probes`: the refusal, and the correction.** Either finding reclassifies the
+      **endpoint**, never demotes one probe kind — stepping to the next kind would swap ICMP's
+      invented number for TCP-connect's, since the same tunnel answers both. A claim of
+      filtering does not survive it: a kind that went silent behind a tunnel was never offered
+      to the path. `reconsider` asks the route again rather than trusting registration, which is
+      the only thing that would ever notice a VPN switched off.
+- [x] **The page.** `ProbeOutcome::AnsweredLocally` is neither loss nor silence and stays out of
+      every delivery ratio. Its check mark had been falling through a catch-all to *no answer* —
+      reporting a dropped packet where none was sent — and *probe filtered* would have been the
+      other wrong answer, since filtering happens **on** the path and this happens before it.
+      "Through a tunnel" is promoted to level one on the Applications page and is the one badge
+      carrying an ⓘ: it is not a caveat on a figure but the reason every figure on the row was
+      measured differently. Its help topic states what the app does, and that **nothing is ever
+      sent outside the tunnel to compare** — which would show a provider what the tunnel exists
+      to hide. *That was the user's decision, taken when the scope was set.*
+
+**What the live run settled (2026-08-03).** Every baseline and all twenty services now carry
+*TLS* and *Through a tunnel*, and the figures are real: a spread of 53–227 ms that differs per
+service, with two platforms and one cloud sitting far above the rest while another cloud sits at
+the bottom. One domestic baseline reads *Degraded* on a genuine figure. A domestic target with
+no working end-to-end probe shows *Cannot be measured* and dashes rather than zeros — the
+tunnelled `ChainStep::Nothing` path, seen for the first time.
+
+Not one cell of any strip is grey, and that is the result rather than a gap: the route lookup
+caught the tunnel at registration, so the lying kinds were never tried and the hop-limit proof
+never had to fire. The cheap structural check did the work; the expensive proof stayed in
+reserve for the platforms and adapters it exists for.
+
 ## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view
