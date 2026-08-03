@@ -117,7 +117,9 @@
     "processes": {
       "label": "Processes in this application",
       "entry": "{{name}} · PID {{pid}}",
-      "none": "Nothing is running under this application yet — it will be picked up when it starts"
+      "none": "Nothing is running under this application yet — it will be picked up when it starts",
+      "count": "{{count}} process",
+      "count_other": "{{count}} processes"
     },
     "chart": {
       "label": "Round-trip time over time for every endpoint of {{name}}",

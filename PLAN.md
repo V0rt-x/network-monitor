@@ -596,6 +596,15 @@ here waited on it.
       – **`monitor_app`/`forget_app` and the `AppEndpoints` event take an application identity**
         instead of a pid. The UI must show which processes an application currently consists of:
         a grouping the user cannot inspect is one they cannot correct.
+        *Amended by the user on 2026-08-03, after reading the running build: the card counts
+        them at level one and enumerates them in an expander.* The requirement is unchanged —
+        the list is one click away, not gone — but a browser contributes seventeen processes,
+        and seventeen lines of `name · PID` above the figures is a wall the reader has to get
+        past to reach what they came for. The count is the part worth a glance: it says how
+        large a group the rule caught, which is what would look wrong if the grouping were.
+        An application with **no** processes keeps its sentence at level one, because that is
+        a finding — the monitor is armed and the game has not started — and "0 processes"
+        would read as a bug.
       – **The picker offers applications too.** Found by running the build: the monitoring
         side was grouped and the picker was still a raw process list, so choosing Discord
         meant picking one of six identical `Discord.exe` rows at random — the exact question

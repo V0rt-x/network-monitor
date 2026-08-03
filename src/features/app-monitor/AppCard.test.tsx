@@ -128,12 +128,14 @@ describe('AppCard', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'game.exe' })).toBeInTheDocument();
-    expect(screen.getByText('game.exe · PID 4242')).toBeInTheDocument();
+    expect(screen.getByText('1 process')).toBeInTheDocument();
   });
 
-  it('lists every process the application currently consists of', () => {
-    // A grouping the user cannot inspect is one they cannot correct: a launcher, the title
-    // it started and an anti-cheat shim are one application, and they can see so.
+  it('counts the processes at level one instead of listing them', async () => {
+    // A browser or an Electron app contributes a dozen-odd entries, and that many lines of
+    // `name · PID` above the figures is a wall the reader has to get past to reach what they
+    // came for. The count is the part worth a glance: it says how large a group the rule
+    // caught, which is what would look wrong if the grouping were wrong.
     render(
       <AppCard
         app={app({
@@ -150,8 +152,16 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('launcher.exe · PID 100')).toBeInTheDocument();
-    expect(screen.getByText('title.exe · PID 300')).toBeInTheDocument();
+    expect(screen.getByText('2 processes')).toBeVisible();
+    expect(screen.getByText('launcher.exe · PID 100')).not.toBeVisible();
+
+    // But a grouping the user cannot inspect is still one they cannot correct, so the list
+    // is one click away rather than gone: a launcher, the title it started and an anti-cheat
+    // shim are one application, and they can still see so.
+    await userEvent.click(screen.getByText('2 processes'));
+
+    expect(screen.getByText('launcher.exe · PID 100')).toBeVisible();
+    expect(screen.getByText('title.exe · PID 300')).toBeVisible();
   });
 
   it('says an armed application has nothing running rather than showing an empty list', () => {

@@ -32,11 +32,17 @@ interface AppCardProps {
  * application is the normal case under filtering, not an edge case — its endpoints sit in
  * different networks and a tunnel may cover some of them and not others.
  *
- * The processes it currently consists of are listed rather than counted. An application is
- * a group Rust formed — the picked process, its namesakes, its descendants — and a grouping
- * the user cannot inspect is one they cannot correct. An empty list is a real state: the
- * application was chosen and nothing is running under it, which is exactly what arming the
- * monitor before a match looks like.
+ * The processes it consists of are **counted at level one and enumerated at level two**.
+ * A grouping the user cannot inspect is still one they cannot correct, so the list has not
+ * gone anywhere — but a browser or an Electron app contributes a dozen-odd entries, and
+ * seventeen lines of `name · PID` above the figures is a wall the reader has to get past to
+ * reach anything they came for. *Changed on the user's instruction on 2026-08-03, after
+ * reading the running build.* The count is the part that is worth a glance: it says how
+ * large a group the rule caught, which is what would look wrong if the grouping were.
+ *
+ * An empty list stays at level one and stays a sentence, because it is a finding rather than
+ * a detail: the application was chosen and nothing is running under it, which is exactly what
+ * arming the monitor before a match looks like, and a bare "0 processes" would read as a bug.
  *
  * **The chart is additive and the list is the authority.** Hovering a line raises its
  * endpoint's row and dims the rest rather than hiding them; a click pins that choice, and so
@@ -125,13 +131,16 @@ export const AppCard = ({
           {app.processes.length === 0 ? (
             <p className="nm-appcard__processes nm-state--pending">{t('apps.processes.none')}</p>
           ) : (
-            <ul className="nm-appcard__processes" aria-label={t('apps.processes.label')}>
-              {app.processes.map((process) => (
-                <li key={process.pid}>
-                  {t('apps.processes.entry', { name: process.name, pid: process.pid })}
-                </li>
-              ))}
-            </ul>
+            <details className="nm-appcard__processes">
+              <summary>{t('apps.processes.count', { count: app.processes.length })}</summary>
+              <ul aria-label={t('apps.processes.label')}>
+                {app.processes.map((process) => (
+                  <li key={process.pid}>
+                    {t('apps.processes.entry', { name: process.name, pid: process.pid })}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
         <button
