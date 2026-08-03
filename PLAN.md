@@ -2086,12 +2086,12 @@ move down a level, and each item below names the level they land on.
       simply wrong outside a game: Discord's UDP is voice, a browser's is QUIC, and several
       games play over TCP. The two group hints leave the page for two new help topics
       (`udpFlows`, `tcpConnections`), which is where an explanation belongs.
-- [ ] **13. The help page becomes an index.** 26 topics in a flat list, each opening with a
+- [x] **13. The help page becomes an index.** 26 topics in a flat list, each opening with a
       150–350-word body, no contents, no grouping, no search, no way back. Default becomes
       title plus the one-sentence `short` that is already written; the body sits behind
       "Read more". Five named sections with a contents column, a filter, and a Back that
       returns the reader to the page they came from.
-- [ ] **14. Verdicts get help topics.** The one place in the app that states a conclusion has
+- [x] **14. Verdicts get help topics.** The one place in the app that states a conclusion has
       no explanation of any kind. `verdict` and `verdictEvidence`, plus the disclosure on the
       banner's own heading.
 - [ ] **15. `WhyNotYourPing` once per card**, not once per silent endpoint. For a game that is

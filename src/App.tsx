@@ -31,8 +31,11 @@ const PAGES = [
 export const App = () => {
   const { t } = useTranslation();
   const [page, setPage] = useState<Page>('network');
-  // Which section the help opens at, when the reader arrived from a metric's own ⓘ.
+  // Which topic the help opens at, when the reader arrived from a label's own explanation.
   const [topic, setTopic] = useState<HelpTopic | null>(null);
+  // And where they came from, so "Back" puts them where they were. Following a "Learn more"
+  // used to be a one-way trip: the only way out was the tab, which loses your place.
+  const [cameFrom, setCameFrom] = useState<Page | null>(null);
   useTrayLabels();
 
   /**
@@ -48,7 +51,20 @@ export const App = () => {
       case 'apps':
         return <AppMonitorPage />;
       case 'help':
-        return <HelpPage topic={topic} />;
+        return (
+          <HelpPage
+            topic={topic}
+            onBack={
+              cameFrom === null
+                ? null
+                : () => {
+                    setPage(cameFrom);
+                    setCameFrom(null);
+                    setTopic(null);
+                  }
+            }
+          />
+        );
       case 'settings':
         return <SettingsPage />;
     }
@@ -70,9 +86,13 @@ export const App = () => {
               className={page === entry.id ? 'nm-nav__tab nm-nav__tab--active' : 'nm-nav__tab'}
               aria-current={page === entry.id ? 'page' : undefined}
               onClick={() => {
-                // Reached from the tab rather than from a metric, so it opens at the top:
-                // whatever section was last asked for is not what this click meant.
-                if (entry.id === 'help') setTopic(null);
+                // Reached from the tab rather than from a label, so it opens at the top and
+                // offers no way back: whatever topic was last asked for is not what this
+                // click meant, and there is nowhere the reader was taken away from.
+                if (entry.id === 'help') {
+                  setTopic(null);
+                  setCameFrom(null);
+                }
                 setPage(entry.id);
               }}
             >
@@ -109,6 +129,7 @@ export const App = () => {
         <HelpProvider
           openHelp={(entry) => {
             setTopic(entry);
+            setCameFrom(page === 'help' ? cameFrom : page);
             setPage('help');
           }}
         >

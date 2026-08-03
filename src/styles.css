@@ -1432,16 +1432,125 @@ details.nm-endpointgroup > summary {
   margin: 0;
 }
 
+/*
+ * The help, as an index rather than as a wall.
+ *
+ * Twenty-eight topics each opening with its full body is about six thousand words with no
+ * point of entry. What is on screen by default is a title and the one sentence that was
+ * already written for every topic; the body is behind "Read more", the contents column is
+ * how a reader gets to a section, and "Back" is how they get out of one.
+ */
 .nm-help-page {
-  max-width: 46rem;
+  max-width: 64rem;
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-4);
 }
 
+.nm-help-page__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nm-space-1);
+}
+
 .nm-help-page__title {
   margin: 0;
   font-size: var(--nm-text-lg);
+}
+
+.nm-help-page__filter {
+  max-width: var(--nm-col-narrow);
+}
+
+.nm-help-page__filter input {
+  font: inherit;
+  color: var(--nm-text);
+  background: var(--nm-surface);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-2);
+}
+
+/* The contents beside the topics, and above them when there is no room for a column: a
+   table of contents that has scrolled away is one nobody uses. */
+.nm-help-page__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--nm-col-narrow), 1fr));
+  gap: var(--nm-space-4);
+  align-items: start;
+}
+
+.nm-help-page__contents {
+  position: sticky;
+  top: var(--nm-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+  padding: var(--nm-space-3);
+  border: 1px solid var(--nm-border);
+  border-radius: var(--nm-radius-md);
+}
+
+.nm-help-page__contents ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
+}
+
+.nm-help-page__contents a {
+  color: var(--nm-accent);
+}
+
+.nm-help-page__contentstitle {
+  margin: 0;
+  font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
+}
+
+/* The topics fill the rest of the width, however many columns the contents took. */
+.nm-help-page__topics {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-5);
+}
+
+.nm-help-page__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+}
+
+.nm-help-page__grouptitle {
+  margin: 0;
+  font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
+}
+
+.nm-help-page__short {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-sm);
+}
+
+.nm-help-page__more {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nm-accent);
+  font: inherit;
+  font-size: var(--nm-text-sm);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .nm-help-page__subtitle {
@@ -1476,6 +1585,7 @@ details.nm-endpointgroup > summary {
 
 .nm-help-page__body {
   margin: 0;
+  font-size: var(--nm-text-sm);
   line-height: 1.5;
 }
 

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { MetricHelp } from '../features/help/MetricHelp';
 import { formatCount } from './format';
 import type { DiagnosisView } from './ipc';
 import { verdictAdviceKey, verdictKey, verdictModifier } from './verdict';
@@ -48,12 +49,23 @@ export const VerdictBanner = ({ diagnosis, subject }: VerdictBannerProps) => {
       role={diagnosis.actionable ? 'status' : undefined}
       aria-label={t('verdict.label')}
     >
+      {/* The one place in the application that states a conclusion had no explanation of any
+          kind — which, under the rule that a figure is not done until it has a help topic, was
+          a debt rather than an omission. The headline carries it, once per banner. */}
       <p className="nm-verdict__headline">
         {subject === undefined
           ? t(verdictKey(diagnosis.verdict))
           : t('verdict.about', { subject, verdict: t(verdictKey(diagnosis.verdict)) })}
+        <MetricHelp topic="verdict" />
       </p>
-      {scope !== null && <p className="nm-verdict__scope">{scope}</p>}
+      {/* How much of the application the claim is about, which is a different message from
+          the claim itself and has its own topic for exactly that reason. */}
+      {scope !== null && (
+        <p className="nm-verdict__scope">
+          {scope}
+          <MetricHelp topic="verdictEvidence" />
+        </p>
+      )}
       {advice !== null && <p className="nm-verdict__advice">{t(advice)}</p>}
     </section>
   );

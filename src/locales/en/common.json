@@ -273,6 +273,21 @@
     "intro": "Everything here is measured on this machine and stays on it. Nothing on this page is fetched from anywhere — it ships with the app, so it reads the same whether or not you can reach the internet.",
     "explain": "What {{metric}} means",
     "learnMore": "Learn more",
+    "affordance": "Any label with a dotted underline explains itself — hover it, or move to it with the keyboard.",
+    "contents": "Contents",
+    "filter": "Filter topics",
+    "filterPlaceholder": "Type a word from a label",
+    "noMatches": "No topic matches that.",
+    "readMore": "Read more",
+    "readLess": "Show less",
+    "back": "Back",
+    "section": {
+      "startHere": "Start here",
+      "figures": "The figures",
+      "measured": "How things are measured",
+      "verdicts": "Verdicts",
+      "services": "The services page"
+    },
     "topic": {
       "ping": {
         "title": "Why this is not the ping your game shows",
@@ -358,6 +373,16 @@
         "title": "The traffic itself",
         "short": "Measured from data your game is already exchanging, without sending anything. Nothing here is a ping.",
         "body": "These figures cost no packets: the operating system already counts what crosses each connection, so this is the only part of the page that describes the traffic you are actually playing over rather than a substitute for it. Nothing here is a ping, and the distinction matters — no request is timed against its answer. The operating system reports that data arrived, not what it was replying to. How evenly it arrives is what you feel as stutter, and it folds in whatever pace the server chose: a server that skipped a tick and a network that delayed one look identical from here. That is exactly why these sit beside the route rather than instead of it. Their disagreement is the diagnosis — a clean route with ragged arrivals points at the server, a ragged route with even arrivals usually means a router is deprioritising our probes rather than that anything is wrong."
+      },
+      "verdict": {
+        "title": "What a verdict is",
+        "short": "One conclusion drawn from everything measured at once. It is always a claim about a network, and never about whether a game is working.",
+        "body": "Every other figure in this app is a measurement. A verdict is the only thing here that is an argument: it reads the domestic baseline against the foreign one, the endpoints of the application you are watching, how far the route to each of them reaches, and — where the game publishes reference addresses — whether those are answering. From that it says which part of the chain the evidence points at.\n\nWhat it will never say is that a game is broken. This app cannot see a game's servers doing their job; it can only see whether packets addressed to them come back to this machine, and from inside a filtered network those two look identical. So the wording stops at the network: your own line, the way out of your country, the route to this particular application, or a set of addresses that has gone quiet. The advice below a verdict is a separate claim from the finding above it — the app can see where the evidence points, and it cannot see whether a VPN would help."
+      },
+      "verdictEvidence": {
+        "title": "How much a verdict covers",
+        "short": "A verdict about two of an application's seven endpoints is a different message from one about all seven, so it always says how many it is about.",
+        "body": "Partial failure inside one application is the ordinary case under filtering, not an edge case: an application's endpoints sit in different networks, and a tunnel may cover some of them and not others. A verdict that did not say how much of the application it was about would read as a statement about the whole of it.\n\nThe count beside a verdict is the honest scope of the claim, and the distribution on the card — how many endpoints are in each state — is the evidence you can check it against. When there is not enough measured to argue anything, the verdict says exactly that and stays grey: neither reassuring nor alarming, because not knowing is not good news."
       },
       "udpFlows": {
         "title": "UDP flows",
