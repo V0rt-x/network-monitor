@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { EndpointGroupView, FlowStatusView } from '../../shared/ipc';
+import { MetricHelp } from '../help/MetricHelp';
 import { Distribution } from './Distribution';
 import { EndpointRow } from './EndpointRow';
 import { holdPlace } from './holdPlace';
-import { groupHintKey, groupKey } from './labels';
+import { groupKey, groupTopic } from './labels';
 
 interface EndpointGroupProps {
   readonly group: EndpointGroupView;
@@ -95,8 +96,13 @@ export const EndpointGroup = ({
 
   const heading = (
     <>
-      <span className="nm-endpointgroup__title">{t(groupKey(group.transport))}</span>
-      <span className="nm-endpointgroup__hint">{t(groupHintKey(group.transport))}</span>
+      {/* The heading explains itself, and the sentence that used to sit beside it on the
+          page is now what the explanation says. A hint is a paragraph competing with the
+          figures it describes; a name a reader can ask about is not. */}
+      <span className="nm-endpointgroup__title">
+        {t(groupKey(group.transport))}
+        <MetricHelp topic={groupTopic(group.transport)} />
+      </span>
       <Distribution
         counts={group.counts}
         label={t('apps.distribution.group', { group: t(groupKey(group.transport)) })}

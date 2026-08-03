@@ -289,7 +289,7 @@ describe('AppMonitorPage', () => {
       .getAllByRole('status')
       .filter((element) => element.classList.contains('nm-apps__flow'));
     expect(flow).toHaveTextContent(/UDP endpoints and traffic counters are missing/);
-    expect(screen.getByText(/Match traffic cannot be discovered on this machine/)).toBeVisible();
+    expect(screen.getByText(/UDP flows cannot be discovered on this machine/)).toBeVisible();
   });
 
   it('reports a dead event channel instead of looking like nothing was chosen', async () => {

@@ -216,10 +216,15 @@ describe('AppCard', () => {
     expect(total.getByText('4 OK')).toBeInTheDocument();
   });
 
-  it('gives the match traffic its own group, ahead of the supporting connections', () => {
-    // During a game the endpoints that decide whether it plays well are the UDP flows.
-    // Severity alone puts them wherever their health happens to fall, between a launcher's
-    // connection and a content network.
+  it('groups the endpoints by transport, UDP first, and claims no role from it', () => {
+    // During a game the endpoints that decide whether it plays well are usually the UDP
+    // flows, and severity alone puts them wherever their health happens to fall — between a
+    // launcher's connection and a content network. So UDP leads.
+    //
+    // What the headings must *not* do is turn that tendency into a claim. They read "Match
+    // traffic" and "Supporting connections", which infer a role from a transport: Discord's
+    // UDP is voice, a browser's is QUIC, and several games play over TCP, which made
+    // "supporting" a lie on the most important row on the page.
     render(
       <AppCard
         app={app({
@@ -235,15 +240,36 @@ describe('AppCard', () => {
       />,
     );
 
-    const groups = screen.getAllByText(/Match traffic|Supporting connections/);
-    expect(groups.map((node) => node.textContent)).toEqual([
-      'Match traffic',
-      'Supporting connections',
-    ]);
+    const headings = [...document.querySelectorAll('.nm-endpointgroup__title')].map(
+      (node) => node.firstChild?.textContent,
+    );
+    expect(headings).toEqual(['UDP flows', 'TCP connections']);
+    expect(screen.queryByText(/Match traffic/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/plays over|not where the game is played/)).not.toBeInTheDocument();
+
     const supporting = within(
-      screen.getByRole('list', { name: 'Endpoint states in Supporting connections' }),
+      screen.getByRole('list', { name: 'Endpoint states in TCP connections' }),
     );
     expect(supporting.getByText('1 Degraded')).toBeInTheDocument();
+  });
+
+  it('explains a group heading rather than captioning it on the page', async () => {
+    // The two sentences that used to sit beside the headings were paragraphs competing with
+    // the figures they described, and they were the role claim itself. They are now what the
+    // heading's own explanation says, which is one keystroke away and costs no ink.
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'What UDP flows means' }));
+
+    expect(screen.getByText(/no connection to open or close/)).toBeInTheDocument();
   });
 
   it('says why there is no match traffic rather than showing an empty group', () => {
@@ -261,9 +287,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Match traffic cannot be discovered on this machine/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/UDP flows cannot be discovered on this machine/)).toBeInTheDocument();
   });
 
   it('opens the supporting connections when they already need attention, and only then', () => {
@@ -284,7 +308,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Supporting connections').closest('details')).toHaveAttribute('open');
+    expect(screen.getByText('TCP connections').closest('details')).toHaveAttribute('open');
   });
 
   it('does not open or close the supporting connections under the reader', () => {
@@ -304,9 +328,7 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Supporting connections').closest('details')).not.toHaveAttribute(
-      'open',
-    );
+    expect(screen.getByText('TCP connections').closest('details')).not.toHaveAttribute('open');
 
     rerender(
       <AppCard
@@ -324,13 +346,11 @@ describe('AppCard', () => {
 
     // Still folded. The heading says what happened instead, and it says it whether the
     // group is open or shut.
-    expect(screen.getByText('Supporting connections').closest('details')).not.toHaveAttribute(
-      'open',
-    );
+    expect(screen.getByText('TCP connections').closest('details')).not.toHaveAttribute('open');
     expect(
-      within(
-        screen.getByRole('list', { name: 'Endpoint states in Supporting connections' }),
-      ).getByText('1 Probe blocked'),
+      within(screen.getByRole('list', { name: 'Endpoint states in TCP connections' })).getByText(
+        '1 Probe blocked',
+      ),
     ).toBeInTheDocument();
   });
 

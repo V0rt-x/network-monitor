@@ -49,6 +49,13 @@ export const HELP_TOPICS = [
   'warmup',
   'passive',
   'pool',
+  // The two group headings. They used to carry a sentence apiece on the page — "the
+  // connections a game actually plays over" — which claimed a *role* from a *transport*,
+  // the one inference the view layer refuses to draw, and was wrong for a browser, a voice
+  // call and any game that plays over TCP. The heading now says the transport and the
+  // explanation says the rest.
+  'udpFlows',
+  'tcpConnections',
 ] as const;
 
 /** One thing the page can explain. */

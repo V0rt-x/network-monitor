@@ -2080,7 +2080,7 @@ move down a level, and each item below names the level they land on.
       `margin-top` survives inside one.
 - [x] **11. One breakpoint system.** Four different `minmax()` bases on one page mean columns
       reflow at four different window widths while resizing.
-- [ ] **12. `Match traffic` / `Supporting connections` → `UDP flows` / `TCP connections`.**
+- [x] **12. `Match traffic` / `Supporting connections` → `UDP flows` / `TCP connections`.**
       *Approved by the user on 2026-08-03, variant A.* The old names claim a **role** from a
       **transport**, which `view.rs` itself refuses to do in the same breath — and they are
       simply wrong outside a game: Discord's UDP is voice, a browser's is QUIC, and several

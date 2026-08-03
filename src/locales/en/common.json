@@ -164,12 +164,10 @@
       "group": "Endpoint states in {{group}}"
     },
     "group": {
-      "udp": "Match traffic",
-      "udpHint": "The connections a game actually plays over",
-      "udpEmpty": "No match traffic discovered yet — nothing of this kind has been seen leaving this application.",
-      "udpUnobservable": "Match traffic cannot be discovered on this machine: per-process flow events are not running, so these connections are invisible to the app. The note above the applications says what to do about it.",
-      "tcp": "Supporting connections",
-      "tcpHint": "Sign-in, launchers and content networks — not where the game is played"
+      "udp": "UDP flows",
+      "udpEmpty": "No UDP flow discovered yet — nothing of this kind has been seen leaving this application.",
+      "udpUnobservable": "UDP flows cannot be discovered on this machine: per-process flow events are not running, so these connections are invisible to the app. The note above the applications says what to do about it.",
+      "tcp": "TCP connections"
     },
     "liveness": {
       "active": "In use",
@@ -360,6 +358,16 @@
         "title": "The traffic itself",
         "short": "Measured from data your game is already exchanging, without sending anything. Nothing here is a ping.",
         "body": "These figures cost no packets: the operating system already counts what crosses each connection, so this is the only part of the page that describes the traffic you are actually playing over rather than a substitute for it. Nothing here is a ping, and the distinction matters — no request is timed against its answer. The operating system reports that data arrived, not what it was replying to. How evenly it arrives is what you feel as stutter, and it folds in whatever pace the server chose: a server that skipped a tick and a network that delayed one look identical from here. That is exactly why these sit beside the route rather than instead of it. Their disagreement is the diagnosis — a clean route with ragged arrivals points at the server, a ragged route with even arrivals usually means a router is deprioritising our probes rather than that anything is wrong."
+      },
+      "udpFlows": {
+        "title": "UDP flows",
+        "short": "Traffic with no connection to open or close. A game's match traffic and a voice call live here, and so does anything else that streams — which is why this group is listed first.",
+        "body": "UDP carries data without establishing anything first: there is no handshake, no connection the operating system can date, and nothing to close. Almost everything that has to arrive continuously uses it — a game's match traffic, a voice call, a video stream, and increasingly ordinary web traffic through QUIC. This group is listed first because for the reason you opened this app, it is usually the one that matters: it is where a stutter you can feel would show up.\n\nWhat it is *not* is a promise about purpose. This app never guesses what a connection is for — it can see the transport and the volume of traffic, and inventing a role from those would be a wrong label on a right number. If you want to know which of these your game is actually playing over, the busiest flow at the top of the card is the honest answer, because that one is measured."
+      },
+      "tcpConnections": {
+        "title": "TCP connections",
+        "short": "Connections the operating system opens, tracks and can date — sign-in, launchers, stores, downloads, and the channels some games use themselves.",
+        "body": "TCP establishes a connection before anything is sent, which is why these entries can report how long they have been open while UDP flows cannot. Most of what an application does outside of playing goes here: signing in, the launcher talking to its store, a content network delivering an update, a telemetry host.\n\nThat is a tendency and not a rule — several games run their own match channel over TCP — so this group is never presented as unimportant. It starts folded only when every connection in it is clean, and a problem inside it is announced in the heading whether it is folded or not. A blocked sign-in service is exactly what \"I cannot get into the game\" looks like, and it lives in this group."
       },
       "pool": {
         "title": "The game's own reference servers",

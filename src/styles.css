@@ -762,11 +762,6 @@ details.nm-endpointgroup > summary {
   font-size: var(--nm-text-md);
 }
 
-.nm-endpointgroup__hint {
-  color: var(--nm-muted);
-  font-size: var(--nm-text-sm);
-}
-
 .nm-distribution--inline {
   margin-left: auto;
 }

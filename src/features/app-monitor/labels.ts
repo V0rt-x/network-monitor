@@ -26,11 +26,22 @@ export const transportKey = (transport: TransportView) => {
 };
 
 /**
- * What a transport group is called on the page.
+ * What a transport group is called on the page: the transport, and nothing more.
  *
- * Named for what the traffic *is* rather than for its protocol: a player knows the match is
- * the thing that stutters, not that it travels over UDP. The protocol badge stays on the row
- * for whoever wants it.
+ * They were *Match traffic* and *Supporting connections*, which claim a **role** from a
+ * **transport** — the one inference `view.rs` explicitly refuses to draw, on the grounds
+ * that everything except the transport and the volume of traffic would be a guess. The names
+ * were also simply wrong outside a game: Discord's UDP is voice, a browser's is QUIC, a
+ * torrent client's is peers, and several games play over TCP, which made "supporting" a lie
+ * on the most important row on the page.
+ *
+ * *Approved by the user on 2026-08-03, variant A.* The standing rule that level one carries
+ * the standard network term applies here literally: UDP and TCP **are** the standard terms,
+ * and the plain-language sentence goes where every other one goes — into the label's own
+ * explanation, as the `udpFlows` and `tcpConnections` help topics.
+ *
+ * If a role is ever wanted it has to come from data that knows one — a `kind` on a preset —
+ * and a neutral default would still be needed for everything unrecognised, which is this.
  */
 export const groupKey = (transport: TransportView) => {
   switch (transport) {
@@ -41,12 +52,13 @@ export const groupKey = (transport: TransportView) => {
   }
 };
 
-export const groupHintKey = (transport: TransportView) => {
+/** The help topic a group heading explains itself with. */
+export const groupTopic = (transport: TransportView) => {
   switch (transport) {
     case 'udp':
-      return 'apps.group.udpHint' as const;
+      return 'udpFlows' as const;
     case 'tcp':
-      return 'apps.group.tcpHint' as const;
+      return 'tcpConnections' as const;
   }
 };
 
