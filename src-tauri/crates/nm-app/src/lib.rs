@@ -35,6 +35,7 @@ mod view;
 
 pub mod applications;
 pub mod apps;
+pub mod asn;
 pub mod baselines;
 pub mod discovery;
 pub mod monitor;

@@ -30,6 +30,11 @@ nm-platform.workspace = true
 nm-probes.workspace = true
 thiserror.workspace = true
 
+# The bundled autonomous-system directory ships gzip-compressed: 5.1 MB in the installer
+# against 45 MB of plain text. Already in the dependency tree through Tauri, so it costs
+# a direct entry here and no new code to audit; `miniz_oxide` underneath it is pure Rust,
+# which keeps the build free of a C toolchain.
+flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 # Target lists and the settings file are JSON; this is the only crate that reads either.
 serde_json = "1"

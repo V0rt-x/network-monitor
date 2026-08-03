@@ -36,6 +36,7 @@
 mod error;
 
 pub mod address;
+pub mod asn;
 pub mod backoff;
 pub mod cidr;
 pub mod diagnosis;
