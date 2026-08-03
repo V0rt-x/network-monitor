@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { HelpTopic } from './topics';
-import { anchorOf, bodyKey, HELP_TOPICS, titleKey } from './topics';
+import { anchorOf, bodyKey, HELP_TOPICS, paragraphsOf, titleKey } from './topics';
 
 interface HelpPageProps {
   /** The section to open at, when the reader arrived from a metric's "Learn more". */
@@ -67,7 +67,13 @@ export const HelpPage = ({ topic }: HelpPageProps) => {
           tabIndex={-1}
         >
           <h3 className="nm-help-page__heading">{t(titleKey(entry))}</h3>
-          <p className="nm-help-page__body">{t(bodyKey(entry))}</p>
+          {/* One `<p>` per paragraph the author wrote. Inside a single `<p>` a blank line
+              collapses to a space, which shipped the longest topic as one ~350-word block. */}
+          {paragraphsOf(t(bodyKey(entry))).map((paragraph) => (
+            <p key={paragraph} className="nm-help-page__body">
+              {paragraph}
+            </p>
+          ))}
         </section>
       ))}
     </div>

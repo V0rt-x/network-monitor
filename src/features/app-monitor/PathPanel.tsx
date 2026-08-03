@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatMs, formatPct } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import type { PathView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
 import { networkName } from './networkName';
@@ -43,8 +43,8 @@ interface PathPanelProps {
  * own expander: they qualify the figure rather than being what a player reads.
  */
 export const PathPanel = ({ path }: PathPanelProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   return (
     <section className="nm-path">
@@ -65,21 +65,21 @@ export const PathPanel = ({ path }: PathPanelProps) => {
       <dl className="nm-endpoint__metrics">
         <div>
           <dt>{t('apps.path.metric.rtt')}</dt>
-          <dd>{formatMs(path.rttMs, locale)}</dd>
+          <dd>{figures.ms(path.rttMs)}</dd>
         </div>
         <div>
           <dt>
             {t('apps.metric.jitter')}
             <MetricHelp topic="jitter" />
           </dt>
-          <dd>{formatMs(path.jitterMs, locale)}</dd>
+          <dd>{figures.ms(path.jitterMs)}</dd>
         </div>
         <div>
           <dt>
             {t('apps.metric.loss')}
             <MetricHelp topic="loss" />
           </dt>
-          <dd>{formatPct(path.lossPct, locale)}</dd>
+          <dd>{figures.pct(path.lossPct)}</dd>
         </div>
       </dl>
 

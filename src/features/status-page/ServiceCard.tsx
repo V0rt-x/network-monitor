@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
-import { formatCount, formatMs, formatPct, NO_VALUE } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import { MetricHelp } from '../help/MetricHelp';
 import type { ServiceEndpointView, ServiceView } from '../../shared/ipc';
 import { CheckTimeline } from './CheckTimeline';
@@ -40,8 +40,8 @@ interface EndpointRowProps {
  * rest of the networking world uses.
  */
 const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   return (
     <li className="nm-service__endpoint">
@@ -95,7 +95,7 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
             {t('status.metric.latest')}
             <MetricHelp topic="latestCheck" />
           </dt>
-          <dd>{formatMs(endpoint.rttMs, locale)}</dd>
+          <dd>{figures.ms(endpoint.rttMs)}</dd>
         </div>
         {/* The span these cover is stated once, in the page's legend, rather than on both
             figures of all twenty-three cards — where it wrapped onto three lines and pushed
@@ -105,14 +105,14 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
             {t('status.metric.mean')}
             <MetricHelp topic="meanRtt" />
           </dt>
-          <dd>{formatMs(endpoint.meanRttMs, locale)}</dd>
+          <dd>{figures.ms(endpoint.meanRttMs)}</dd>
         </div>
         <div>
           <dt>
             {t('status.metric.loss')}
             <MetricHelp topic="loss" />
           </dt>
-          <dd>{formatPct(endpoint.lossPct, locale)}</dd>
+          <dd>{figures.pct(endpoint.lossPct)}</dd>
         </div>
       </dl>
     </li>
@@ -133,8 +133,8 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
  * amber dot would hide which half is broken.
  */
 export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   const counts = DISTRIBUTION.map((entry) => ({
     ...entry,
@@ -167,9 +167,7 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
           {t('status.metric.median')}
           <MetricHelp topic="medianRtt" />
         </span>
-        <span className="nm-service__rtt">
-          {service.rttMs === null ? NO_VALUE : formatMs(service.rttMs, locale)}
-        </span>
+        <span className="nm-service__rtt">{figures.ms(service.rttMs)}</span>
         <span className={stale ? 'nm-service__stale' : 'nm-service__checked'}>{lastChecked}</span>
       </p>
 
@@ -178,7 +176,7 @@ export const ServiceCard = ({ service, checkIntervalSecs }: ServiceCardProps) =>
           {counts.map((entry) => (
             <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
               {t('dashboard.distributionEntry', {
-                amount: formatCount(entry.value, locale),
+                amount: figures.count(entry.value),
                 state: t(entry.labelKey),
               })}
             </li>

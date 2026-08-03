@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { healthKey, healthModifier } from '../dashboard/labels';
-import { formatCount, formatMs, formatPct } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import type { PoolView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
 
@@ -23,8 +23,8 @@ interface PoolPanelProps {
  * a verdict that stops at the route.
  */
 export const PoolPanel = ({ pool }: PoolPanelProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   if (pool === null) {
     return (
@@ -55,18 +55,18 @@ export const PoolPanel = ({ pool }: PoolPanelProps) => {
       <dl className="nm-pool__metrics">
         <div>
           <dt>{t('apps.pool.answering')}</dt>
-          <dd>{formatPct(pool.answeringPct, locale)}</dd>
+          <dd>{figures.pct(pool.answeringPct)}</dd>
         </div>
         <div>
           <dt>{t('apps.pool.rtt')}</dt>
-          <dd>{formatMs(pool.rttMs, locale)}</dd>
+          <dd>{figures.ms(pool.rttMs)}</dd>
         </div>
         <div>
           <dt>{t('apps.pool.members')}</dt>
           <dd>
             {t('apps.pool.membership', {
-              seeded: formatCount(pool.seeded, locale),
-              learned: formatCount(pool.learned, locale),
+              seeded: figures.count(pool.seeded),
+              learned: figures.count(pool.learned),
             })}
           </dd>
         </div>

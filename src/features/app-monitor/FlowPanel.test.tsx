@@ -49,8 +49,30 @@ describe('FlowPanel', () => {
     expect(screen.queryByText('Jitter')).not.toBeInTheDocument();
     expect(screen.getByText('Worst pause')).toBeInTheDocument();
     expect(screen.getByText('Drop-off')).toBeInTheDocument();
-    expect(screen.getByText('119')).toBeInTheDocument();
-    expect(screen.getByText('1.4')).toBeInTheDocument();
+    expect(screen.getByText('119 ms')).toBeInTheDocument();
+    expect(screen.getByText('1.4 ms')).toBeInTheDocument();
+  });
+
+  it('writes every figure with its unit, and the dash without one', () => {
+    // "Drop-off 3" is three per cent or three packets, and nothing on the page said which.
+    // The dash is the other half of the rule: `— ms` claims a measurement that never
+    // happened, so an absent figure stays absent with nothing after it.
+    render(<FlowPanel flow={flow({ receiveShortfallPct: 3, arrivalMaxMs: null })} />);
+
+    expect(screen.getByText('3 %')).toBeInTheDocument();
+    expect(screen.queryByText('3')).not.toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('— ms')).not.toBeInTheDocument();
+  });
+
+  it('styles a freeze as the strongest signal on the page rather than as a neutral pill', () => {
+    // It carried `nm-health--bad`, a class no stylesheet defines, so the one badge that says
+    // "something is wrong right now" rendered with an inherited colour and a plain border.
+    render(<FlowPanel flow={flow({ stallMs: 900 })} />);
+
+    expect(screen.getByText(/Frozen for 900 ms/).closest('span')).toHaveClass(
+      'nm-health--unreachable',
+    );
   });
 
   it('keeps a freeze prominent rather than demoting it with the details', () => {
@@ -86,7 +108,7 @@ describe('FlowPanel', () => {
     render(<FlowPanel flow={flow({ receiveShortfallPct: 46 })} />);
 
     expect(screen.getByText('Drop-off')).toBeInTheDocument();
-    expect(screen.getByText('46')).toBeInTheDocument();
+    expect(screen.getByText('46 %')).toBeInTheDocument();
     expect(screen.queryByText(/packet loss/i)).not.toBeInTheDocument();
   });
 });

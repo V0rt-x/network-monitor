@@ -2,8 +2,8 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
 import { spanOf } from '../../shared/duration';
-import { formatBytes, formatMs, formatPct } from '../../shared/format';
 import type { EndpointView } from '../../shared/ipc';
+import { useFigures } from '../../shared/useFigures';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { FlowPanel } from './FlowPanel';
@@ -97,8 +97,8 @@ export const EndpointRow = ({
   onPin,
   onHover,
 }: EndpointRowProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
   // Absent stays absent here too: a span the core did not send is left off the row rather
   // than written as "0 s", which would say the endpoint had just appeared.
   const age = endpoint.age.secs === null ? null : spanOf(endpoint.age.secs);
@@ -221,21 +221,21 @@ export const EndpointRow = ({
               {t('apps.metric.rtt')}
               <MetricHelp topic="rtt" />
             </dt>
-            <dd>{formatMs(endpoint.rttMs, locale)}</dd>
+            <dd>{figures.ms(endpoint.rttMs)}</dd>
           </div>
           <div>
             <dt>
               {t('apps.metric.jitter')}
               <MetricHelp topic="jitter" />
             </dt>
-            <dd>{formatMs(endpoint.jitterMs, locale)}</dd>
+            <dd>{figures.ms(endpoint.jitterMs)}</dd>
           </div>
           <div>
             <dt>
               {t('apps.metric.loss')}
               <MetricHelp topic="loss" />
             </dt>
-            <dd>{formatPct(endpoint.lossPct, locale)}</dd>
+            <dd>{figures.pct(endpoint.lossPct)}</dd>
           </div>
         </dl>
       )}
@@ -313,7 +313,7 @@ export const EndpointRow = ({
               {t('apps.metric.traffic', { seconds: trafficWindowSecs })}
               <MetricHelp topic="traffic" />
             </dt>
-            <dd>{formatBytes(endpoint.recentBytes, locale)}</dd>
+            <dd>{figures.bytes(endpoint.recentBytes)}</dd>
           </div>
           {/* The one genuine round trip to the endpoint that cost no packet: the operating
               system's own estimate for the application's connection. It carries its age,
@@ -323,7 +323,7 @@ export const EndpointRow = ({
             <div>
               <dt>{t('apps.metric.stackRtt')}</dt>
               <dd>
-                {formatMs(endpoint.passiveRtt.rttMs, locale)}{' '}
+                {figures.ms(endpoint.passiveRtt.rttMs)}{' '}
                 {/* The age is not decoration: this arrives every few tens of seconds at
                     best, so a figure without it would read as current when it is not. */}
                 {endpoint.passiveRtt.ageSecs !== null && (
@@ -340,9 +340,7 @@ export const EndpointRow = ({
             <div>
               <dt>{t('apps.details.incoming')}</dt>
               <dd>
-                {t('apps.passive.perSecond', {
-                  bytes: formatBytes(endpoint.flow.receivedBytesPerSec, locale),
-                })}
+                {figures.bytesPerSec(endpoint.flow.receivedBytesPerSec)}
                 {/* The span is what keeps a rate honest — it says what period the figure is
                     a rate over — so when it is absent the clause goes rather than a guess
                     taking its place. */}

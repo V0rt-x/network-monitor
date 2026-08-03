@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatMs, formatPct, formatRate } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import type { FlowView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
 
@@ -46,8 +46,8 @@ interface FlowPanelProps {
  * own expander, because they qualify the figures rather than being ones a player reads.
  */
 export const FlowPanel = ({ flow }: FlowPanelProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
   const updates = flow.updatesPerSec;
 
   return (
@@ -62,8 +62,11 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
         </h4>
         {/* Kept prominent rather than demoted: a freeze is the one thing here a player
             recognises immediately, and it is the strongest evidence the panel can show. */}
+        {/* `nm-health--unreachable`, the same red every other "nothing is getting through"
+            state on the page uses. It carried a `--bad` modifier no stylesheet defined, so
+            the strongest evidence in the product rendered as a neutral pill. */}
         {flow.stallMs !== null && (
-          <span className="nm-health nm-health--bad">
+          <span className="nm-health nm-health--unreachable">
             {t('apps.passive.stall', { ms: Math.round(flow.stallMs) })}
             <MetricHelp topic="freeze" />
           </span>
@@ -79,7 +82,7 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
           <dd>
             {updates === null
               ? t('apps.passive.updatesUnknown')
-              : t('apps.passive.updatesPerSec', { rate: formatRate(updates, locale) })}
+              : t('apps.passive.updatesPerSec', { rate: figures.rate(updates) })}
           </dd>
         </div>
         <div>
@@ -87,21 +90,21 @@ export const FlowPanel = ({ flow }: FlowPanelProps) => {
             {t('apps.passive.metric.arrivalJitter')}
             <MetricHelp topic="arrivalJitter" />
           </dt>
-          <dd>{formatMs(flow.arrivalJitterMs, locale)}</dd>
+          <dd>{figures.ms(flow.arrivalJitterMs)}</dd>
         </div>
         <div>
           <dt>
             {t('apps.passive.metric.worstPause')}
             <MetricHelp topic="worstPause" />
           </dt>
-          <dd>{formatMs(flow.arrivalMaxMs, locale)}</dd>
+          <dd>{figures.ms(flow.arrivalMaxMs)}</dd>
         </div>
         <div>
           <dt>
             {t('apps.passive.metric.dropOff')}
             <MetricHelp topic="dropOff" />
           </dt>
-          <dd>{formatPct(flow.receiveShortfallPct, locale)}</dd>
+          <dd>{figures.pct(flow.receiveShortfallPct)}</dd>
         </div>
       </dl>
     </section>

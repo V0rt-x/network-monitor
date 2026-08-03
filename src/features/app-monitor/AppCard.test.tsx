@@ -266,9 +266,32 @@ describe('AppCard', () => {
     ).toBeInTheDocument();
   });
 
-  it('unfolds the supporting connections when any of them is worse than clean', () => {
+  it('opens the supporting connections when they already need attention, and only then', () => {
     // TCP is demoted, never hidden: a login service with a filter on it is exactly what
-    // "I cannot get into the game" looks like.
+    // "I cannot get into the game" looks like — so a group that needs attention when the
+    // card first draws starts open.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({ key: 'b', address: '1.1.1.2:443', transport: 'tcp', health: 'blocked' }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Supporting connections').closest('details')).toHaveAttribute('open');
+  });
+
+  it('does not open or close the supporting connections under the reader', () => {
+    // `needsAttention` decided the fold on every render, and on a weak link it flips
+    // constantly: the section opened and collapsed on its own and moved everything below
+    // it. It is the *initial* state now, and a problem arriving afterwards is announced by
+    // the distribution in the heading, which a folded group shows too.
     const { rerender } = render(
       <AppCard
         app={app({
@@ -299,7 +322,16 @@ describe('AppCard', () => {
       />,
     );
 
-    expect(screen.getByText('Supporting connections').closest('details')).toHaveAttribute('open');
+    // Still folded. The heading says what happened instead, and it says it whether the
+    // group is open or shut.
+    expect(screen.getByText('Supporting connections').closest('details')).not.toHaveAttribute(
+      'open',
+    );
+    expect(
+      within(
+        screen.getByRole('list', { name: 'Endpoint states in Supporting connections' }),
+      ).getByText('1 Probe blocked'),
+    ).toBeInTheDocument();
   });
 
   it('renders each endpoint with its own state', () => {
@@ -873,6 +905,12 @@ describe('AppCard', () => {
     );
 
     expect(lines()).toEqual([{ label: 'Route to 1.1.1.9:27015', isPath: true }]);
+    // And the chart's own caption must not call any of it a ping: the chart draws dashed
+    // routes as well as round trips, and a route belongs to a router short of the server.
+    // It read "Ping over time" above exactly that.
+    const caption = document.querySelector('.nm-appcard__chartnote');
+    expect(caption?.textContent ?? '').not.toMatch(/ping/i);
+    expect(caption?.textContent ?? '').toContain('One point per 3 s');
   });
 
   it('draws both lines for an endpoint that has a round trip and a route', () => {

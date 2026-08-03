@@ -129,19 +129,27 @@ itself is asking to be trusted on faith, and this audience has no reason to exte
   below.* An explanatory sentence at level one is a paragraph competing with the number it
   describes, and the reader who needed it is the reader least able to tell the two apart. So:
   a label, a state, a figure, and — where something really is wrong — a warning. Everything
-  that *explains* rather than *reports* belongs in the ⓘ or in the help, without exception and
-  without an argument about length.
+  that *explains* rather than *reports* belongs in a label's own explanation or in the help,
+  without exception and without an argument about length.
   **The claim a figure makes lives in that figure's own name**, not in prose beneath it: the
   route panel's honesty is the words *round trip to that router*, and the flow panel's is that
   not one of its labels is a round trip at all. A name cannot be skipped; a paragraph can.
   *This is why an endpoint nothing can measure now shows nothing where its figures were,
   rather than a sentence saying so.*
 - **Level one — the default.** What the thing is, one word of state, and at most three
-  figures. Nothing else. **A figure here carries the standard network term** — RTT (or *ping*,
+  figures **about one subject**. Where a surface necessarily carries two subjects — an endpoint
+  and the route to the router short of it — it may carry up to three figures about each,
+  **only in a table whose column headings name which subject each column belongs to**. A layout
+  that cannot name the subject in a heading gets three figures in total. *Amended on the user's
+  instruction on 2026-08-03: the panel-per-row layout kept three figures per panel and put
+  seven on every silent endpoint, which is the letter of the old rule and the opposite of its
+  point. A named column is what makes the second subject honest rather than merely present —
+  a blank `Ping` beside a filled `Route` states the never-merge rule better than any paragraph.*
+  **A figure here carries the standard network term** — RTT (or *ping*,
   where it really is the round trip we measured), jitter, loss — because the audience has met
   those words in every other tool they have used, and renaming a known quantity around the
-  reader teaches them a vocabulary nobody else speaks. **The ⓘ carries the plain-language
-  sentence**; that is what level three is for. Where a quantity has no standard term to return
+  reader teaches them a vocabulary nobody else speaks. **The label's own explanation carries
+  the plain-language sentence**; that is what level three is for. Where a quantity has no standard term to return
   to (the server's own update rate, the worst pause, a drop-off that is deliberately not loss)
   it is named for what the user experiences, and a term that could be confused with another
   figure on the same card is qualified rather than left ambiguous (*arrival jitter* beside a
@@ -152,15 +160,25 @@ itself is asking to be trusted on faith, and this audience has no reason to exte
   to keep consistent and one a user forgets they are in. Everything that *qualifies* a number
   rather than being one goes here: how it was measured, what window or span it covers, which
   interface it used, proven-versus-assumed distinctions, counts and hop distances.
-- **Level three — an ⓘ on every figure**, with one or two plain sentences shown on hover
-  *and* on focus, and a "Learn more" into the bundled help. **A new metric is not done until
-  it has a help topic**: the ⓘ and the help page read from one list, so a tooltip can never
-  point at a section that does not exist.
+- **Level three — the figure's own label is what explains it.** No separate mark stands beside
+  it: the label carries the disclosure, is marked as explainable, and opens on hover *and* on
+  focus with one or two plain sentences and a "Learn more" into the bundled help. **A label
+  explains itself once per surface, never once per row** — in a table the column heading
+  carries the explanation and the cells carry nothing; on a card the panel heading carries it
+  and its figures carry nothing. **A new metric is not done until it has a help topic**: the
+  disclosure and the help page read from one list, so it can never point at a section that
+  does not exist.
+  *Amended on the user's instruction on 2026-08-03. The rule said "an ⓘ on every figure",
+  which is written in the singular and silently assumes one figure on screen; at twenty
+  connections it produced up to 260 identical marks on one page. A mark repeated two hundred
+  times does not explain a figure — it hides it. The label is what needs explaining and it is
+  already on the page, so the disclosure lives on the label and costs no ink at all.*
 - **A warning is never demoted, and a warning is not an explanation.** Anything the user must
   *act on* — an egress conflict, a freeze, a proven block, a tracing session that has stopped
   — stays at level one whatever its length. The test is whether there is something to do about
   it. "This figure is measured differently from what you expect" is not a warning; it is an
-  explanation, it goes in the ⓘ, and the figure's own name is what keeps it honest on the page.
+  explanation, it goes in the label's own explanation, and the figure's own name is what keeps
+  it honest on the page.
 - **Absent stays absent at every level.** A figure whose precondition failed is blank with a
   reason, never zero, and never the nearest available number.
 - Help is **bundled, never a website**: an external link is a network request this product
@@ -271,8 +289,10 @@ that, run the wrapper. If any gate fails, fix it; never bypass with `--no-verify
 `#[ignore]`, `eslint-disable`, or loosened configs.)
 
 - **A new user-visible figure is not done until it obeys the two-level rule above** and has
-  its ⓘ topic and help section. A test asserting what the *closed* level shows is part of it:
-  the default view is exactly the thing that grows back one field at a time.
+  its help topic and its explanation on its own label. A test asserting what the *closed* level
+  shows is part of it: the default view is exactly the thing that grows back one field at a
+  time. Where figures repeat over rows, a test asserts that the number of explanations on the
+  surface **does not grow with the number of rows**.
 - Testing is not optional. Every feature lands with tests: metric math (jitter, loss,
   percentiles) gets exhaustive unit tests incl. edge cases (empty windows, monotonic
   time going weird, timeouts); platform traits are mocked (`mockall`) so `nm-probes` and

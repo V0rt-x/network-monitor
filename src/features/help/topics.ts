@@ -63,5 +63,19 @@ export const titleKey = (topic: HelpTopic) => `help.topic.${topic}.title` as con
 /** The full explanation, in the help page. */
 export const bodyKey = (topic: HelpTopic) => `help.topic.${topic}.body` as const;
 
+/**
+ * A body split into the paragraphs its author wrote.
+ *
+ * The bodies are written with blank lines in them and were rendered into a single `<p>`,
+ * where every line break collapses to a space — so the longest topic shipped as one
+ * unbroken block of ~350 words. The split lives here, beside the keys, so every surface
+ * that ever renders a body gets the same paragraphs.
+ */
+export const paragraphsOf = (body: string): readonly string[] =>
+  body
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+
 /** The anchor a "Learn more" jumps to. */
 export const anchorOf = (topic: HelpTopic) => `nm-help-${topic}` as const;

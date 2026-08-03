@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useHelp } from './helpContext';
@@ -30,6 +30,25 @@ export const MetricHelp = ({ topic }: MetricHelpProps) => {
   const [hovered, setHovered] = useState(false);
   const shown = pinned || hovered;
 
+  // Which side the panel hangs from. Anchored left by default; flipped when it would
+  // otherwise run past the right edge of the window, which is where every explanation in a
+  // right-hand column was being clipped. Measured after layout and before paint, so the
+  // panel is never seen in the wrong place, and always from the unflipped position so the
+  // decision cannot oscillate.
+  const panel = useRef<HTMLSpanElement>(null);
+  const [flipped, setFlipped] = useState(false);
+  useLayoutEffect(() => {
+    if (!shown) {
+      setFlipped(false);
+      return;
+    }
+    const box = panel.current?.getBoundingClientRect();
+    // A renderer without layout reports every rectangle as zero. Flipping every panel there
+    // would be worse than flipping none, so a zero-width measurement decides nothing.
+    if (box === undefined || box.width === 0) return;
+    setFlipped(box.right > window.innerWidth);
+  }, [shown]);
+
   return (
     <span
       className="nm-help"
@@ -58,7 +77,11 @@ export const MetricHelp = ({ topic }: MetricHelpProps) => {
         <span aria-hidden="true">i</span>
       </button>
       {shown && (
-        <span className="nm-help__panel" role="note">
+        <span
+          className={flipped ? 'nm-help__panel nm-help__panel--flipped' : 'nm-help__panel'}
+          role="note"
+          ref={panel}
+        >
           <span className="nm-help__text">{t(shortKey(topic))}</span>
           <button
             type="button"

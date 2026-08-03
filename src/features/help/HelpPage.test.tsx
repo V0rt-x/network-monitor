@@ -36,6 +36,15 @@ describe('HelpPage', () => {
     expect(document.getElementById(anchorOf('loss'))?.className).not.toContain('--opened');
   });
 
+  it('keeps the paragraph breaks its bodies were written with', () => {
+    // Inside a single `<p>` a blank line collapses to a space, which shipped the longest
+    // topic as one unbroken ~350-word block.
+    render(<HelpPage topic={null} />);
+
+    const section = document.getElementById(anchorOf('network'));
+    expect(section?.querySelectorAll('.nm-help-page__body').length).toBeGreaterThan(1);
+  });
+
   it('promises nothing it would have to fetch', () => {
     // Bundled, not a website: an external link is a request this product promised never to
     // make on the user's behalf, and it is useless to someone being filtered.

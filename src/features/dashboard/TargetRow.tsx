@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatMs, formatPct } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import type { TargetView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
 import { healthKey, healthModifier, probeKindKey } from './labels';
@@ -20,8 +20,8 @@ interface TargetRowProps {
  * without them would be quietly wrong.
  */
 export const TargetRow = ({ target }: TargetRowProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   const address = target.resolvedAddress ?? target.writtenAddress;
 
@@ -69,21 +69,21 @@ export const TargetRow = ({ target }: TargetRowProps) => {
             {t('dashboard.metric.rtt')}
             <MetricHelp topic="rtt" />
           </dt>
-          <dd>{formatMs(target.rttMs, locale)}</dd>
+          <dd>{figures.ms(target.rttMs)}</dd>
         </div>
         <div>
           <dt>
             {t('dashboard.metric.jitter')}
             <MetricHelp topic="jitter" />
           </dt>
-          <dd>{formatMs(target.jitterMs, locale)}</dd>
+          <dd>{figures.ms(target.jitterMs)}</dd>
         </div>
         <div>
           <dt>
             {t('dashboard.metric.loss')}
             <MetricHelp topic="loss" />
           </dt>
-          <dd>{formatPct(target.lossPct, locale)}</dd>
+          <dd>{figures.pct(target.lossPct)}</dd>
         </div>
       </dl>
 

@@ -42,6 +42,12 @@ const SUPPORTING_ALPHA = 'b0';
 /** How near the cursor has to be, in pixels, for a line to be considered hovered. */
 const HOVER_PROXIMITY = 24;
 
+/** Room reserved for an axis's name, in pixels. */
+const AXIS_LABEL_SIZE = 20;
+
+/** uPlot draws to a canvas, so an axis name needs a font rather than a class. */
+const AXIS_LABEL_FONT = '12px "Segoe UI", system-ui, sans-serif';
+
 /**
  * Every endpoint of one application on one time axis.
  *
@@ -153,6 +159,9 @@ export const EndpointChart = ({
               // anchored at the start, which is what lets the drawing grow from the left.
               values: (_chart, splits) =>
                 (splits as unknown as (number | null)[]).map((value) => formatAxisElapsed(value)),
+              label: t('apps.chart.axisElapsed'),
+              labelSize: AXIS_LABEL_SIZE,
+              labelFont: AXIS_LABEL_FONT,
             },
             {
               stroke: '#94a3b8',
@@ -162,6 +171,11 @@ export const EndpointChart = ({
               // comparing latencies, not reading a science plot.
               values: (_chart, splits) =>
                 (splits as unknown as (number | null)[]).map((value) => formatAxisMs(value)),
+              // The unit, once, as the axis's own name rather than on every tick. Without it
+              // the vertical scale was bare numbers — the same defect the figures had.
+              label: t('apps.chart.axisMs'),
+              labelSize: AXIS_LABEL_SIZE,
+              labelFont: AXIS_LABEL_FONT,
             },
           ],
           series: [
@@ -206,7 +220,9 @@ export const EndpointChart = ({
       chart?.destroy();
       plot.current = null;
     };
-  }, [shape]);
+    // `t` is in here because the axis names are translated and uPlot bakes them in at
+    // construction: a language change has to rebuild the chart, not leave English on it.
+  }, [shape, t]);
 
   useEffect(() => {
     const chart = plot.current;

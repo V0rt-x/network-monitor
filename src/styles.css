@@ -18,6 +18,13 @@
   --nm-alive: #58a6ff;
   --nm-unknown: #8b949e;
 
+  /* Corner radii. Three sizes and a pill, which is as many distinctions as a reader can
+     see; the rest of the stylesheet is converted onto them by the design-token pass. */
+  --nm-radius-sm: 4px;
+  --nm-radius-md: 8px;
+  --nm-radius-lg: 12px;
+  --nm-radius-pill: 999px;
+
   font-family:
     'Segoe UI',
     system-ui,
@@ -29,6 +36,23 @@
 
 * {
   box-sizing: border-box;
+}
+
+/*
+ * One focus ring for everything that takes focus.
+ *
+ * The whole product is built around keyboard reach — the explanations open on focus as well
+ * as on hover precisely so that a keyboard can get at them — and yet two elements in the
+ * entire stylesheet said where the focus was. Everything else fell back to the browser's
+ * default outline, which on this background is very nearly invisible.
+ *
+ * `:focus-visible` rather than `:focus`, so a pointer click does not leave a ring behind;
+ * `:where()` so the rule costs no specificity and any component can still say otherwise.
+ */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--nm-accent);
+  outline-offset: 2px;
+  border-radius: var(--nm-radius-sm);
 }
 
 body {
@@ -698,6 +722,10 @@ details.nm-endpointgroup > summary {
  * A neighbour for the warm-up badge and the same question from the other end: one figure
  * telling a new endpoint from one that has carried the whole match. The word for *which*
  * age it is lives in the row's expander, because the two facts are not interchangeable.
+ *
+ * The same class dresses the age beside the operating system's own round trip, which is
+ * quieter than the figure but never hidden: that measurement arrives every few tens of
+ * seconds at best, and without its age a minute-old number reads as live.
  */
 .nm-endpoint__age {
   display: inline-flex;
@@ -797,17 +825,6 @@ details.nm-endpointgroup > summary {
 .nm-panel__note,
 .nm-panel__where {
   margin: 0;
-  color: var(--nm-muted);
-  font-size: 0.72rem;
-}
-
-/*
- * The age beside the operating system's own round trip.
- *
- * Quieter than the figure but never hidden: that measurement arrives every few tens of
- * seconds at best, and without its age a minute-old number reads as live.
- */
-.nm-endpoint__age {
   color: var(--nm-muted);
   font-size: 0.72rem;
 }
@@ -1128,17 +1145,6 @@ details.nm-endpointgroup > summary {
   background: var(--nm-unknown);
 }
 
-.nm-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /*
  * The verdict banner: the one place the app states a conclusion.
  *
@@ -1241,6 +1247,14 @@ details.nm-endpointgroup > summary {
   border-color: var(--nm-text);
 }
 
+/*
+ * Anchored to the left of its label by default, and to the right when there is not room.
+ *
+ * A hard `left: 0` put every panel in the right-hand column — the flow figures, the badges,
+ * the right of a table — partly outside the window, where the sentence explaining a figure
+ * is the one thing on screen that cannot be read. Which side is measured by the component,
+ * because only it knows where on screen it is.
+ */
 .nm-help__panel {
   position: absolute;
   z-index: 20;
@@ -1259,6 +1273,11 @@ details.nm-endpointgroup > summary {
   color: var(--nm-text);
   text-transform: none;
   letter-spacing: normal;
+}
+
+.nm-help__panel--flipped {
+  left: auto;
+  right: 0;
 }
 
 .nm-help__text {

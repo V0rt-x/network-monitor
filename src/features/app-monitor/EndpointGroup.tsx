@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { EndpointGroupView, FlowStatusView } from '../../shared/ipc';
@@ -55,6 +56,12 @@ export const EndpointGroup = ({
   onHover,
 }: EndpointGroupProps) => {
   const { t } = useTranslation();
+  // `needsAttention` decides how the group *starts*, and after that the fold is the reader's.
+  // It was passed straight to `open`, which React re-applies on every render — and on a weak
+  // link that value flips constantly, so the section opened and collapsed under the reader
+  // and shifted everything below it. A problem arriving in a folded group is announced by the
+  // distribution in its own heading, which is visible folded or not.
+  const [open, setOpen] = useState(group.needsAttention);
 
   const isMatchTraffic = group.transport === 'udp';
   // Rust's severity order, with the reader's own pin honoured on top of it. Everything else
@@ -118,7 +125,13 @@ export const EndpointGroup = ({
   if (group.endpoints.length === 0) return null;
 
   return (
-    <details className="nm-endpointgroup" open={group.needsAttention}>
+    <details
+      className="nm-endpointgroup"
+      open={open}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open);
+      }}
+    >
       <summary className="nm-endpointgroup__header">{heading}</summary>
       {rows}
     </details>

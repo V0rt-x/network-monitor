@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { formatCount, formatMs, formatPct } from '../../shared/format';
+import { useFigures } from '../../shared/useFigures';
 import type { GroupView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
 import { groupHintKey, groupKey, healthKey, healthModifier } from './labels';
@@ -30,8 +30,8 @@ const DISTRIBUTION = [
  * kind of lie this product exists to avoid.
  */
 export const GroupCard = ({ group }: GroupCardProps) => {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language;
+  const { t } = useTranslation();
+  const figures = useFigures();
 
   const counts = DISTRIBUTION.map((entry) => ({
     ...entry,
@@ -58,21 +58,21 @@ export const GroupCard = ({ group }: GroupCardProps) => {
             {t('dashboard.metric.rttMedian')}
             <MetricHelp topic="medianRtt" />
           </dt>
-          <dd>{formatMs(group.rttMs, locale)}</dd>
+          <dd>{figures.ms(group.rttMs)}</dd>
         </div>
         <div>
           <dt>
             {t('dashboard.metric.jitterMedian')}
             <MetricHelp topic="jitter" />
           </dt>
-          <dd>{formatMs(group.jitterMs, locale)}</dd>
+          <dd>{figures.ms(group.jitterMs)}</dd>
         </div>
         <div>
           <dt>
             {t('dashboard.metric.loss')}
             <MetricHelp topic="loss" />
           </dt>
-          <dd>{formatPct(group.lossPct, locale)}</dd>
+          <dd>{figures.pct(group.lossPct)}</dd>
         </div>
       </dl>
 
@@ -81,7 +81,7 @@ export const GroupCard = ({ group }: GroupCardProps) => {
           {counts.map((entry) => (
             <li key={entry.key} className={`nm-health ${healthModifier(entry.key)}`}>
               {t('dashboard.distributionEntry', {
-                amount: formatCount(entry.value, locale),
+                amount: figures.count(entry.value),
                 state: t(entry.labelKey),
               })}
             </li>

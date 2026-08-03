@@ -33,7 +33,7 @@ describe('PoolPanel', () => {
   it('shows the share answering and where the members came from', () => {
     render(<PoolPanel pool={pool()} />);
 
-    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(screen.getByText('100 %')).toBeInTheDocument();
     expect(screen.getByText('8 published, 3 learned')).toBeInTheDocument();
   });
 
@@ -66,7 +66,7 @@ describe('PoolPanel', () => {
     render(<PoolPanel pool={pool({ health: 'degraded', answeringPct: 50 })} />);
 
     expect(screen.getByText('Degraded')).toBeInTheDocument();
-    expect(screen.getByText('50')).toBeInTheDocument();
+    expect(screen.getByText('50 %')).toBeInTheDocument();
   });
 
   it('says which members it cannot speak for', () => {

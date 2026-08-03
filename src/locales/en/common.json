@@ -5,6 +5,11 @@
     "minimize": "Minimize to tray",
     "quit": "Quit"
   },
+  "unit": {
+    "ms": "{{value}} ms",
+    "pct": "{{value}} %",
+    "perSecond": "{{value}}/s"
+  },
   "span": {
     "seconds": "{{seconds}} s",
     "minutes": "{{minutes}} min",
@@ -124,7 +129,9 @@
     "chart": {
       "label": "Round-trip time over time for every endpoint of {{name}}",
       "pathSeries": "Route to {{endpoint}}",
-      "caption": "Ping over time · one point per {{seconds}} s · log scale",
+      "caption": "One point per {{seconds}} s · log scale",
+      "axisMs": "ms",
+      "axisElapsed": "Time watched",
       "highlight": "Highlight on the chart",
       "failed": "The chart could not be drawn ({{reason}}). Every figure it would show is in the list below."
     },
@@ -210,7 +217,6 @@
       "updatesUnknown": "Not enough arriving yet to tell",
       "span": "over the last {{seconds}} s",
       "stall": "Frozen for {{ms}} ms",
-      "perSecond": "{{bytes}}/s",
       "metric": {
         "updates": "Updates from the server",
         "arrivalJitter": "Arrival jitter",

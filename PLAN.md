@@ -2022,6 +2022,231 @@ numbers into a sentence about where the traffic goes and where it stops going.
   have is absent rather than guessed; the licence and the bundling decision are written down
   where the next person will look for them. *Met.*
 
+## Phase 6.7 — The shape of the page (design review, 2026-08-03)
+
+From `docs/design-review-2026-08-03.md`, written after the user read the running Phase 6.6
+build and reported that it "looks like a proof of concept, not a product". The review's own
+diagnosis: the product is not unfinished, it is **unassembled** — every screen was designed,
+and no two screens share a unit of measure.
+
+It runs before Phase 7 for the same reason 6.6 did: Phase 7's five-title verification pass
+should be run against the page as it will ship, not against one about to be rebuilt.
+
+**Two rules in `CLAUDE.md` are amended by this phase, both approved by the user on
+2026-08-03**, and both are already written into `CLAUDE.md`:
+
+- *Level three* no longer means "an ⓘ on every figure" — the label itself carries the
+  explanation, once per surface rather than once per row. At twenty connections the old rule
+  produced up to 260 identical marks on one page.
+- *Level one* no longer means "at most three figures" flat — it is three figures **per
+  subject**, and a second subject is allowed only in a table whose column headings name it.
+
+**Nothing here changes what is measured.** No figure is deleted; figures that leave level one
+move down a level, and each item below names the level they land on.
+
+### P0 — defects (no decision needed, independent of everything else)
+
+- [x] **1. Units on every figure.** `formatMs` and `formatPct` return a bare number, so the
+      page reads `Loss 3` — three per cent or three packets? Units become i18next keys
+      (`unit.ms`, `unit.pct`, `unit.perSecond`); the em-dash never takes a unit.
+- [x] **2. `nm-health--bad` does not exist.** `FlowPanel` styles the freeze badge with a class
+      no stylesheet defines, so the strongest "something is wrong right now" signal in the
+      product renders as a neutral pill. It takes `--nm-unreachable`.
+- [x] **3. Help bodies lose their paragraph breaks.** `\n\n` inside a single `<p>` collapses;
+      the `network` topic ships as one ~350-word block. Bodies split into paragraphs.
+- [x] **4. The TCP group opens and closes under the reader.** `open={group.needsAttention}` is
+      re-applied on every flip of a value that flips constantly on a weak link. It becomes the
+      *initial* state only; a problem inside a folded group is announced by a badge in the
+      heading instead.
+- [x] **5. Duplicate CSS rules** — `.nm-visually-hidden` (two different implementations) and
+      `.nm-endpoint__age`, each declared twice.
+- [x] **6. Visible focus everywhere.** `:focus-visible` exists on two elements in the whole
+      stylesheet, in a codebase built around keyboard reach.
+- [x] **7. The explanation panel is clipped at the window's right edge** — hard `left: 0` with
+      no flip.
+- [x] **8. The chart's own units and caption.** No `ms` on the vertical axis, and a caption
+      reading "Ping over time" above a chart that also draws dashed *routes*, which are not
+      pings. The caption drops the word.
+
+### P1 — the system, and the structure it holds up
+
+- [ ] **9. Design tokens.** The stylesheet carries 16 spacing values, 15 font sizes, 10 radii
+      and **two incompatible palettes** (Tailwind for surfaces, GitHub Primer for states, plus
+      a third amber duplicating a second one). One spacing scale, one type scale, three radii,
+      one palette. This is the single change that removes most of the "homemade" reading.
+- [ ] **10. Vertical rhythm by `gap`, never by `margin-top`.** `.nm-appcard` is a plain block
+      whose children each choose their own top margin, so the distances between them are
+      arbitrary and collapse unpredictably. Cards become flex columns with one gap, and no
+      `margin-top` survives inside one.
+- [ ] **11. One breakpoint system.** Four different `minmax()` bases on one page mean columns
+      reflow at four different window widths while resizing.
+- [ ] **12. `Match traffic` / `Supporting connections` → `UDP flows` / `TCP connections`.**
+      *Approved by the user on 2026-08-03, variant A.* The old names claim a **role** from a
+      **transport**, which `view.rs` itself refuses to do in the same breath — and they are
+      simply wrong outside a game: Discord's UDP is voice, a browser's is QUIC, and several
+      games play over TCP. The two group hints leave the page for two new help topics
+      (`udpFlows`, `tcpConnections`), which is where an explanation belongs.
+- [ ] **13. The help page becomes an index.** 26 topics in a flat list, each opening with a
+      150–350-word body, no contents, no grouping, no search, no way back. Default becomes
+      title plus the one-sentence `short` that is already written; the body sits behind
+      "Read more". Five named sections with a contents column, a filter, and a Back that
+      returns the reader to the page they came from.
+- [ ] **14. Verdicts get help topics.** The one place in the app that states a conclusion has
+      no explanation of any kind. `verdict` and `verdictEvidence`, plus the disclosure on the
+      banner's own heading.
+- [ ] **15. `WhyNotYourPing` once per card**, not once per silent endpoint. For a game that is
+      the same three-point disclosure repeated on every row.
+- [ ] **16. The reference-pool panel appears only when there is a pool.** A bordered, headed
+      panel whose whole content is "None for this application." is the ordinary case for most
+      titles; it becomes one muted line.
+- [ ] **17. The picker folds away, and there is a first-run state.** A setup tool with its own
+      search, checkbox and 16 rem scrolling list is mounted permanently above the monitoring
+      surface. Folded it is one line naming what is being watched; the empty state gets a
+      heading, a sentence and a primary action instead of one grey line.
+
+### P2 — the chart becomes a reading surface (no decision needed)
+
+Placed above the table rework deliberately: it is independent, it is visible immediately, and
+it waits on none of the contested decisions.
+
+- [ ] **18. A tooltip that is also the legend.** Today the chart has no legend, no cursor
+      point and no tooltip, and the *only* effect of hovering a line happens somewhere else —
+      a row that may be off screen, which is exactly what the user reported. The tooltip lists
+      **every** line at the pointed moment (the chart's stated job is "which of these is the
+      odd one out", which is a question about all of them), each entry naming its quantity as
+      `ping` or `route` — the never-merge rule applied to the tooltip — and a line with no
+      value in that slot reads `no reply`, never `0` and never a silently missing entry. It
+      carries no words about health: the list remains the only authority on state. Plus a
+      crosshair, and the same edge-flip as item 7.
+- [ ] **19. Selecting from the tooltip pins the endpoint and scrolls its row into view.** On
+      click only — scrolling on hover is nauseating — which is the direct fix for "it
+      highlights something I cannot see".
+- [ ] **20. Keyboard parity with `CheckTimeline`.** The chart is `role="img"` with a static
+      label, so it is inert to a keyboard, while the far less important check strip on the
+      services page already does this properly: one tab stop, arrows inside, a live text
+      readout. The chart gets the same — `←`/`→` through time, `↑`/`↓` between lines, Enter to
+      keep, Escape to release, and an `aria-live` readout mirroring the tooltip.
+
+### P3 — explanations move onto the labels
+
+*Implements the amended level-three rule. Approved 2026-08-03.*
+
+- [ ] **21. `MetricHelp` wraps the label instead of standing beside it.** Same behaviour —
+      hover *and* focus, "Learn more", Escape — with no glyph and no second target. A dotted
+      underline marks a label as explainable; one sentence in the empty state and in the help
+      introduction says so, once, rather than two hundred times.
+- [ ] **22. One explanation per surface.** Column headings and panel headings carry it; cells
+      and figures carry nothing. Applications with twenty endpoints goes from 130–260
+      disclosures to 9; Network with twenty-three services from ~200 to 6.
+      A test asserts the count **does not grow with the number of rows**.
+
+### P4 — the endpoint list becomes a table
+
+*Implements the amended level-one rule. Approved 2026-08-03.*
+
+- [ ] **23. `AppView.primaryEndpoint`, and the card leads with it.** The busiest flow by
+      recent bytes in the window — a *measured* fact, which is the one thing `view.rs` already
+      allows beside the transport, and therefore not the role guess it refuses. Rust decides
+      it, as every judgement here does. Where no endpoint carries materially more than another
+      there is **no primary**, stated as such, and the card leads with the table alone.
+- [ ] **24. `EndpointRow` becomes a table row.** One card at six endpoints is ~1200 px today
+      and ~480 px after. The route's jitter and loss, the route's position and the four flow
+      figures move to **level two** for every endpoint except the primary; the freeze warning
+      moves nowhere and stays at level one, as warnings do. The blank `Ping` column beside a
+      filled `Route` column is what makes the never-merge rule visible on every row at once —
+      the reason the amended rule was worth asking for.
+- [ ] **25. The order freezes while the list is being read.** `holdPlace` holds one pinned row;
+      everything else that reorders a list mid-read — a discovery, a forgotten endpoint, a
+      health change elsewhere — still moves it. Rust's order is buffered while the pointer is
+      over the list or focus is inside it, and applied a couple of seconds after it leaves.
+      View state, like `holdPlace` itself.
+- [ ] **26. A second channel for endpoint identity besides colour.** The swatch tying a row to
+      its line is the one place in the product where colour is the sole carrier of meaning.
+      Shape, or a dashed swatch for a route.
+
+### P5 — the Network page becomes one page
+
+- [ ] **27. Merge the two halves of Network into a single list.** *Instructed by the user on
+      2026-08-03, and it reverses Phase 6.6 item 5's "an arrangement, not a blend".* That item
+      put the baselines and the service cards on one page and deliberately left them as two
+      compositions. The user's reading of the result: we measure the same thing and draw it
+      twice. That is correct, and the duplication is larger than it looks:
+      – **The same address is measured twice and drawn twice.** Two of the four foreign
+        baseline targets — `discord.com` and `api.steampowered.com` — are also service
+        endpoints of Discord and Steam. Half of one baseline is a second probe of a row already
+        on the page, in another visual language, under another name. It also spends probe
+        budget twice for one fact.
+      – **Two card designs and two row designs** for one object: `GroupCard`+`TargetRow` beside
+        `ServiceCard`+`EndpointRow`, with two distribution renderings that share their CSS.
+      – **Two histories.** `Sparkline` draws RTT over time and **strokes it in a colour that
+        states health**, which is the one rule about colour this product does not break
+        anywhere else; `CheckTimeline` draws one cell per check and names six distinguishable
+        outcomes in words. For a page whose question is "which of these is red", the strip is
+        strictly the better instrument, and it is the one that survives. *This is the only
+        thing on the page that goes away rather than moving down a level, and it goes because
+        the element replacing it carries more, not less.* Continuous RTT-over-time reading
+        belongs to the applications chart, which is where it already is.
+      – **Five names for one round trip on one page**: `Ping (RTT)`, `Ping, median` (baseline
+        group), `Ping, median` again (service card), `Ping, last check`, `Ping, mean`. Two
+        survive: **`Ping, median`** on a group heading and **`Ping (RTT)`** on a row, over the
+        window that row states. Last-check-versus-mean is a *which window* qualifier and moves
+        to level two; both help topics (`latestCheck`, `meanRtt`) stay, because the distinction
+        is real and worth explaining where it is made.
+      – **Two IPC shapes** for the same data (`GroupView`/`TargetView` and
+        `ServiceView`/`ServiceEndpointView`) converge on one.
+      **What a baseline actually is: a tag, not a list.** The merge's real content is that
+      "domestic baseline" and "foreign baseline" are *roles a target plays*, not separate
+      inventories — which is why two of them are literally service endpoints copied into
+      another file. Targets become one schema carrying tags, `foreign.json`'s duplicates stop
+      being separate entries, and the tag moves onto the service entries instead.
+      **This must not thin the verdict's evidence, and naïvely deleting the duplicates would.**
+      Strip Discord and Steam out and the foreign baseline is two anycast DNS resolvers, which
+      are famously reachable almost everywhere — a thin and biased sample for the one verdict
+      that decides whether to suggest a VPN. So they stay in the evidence *as tagged services,
+      probed once*, and the foreign tag is spread across enough members that the sample is not
+      two DNS services in a trenchcoat.
+      **The measurement layer does not merge, and the page says so.** `nm_core::health`'s
+      window and `nm_core::status`'s reaction rule answer different questions and stay separate
+      — a component computing one figure across both would be exactly the smoothing 6.6
+      forbade. What merges is the **view** and the **target schema**. The cadence difference
+      stops being two subsystems and becomes a **per-target interval field**, which is what
+      `nm-core`'s scheduler has ordered by since Phase 1 ("scheduling priority is interval
+      length, not a separate rank"); the reason the services are slow is the probe budget, and
+      that is a number, not an architecture.
+      **The page after the merge** is the verdict, then one list under four section headings —
+      Domestic, Foreign, Gaming platforms, Infrastructure — every row drawn by one component,
+      one legend for the whole page, one caveat, and each section stating its own cadence at
+      level two. The two baseline sections carry a marker saying they are what the verdict was
+      drawn from, so the banner above stays checkable against the rows below.
+- [ ] **28. Rows fold to one line** — name, state, strip, `Ping (RTT)` — with endpoints, badges
+      and the remaining figures at level two. Rows worse than `Ok` start open. *Approved
+      2026-08-03.* Applies to the whole merged list, not to services alone; twenty-three cards
+      each carrying a strip and three figures per endpoint turns "which of these is red" into a
+      scrolling task.
+- [ ] **29. A count chip must not look like a state badge.** Both use `.nm-health` today, so
+      "this service is degraded" and "two of its endpoints are degraded" are visually the
+      same claim.
+- [ ] **30. One `MetricRow` for all pages.** The same three quantities are laid out by a rigid
+      3-column grid on one page and by wrapping flex on another, so they do not line up. The
+      merge settles this for Network; the item remains because Applications shares it.
+
+### P6 — the shell
+
+- [ ] **31. Header on a grid; `Quit` moves to Settings; the tagline leaves the header.**
+      *Approved 2026-08-03.* `Quit` currently sits next to `Minimize`, distinguished by
+      muted text — two adjacent buttons where one hides the window and the other ends the
+      monitoring. Settings is always reachable, so the guarantee that a user is never stuck
+      survives the move.
+
+- **Accept**: the closed views assert what they must not show (the review's §11 lists every
+  one); an application card with three endpoints and one with twenty carry the **same** number
+  of explanations; the tooltip names every line's quantity and never says "ping" of a route;
+  the chart is fully operable from the keyboard; no `margin-top` remains inside a card; one
+  spacing scale, one type scale and one palette are the only ones in the stylesheet; and the
+  Network page draws every target with one component, names the round trip two ways rather than
+  five, and **measures no address twice** — a test walks the bundled target lists and fails on
+  a duplicate.
+
 ## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view
