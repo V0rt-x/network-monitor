@@ -455,6 +455,18 @@ export type EndpointView = {
 	/**  Where it is, as `address:port`. */
 	address: string,
 	/**
+	 *  Whose network it is, from the bundled directory.
+	 * 
+	 *  A label rather than a figure, and the only thing on the row a person can recognise
+	 *  without knowing what any of the numbers mean: "Amazon" or the name of their own
+	 *  provider says more about where the traffic went than the address ever will.
+	 * 
+	 *  `null` where the directory is switched off, has not finished loading, or simply does
+	 *  not know — unallocated space, or a block announced since the snapshot. The row shows
+	 *  nothing in its place; there is no guess to fall back to.
+	 */
+	network: NetworkView | null,
+	/**
 	 *  How the application reaches it. Part of the identity: one server can be a TCP lobby
 	 *  and a UDP match at once, with two independent fates.
 	 */
@@ -781,6 +793,29 @@ export type NetworkHealth = {
 };
 
 /**
+ *  Which network an address belongs to, as the UI receives it.
+ * 
+ *  Three separate fields rather than one formatted string: the name belongs at level one,
+ *  the number and the country are level-two detail, and a backend that pre-formats them
+ *  into a sentence takes that choice away from the page and out of the translators' hands.
+ */
+export type NetworkView = {
+	/**  The autonomous system number announcing the address. */
+	asn: number,
+	/**  The name its holder registered, or `null` where the directory has none. */
+	name: string | null,
+	/**
+	 *  The two-letter country the system was **registered** in, where one is recorded.
+	 * 
+	 *  **Not a location, and the UI must never present it as one.** An anycast address is
+	 *  announced from dozens of cities at once and a cloud provider registered in one
+	 *  country runs regions on every continent; the measured round trip is the better
+	 *  evidence of distance, never this.
+	 */
+	country: string | null,
+};
+
+/**
  *  A round trip the operating system measured on the application's own connection.
  * 
  *  The one figure on this page that is a genuine round trip to the endpoint without a probe
@@ -871,6 +906,19 @@ export type PathView = {
 	jitterMs: number | null,
 	/**  Packet loss to that hop, as a percentage. */
 	lossPct: number | null,
+	/**
+	 *  Whose network the reported hop belongs to.
+	 * 
+	 *  The figures above say *how far* the route gets and how well; this says *whose
+	 *  equipment it got that far on*, which is the half that turns them into a diagnosis. A
+	 *  route that ends inside the user's own provider and one that ends at a border transit
+	 *  network produce identical numbers and mean opposite things, and until now the page
+	 *  could only distinguish them by position.
+	 * 
+	 *  `null` under the same conditions as an endpoint's own name, and additionally
+	 *  whenever no hop answered — there is then no address to look up.
+	 */
+	hopNetwork: NetworkView | null,
 };
 
 /**
@@ -1106,6 +1154,20 @@ export type Settings = {
 	 *  rather than an assumption. Turning it off also deletes what was already remembered.
 	 */
 	rememberGameServers: boolean,
+	/**
+	 *  Whether endpoints and route hops are labelled with the network that announces them.
+	 * 
+	 *  On by default: an address is four numbers, and the name of the network behind it is
+	 *  what makes the route panel readable to someone who did not come here knowing what an
+	 *  autonomous system is. It costs nothing to privacy — the directory is bundled, and
+	 *  looking an address up in it sends nothing anywhere.
+	 * 
+	 *  It is a setting because it costs memory. The directory is around 12 MB resident, a
+	 *  quarter of the core's budget, and it is the only part of this application a user
+	 *  might reasonably want to trade away on a machine where the game needs every
+	 *  megabyte. Switching it off frees that immediately rather than at the next restart.
+	 */
+	nameNetworks: boolean,
 };
 
 /**
@@ -1139,6 +1201,15 @@ export type SettingsView = {
 	minIntervalSecs: number,
 	/**  Longest baseline interval the core accepts, in seconds. */
 	maxIntervalSecs: number,
+	/**
+	 *  The day the bundled directory of networks was taken, as an ISO date.
+	 * 
+	 *  Here rather than with the core version because it belongs to the thing the setting
+	 *  beside it switches on. It answers "how old is what this is telling me": a directory
+	 *  of networks is a photograph of the internet on one day, and an address block that has
+	 *  changed hands since is explained by this date and by nothing else on the page.
+	 */
+	networkSnapshot: string,
 };
 
 /**  One baseline target as the dashboard shows it. */

@@ -46,10 +46,11 @@ use nm_probes::tcp::TcpConnectProber;
 use nm_probes::tls::TlsHelloProber;
 use tauri::{AppHandle, Wry};
 use tauri_specta::Event as _;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::applications::{Application, Applications};
 use crate::apps::{AppMonitor, TargetChange};
+use crate::asn::{self, NetworkNames};
 use crate::baselines::{self, BaselineGroup, BaselineTarget};
 use crate::discovery::{Discovery, FlowStatus, Sighting};
 use crate::events::AppEndpoints;
@@ -194,7 +195,15 @@ async fn run(
         (None, _) => LearnedPools::default(),
     };
 
+    // The directory that turns an address into the name of a network. It lives out here for
+    // the same reason the applications do — a session restart must not throw away 12 MB that
+    // took a third of a second to build — and it is a `watch` rather than a lock because that
+    // is how settings already reach this task: one source of truth, written once, read
+    // momentarily by whoever is rendering.
+    let (names, names_rx) = watch::channel(NetworkNames::none());
+
     loop {
+        refresh_names(&names, &settings);
         let end = session(
             &app,
             &settings,
@@ -205,6 +214,7 @@ async fn run(
             &seeds,
             &mut store,
             store_path.as_deref(),
+            &names_rx,
         )
         .await;
         match end {
@@ -233,6 +243,7 @@ async fn session(
     seeds: &PoolSeeds,
     store: &mut LearnedPools,
     store_path: Option<&std::path::Path>,
+    names: &watch::Receiver<NetworkNames>,
 ) -> SessionEnd {
     let interval = settings.baseline_interval();
     let policy = AddressPolicy::default();
@@ -329,6 +340,7 @@ async fn session(
                         &baselines,
                         applications,
                         &interfaces,
+                        &names.borrow(),
                         discovery.flow_status(),
                     );
                 }
@@ -415,6 +427,7 @@ async fn session(
                         &baselines,
                         applications,
                         &interfaces,
+                        &names.borrow(),
                         discovery.flow_status(),
                     );
                 }
@@ -499,6 +512,39 @@ async fn snapshot_processes() -> Option<Vec<ProcessInfo>> {
 /// thread and far too short to justify a task hop. Failure is an empty snapshot — every
 /// egress address then shows as an address with no adapter name, which is what a platform
 /// with no backend does too, and is honest either way.
+/// Brings the loaded network directory into line with the setting.
+///
+/// Switching the feature off releases the table at once rather than at the next restart —
+/// the whole reason it is a setting is the 12 MB, and a promise to free memory that waits
+/// for a relaunch is not the promise the wording makes.
+///
+/// Switching it on starts a **blocking** load on the pool built for that: decompressing and
+/// parsing 570 000 announced blocks is a third of a second, which on the async runtime would
+/// stall every probe in flight. Nothing waits for it. The session starts immediately with no
+/// names, and they appear on a later beat — which is exactly what an endpoint whose
+/// precondition has not been met is supposed to look like everywhere else in this product.
+///
+/// A failure is reported once and then left alone: it can only mean a corrupt build, and it
+/// must cost the user their labels and nothing else.
+fn refresh_names(names: &watch::Sender<NetworkNames>, settings: &Settings) {
+    if !settings.name_networks {
+        names.send_replace(NetworkNames::none());
+        return;
+    }
+    if names.borrow().is_loaded() {
+        return;
+    }
+    let names = names.clone();
+    tauri::async_runtime::spawn_blocking(move || match asn::load() {
+        Ok(table) => {
+            names.send_replace(NetworkNames::of(table));
+        }
+        Err(error) => {
+            eprintln!("network-monitor: the network directory could not be loaded: {error}");
+        }
+    });
+}
+
 fn read_interfaces() -> InterfaceNames {
     nm_platform::interface::system_table()
         .and_then(|table| table.interfaces())
@@ -723,6 +769,7 @@ fn emit_apps(
     baselines: &BaselineMonitor,
     applications: &Applications,
     interfaces: &InterfaceNames,
+    names: &NetworkNames,
     flow_status: FlowStatus,
 ) {
     let now = Instant::now();
@@ -752,6 +799,7 @@ fn emit_apps(
                 apps.chart_elapsed_secs(application.id(), now),
                 apps.warmup_remaining(application.id(), now),
                 interfaces,
+                names,
                 &reports,
                 pool,
                 verdicts,

@@ -16,12 +16,14 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use nm_app::apps::AppMonitor;
+use nm_app::asn::NetworkNames;
 use nm_app::discovery::PassiveRtt;
 use nm_app::{
     AppProcessView, AppView, EndpointAgeKindView, EndpointView, HealthCountsView, HealthView,
     ProbeKindView, TransportView,
 };
 use nm_core::address::AddressPolicy;
+use nm_core::asn::AsnTable;
 use nm_core::diagnosis::BaselineEvidence;
 use nm_core::endpoint::{AppId, EndpointKey, LifecyclePolicy};
 use nm_core::flow::{FlowInstant, FlowObservation};
@@ -179,7 +181,33 @@ fn warming(monitor: &mut AppMonitor, now: Instant) -> AppView {
     view_at(monitor, now, warmup)
 }
 
+/// A directory naming one of the two invented endpoints these tests probe, and not the other.
+///
+/// Hand-built rather than the bundled snapshot, for two reasons: loading 12 MB to answer one
+/// question would be the slowest thing in this file, and a test that asserted on the real
+/// internet's registrations would start failing the day a block changed hands. Covering
+/// `1.1.1.0`–`1.1.1.1` and stopping there is what lets one fixture assert both that a known
+/// address is named and that an unknown one is left alone.
+fn names() -> NetworkNames {
+    NetworkNames::of(
+        AsnTable::parse(
+            "1.1.1.0\t1.1.1.1\t64500",
+            "64500\tUS\tEXAMPLE-NET Example Transit",
+        )
+        .expect("the fixture directory must parse"),
+    )
+}
+
 fn view_at(monitor: &mut AppMonitor, now: Instant, warmup: Option<Duration>) -> AppView {
+    view_named(monitor, now, warmup, &names())
+}
+
+fn view_named(
+    monitor: &mut AppMonitor,
+    now: Instant,
+    warmup: Option<Duration>,
+    names: &NetworkNames,
+) -> AppView {
     let axis = monitor.chart_elapsed_secs(APP, now);
     let reports = monitor.endpoints(APP, now);
     AppView::of(
@@ -192,6 +220,7 @@ fn view_at(monitor: &mut AppMonitor, now: Instant, warmup: Option<Duration>) -> 
         axis,
         warmup,
         &adapters(),
+        names,
         &reports,
         None,
         (
@@ -1203,4 +1232,68 @@ fn severity_still_orders_the_endpoints_inside_a_group() {
         .map(|endpoint| endpoint.health)
         .collect();
     assert_eq!(order, vec![HealthView::Unreachable, HealthView::Ok]);
+}
+
+#[test]
+fn it_names_the_network_an_endpoint_belongs_to() {
+    // The whole point of the feature: an address is four numbers, and the name beside it is
+    // the only part of the row a person can recognise without knowing what any of the
+    // figures mean.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+
+    let endpoints = flat(&view(&mut monitor, now));
+    let network = endpoints[0]
+        .network
+        .clone()
+        .expect("the fixture directory covers this address");
+    assert_eq!(network.asn, 64_500);
+    assert_eq!(network.name.as_deref(), Some("EXAMPLE-NET Example Transit"));
+    assert_eq!(network.country.as_deref(), Some("US"));
+}
+
+#[test]
+fn an_endpoint_the_directory_does_not_know_is_left_unnamed() {
+    // Absent stays absent. There is no nearest network to fall back to, and inventing one
+    // would be the single worst thing this feature could do — a wrong name is not a missing
+    // name, it is a false statement about where someone's traffic went.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(2), None, None, now).unwrap();
+    let _ = registered(&mut monitor, &mut registry, now);
+
+    let endpoints = flat(&view(&mut monitor, now));
+    assert_eq!(endpoints[0].address, "1.1.1.2:27015");
+    assert!(endpoints[0].network.is_none());
+}
+
+#[test]
+fn with_the_directory_unloaded_nothing_is_named_and_nothing_else_changes() {
+    // The state before the load lands and after the user switches the setting off. The row
+    // must lose its label and keep every measurement — the names are enrichment, and a
+    // failure to enrich may not cost anyone a figure.
+    let (mut monitor, mut registry, now) = monitor();
+    monitor.observe(APP, udp(1), None, None, now).unwrap();
+    let ids = registered(&mut monitor, &mut registry, now);
+    soak(
+        &mut monitor,
+        ids[0],
+        now,
+        ProbeOutcome::Success(Rtt::from_micros(9_000)),
+    );
+    let settled = now + WINDOW;
+
+    let named = flat(&view_named(&mut monitor, settled, None, &names()));
+    let unnamed = flat(&view_named(
+        &mut monitor,
+        settled,
+        None,
+        &NetworkNames::none(),
+    ));
+
+    assert!(named[0].network.is_some());
+    assert!(unnamed[0].network.is_none());
+    assert_eq!(named[0].address, unnamed[0].address);
+    assert_eq!(named[0].health, unnamed[0].health);
+    assert_eq!(named[0].rtt_ms, unnamed[0].rtt_ms);
 }

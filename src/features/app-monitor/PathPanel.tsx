@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { formatMs, formatPct } from '../../shared/format';
 import type { PathView } from '../../shared/ipc';
 import { MetricHelp } from '../help/MetricHelp';
+import { networkName } from './networkName';
 import { pathPositionKey, pathQualityKey, pathQualityModifier } from './labels';
 
 interface PathPanelProps {
@@ -82,7 +83,21 @@ export const PathPanel = ({ path }: PathPanelProps) => {
         </div>
       </dl>
 
-      <p className="nm-panel__where">{t(pathPositionKey(path.position))}</p>
+      {/* Where the route stops, and — the half that turns it into a diagnosis — whose
+          equipment it stopped on. "Inside your provider's network" and "at a border transit
+          network" produce identical figures and mean opposite things, and until this label
+          existed the panel could only tell them apart by position. A name, not a sentence
+          about one: the finding belongs on the page, the explanation belongs in the ⓘ. */}
+      <p className="nm-panel__where">
+        {t(pathPositionKey(path.position))}
+        {path.hopNetwork !== null && (
+          <>
+            {' · '}
+            {networkName(path.hopNetwork, t)}
+            <MetricHelp topic="network" />
+          </>
+        )}
+      </p>
     </section>
   );
 };

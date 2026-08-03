@@ -72,6 +72,18 @@ pub struct Settings {
     /// user plays and where, and for the people this product is for that is worth a choice
     /// rather than an assumption. Turning it off also deletes what was already remembered.
     pub remember_game_servers: bool,
+    /// Whether endpoints and route hops are labelled with the network that announces them.
+    ///
+    /// On by default: an address is four numbers, and the name of the network behind it is
+    /// what makes the route panel readable to someone who did not come here knowing what an
+    /// autonomous system is. It costs nothing to privacy — the directory is bundled, and
+    /// looking an address up in it sends nothing anywhere.
+    ///
+    /// It is a setting because it costs memory. The directory is around 12 MB resident, a
+    /// quarter of the core's budget, and it is the only part of this application a user
+    /// might reasonably want to trade away on a machine where the game needs every
+    /// megabyte. Switching it off frees that immediately rather than at the next restart.
+    pub name_networks: bool,
 }
 
 impl Default for Settings {
@@ -82,6 +94,7 @@ impl Default for Settings {
             baseline_interval_secs: DEFAULT_BASELINE_INTERVAL_SECS,
             autostart: false,
             remember_game_servers: true,
+            name_networks: true,
         }
     }
 }
@@ -111,6 +124,7 @@ impl Settings {
                 .clamp(MIN_BASELINE_INTERVAL_SECS, MAX_BASELINE_INTERVAL_SECS),
             autostart: self.autostart,
             remember_game_servers: self.remember_game_servers,
+            name_networks: self.name_networks,
         }
     }
 
@@ -135,6 +149,7 @@ pub struct Stored {
     baseline_interval_secs: Option<u32>,
     autostart: Option<bool>,
     remember_game_servers: Option<bool>,
+    name_networks: Option<bool>,
 }
 
 impl Stored {
@@ -151,6 +166,7 @@ impl Stored {
             remember_game_servers: self
                 .remember_game_servers
                 .unwrap_or(defaults.remember_game_servers),
+            name_networks: self.name_networks.unwrap_or(defaults.name_networks),
         }
     }
 }

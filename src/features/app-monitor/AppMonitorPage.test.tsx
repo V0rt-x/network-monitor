@@ -57,6 +57,7 @@ const ENDPOINTS: AppEndpoints = {
             {
               key: 'udp/1.1.1.1:27015',
               address: '1.1.1.1:27015',
+              network: null,
               transport: 'udp',
               health: 'unreachable',
               liveness: 'active',

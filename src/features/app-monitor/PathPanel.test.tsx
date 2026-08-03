@@ -13,6 +13,7 @@ const path = (overrides: Partial<PathView> = {}): PathView => ({
   rttMs: 84.2,
   jitterMs: 2.5,
   lossPct: 0,
+  hopNetwork: null,
   ...overrides,
 });
 
@@ -70,5 +71,19 @@ describe('PathPanel', () => {
     expect(screen.getByText('The route stopped answering')).toBeInTheDocument();
     expect(screen.queryByText('0 ms')).not.toBeInTheDocument();
     expect(screen.queryByText('0 %')).not.toBeInTheDocument();
+  });
+
+  it('names whose equipment the route stopped on, beside where it stopped', () => {
+    // The figures alone cannot tell "it ends inside your own provider" from "it ends at a
+    // border transit network" — those produce identical numbers and mean opposite things.
+    render(<PathPanel path={path({ hopNetwork: { asn: 3356, name: 'LEVEL3', country: 'US' } })} />);
+
+    expect(screen.getByText(/LEVEL3/)).toBeVisible();
+  });
+
+  it('says nothing about the hop network when the directory does not know it', () => {
+    render(<PathPanel path={path({ hopNetwork: null })} />);
+
+    expect(screen.queryByText(/AS\d/)).not.toBeInTheDocument();
   });
 });

@@ -25,6 +25,10 @@ export const HELP_TOPICS = [
   'traffic',
   'probeKind',
   'egress',
+  // Not a figure either, and the one label on the page a reader can recognise without
+  // knowing what any of the numbers mean. It carries the caveats the page must not: that
+  // the directory is a snapshot, and that a registration country is not a location.
+  'network',
   // Not a figure but a reason figures change, and the one the reader is owed most: with a
   // VPN or proxy client running, this badge is on nearly every endpoint on the page, and
   // it is why their round trips are measured a different way from everyone else's.

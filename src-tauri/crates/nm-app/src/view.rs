@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::apps::{EndpointAge, EndpointReport, PassiveRttReading};
+use crate::asn::{NetworkNames, NetworkView};
 use crate::baselines::BaselineGroup;
 use crate::discovery::FlowStatus;
 use crate::services::ServiceGroup;
@@ -650,7 +651,7 @@ impl From<PathEnd> for PathPositionView {
 /// distance beyond that router is unknown — it replied at no time-to-live at all. What can be
 /// said is which hop this is ([`PathView::hop_ttl`]) and where it sits
 /// ([`PathView::position`]), and that is what the page says.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PathView {
     /// Distance in routers of the hop these figures belong to, or `null` when none answers.
@@ -668,18 +669,37 @@ pub struct PathView {
     pub jitter_ms: Option<f64>,
     /// Packet loss to that hop, as a percentage.
     pub loss_pct: Option<f64>,
+    /// Whose network the reported hop belongs to.
+    ///
+    /// The figures above say *how far* the route gets and how well; this says *whose
+    /// equipment it got that far on*, which is the half that turns them into a diagnosis. A
+    /// route that ends inside the user's own provider and one that ends at a border transit
+    /// network produce identical numbers and mean opposite things, and until now the page
+    /// could only distinguish them by position.
+    ///
+    /// `null` under the same conditions as an endpoint's own name, and additionally
+    /// whenever no hop answered — there is then no address to look up.
+    pub hop_network: Option<NetworkView>,
 }
 
-impl From<&EdgeReading> for PathView {
-    fn from(reading: &EdgeReading) -> Self {
+impl PathView {
+    /// Renders a route reading, naming the hop it reports on.
+    ///
+    /// A named constructor rather than [`From`] because the directory has to be passed in:
+    /// a conversion that reached for a global would put a lookup table inside a rendering
+    /// function, which is the thing this layer is organised to avoid.
+    #[must_use]
+    pub fn of(reading: &EdgeReading, names: &NetworkNames) -> Self {
+        let reported = reading.reported_hop();
         Self {
-            hop_ttl: reading.reported_hop().map(|hop| u32::from(hop.ttl)),
+            hop_ttl: reported.map(|hop| u32::from(hop.ttl)),
             hops_probed: u32::try_from(reading.hops.len()).unwrap_or(u32::MAX),
             position: reading.end.into(),
             quality: reading.quality.into(),
             rtt_ms: reading.rtt_ms(),
             jitter_ms: reading.jitter_ms(),
             loss_pct: reading.loss_pct(),
+            hop_network: reported.and_then(|hop| names.name_of(hop.address)),
         }
     }
 }
@@ -867,6 +887,16 @@ pub struct EndpointView {
     pub key: String,
     /// Where it is, as `address:port`.
     pub address: String,
+    /// Whose network it is, from the bundled directory.
+    ///
+    /// A label rather than a figure, and the only thing on the row a person can recognise
+    /// without knowing what any of the numbers mean: "Amazon" or the name of their own
+    /// provider says more about where the traffic went than the address ever will.
+    ///
+    /// `null` where the directory is switched off, has not finished loading, or simply does
+    /// not know — unallocated space, or a block announced since the snapshot. The row shows
+    /// nothing in its place; there is no guess to fall back to.
+    pub network: Option<NetworkView>,
     /// How the application reaches it. Part of the identity: one server can be a TCP lobby
     /// and a UDP match at once, with two independent fates.
     pub transport: TransportView,
@@ -1004,7 +1034,7 @@ impl EndpointView {
     /// endpoint of every application, and because reading it here would put an
     /// operating-system call inside a rendering function.
     #[must_use]
-    pub fn of(report: &EndpointReport, interfaces: &InterfaceNames) -> Self {
+    pub fn of(report: &EndpointReport, interfaces: &InterfaceNames, names: &NetworkNames) -> Self {
         let transport = TransportView::from(report.key.transport);
         // Stated only when it differs: naming the same address twice on every row would
         // bury the one case the disclosure exists for.
@@ -1067,7 +1097,8 @@ impl EndpointView {
             rtt_ms,
             jitter_ms,
             loss_pct,
-            path: report.path.as_ref().map(PathView::from),
+            network: names.name_of(report.key.address.ip()),
+            path: report.path.as_ref().map(|path| PathView::of(path, names)),
             flow: report.flow.as_ref().map(FlowView::from),
             passive_rtt: report.passive_rtt.as_ref().map(PassiveRttView::from),
             age: report.age.into(),
@@ -1264,6 +1295,7 @@ impl AppView {
         chart_elapsed_secs: Vec<f64>,
         warmup_remaining: Option<Duration>,
         interfaces: &InterfaceNames,
+        names: &NetworkNames,
         reports: &[EndpointReport],
         pool: Option<(usize, usize, PoolReading)>,
         baselines: (BaselineEvidence, BaselineEvidence),
@@ -1306,7 +1338,7 @@ impl AppView {
         });
         let endpoints: Vec<EndpointView> = ordered
             .into_iter()
-            .map(|report| EndpointView::of(report, interfaces))
+            .map(|report| EndpointView::of(report, interfaces, names))
             .collect();
         // Partitioned after sorting, so each group keeps the one severity order rather than
         // being sorted twice by two copies of the same rule.

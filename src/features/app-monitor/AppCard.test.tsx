@@ -35,6 +35,7 @@ vi.mock('./EndpointChart', () => ({
 const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   key: 'udp/1.1.1.1:27015',
   address: '1.1.1.1:27015',
+  network: null,
   transport: 'udp',
   health: 'ok',
   liveness: 'active',
@@ -336,6 +337,7 @@ describe('AppCard', () => {
                 rttMs: 84.2,
                 jitterMs: 2.5,
                 lossPct: 0,
+                hopNetwork: null,
               },
             }),
           ],
@@ -957,5 +959,74 @@ describe('AppCard', () => {
     await userEvent.click(chosen);
 
     expect(chosen).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('names the network an address belongs to, and keeps its number for the expander', async () => {
+    // The name is the only thing on the row a player can recognise without knowing what a
+    // single one of the figures means. The autonomous system number behind it is true and
+    // searchable but means nothing to that reader, so it waits until they ask.
+    render(
+      <AppCard
+        app={app({
+          endpoints: [
+            endpoint({
+              network: { asn: 13335, name: 'CLOUDFLARENET', country: 'US' },
+            }),
+          ],
+        })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('CLOUDFLARENET')).toBeVisible();
+    expect(screen.getByText(/AS13335/)).not.toBeVisible();
+
+    await userEvent.click(screen.getByText('More about this connection'));
+
+    expect(screen.getByText('Whose network it is')).toBeVisible();
+    expect(screen.getByText(/AS13335/)).toBeVisible();
+    expect(screen.getByText(/registered in US/)).toBeVisible();
+  });
+
+  it('falls back to the number for a network the directory has no name for', () => {
+    // Not friendly, but true and searchable — and better than dropping a fact the reader
+    // could have used because half of it is missing.
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ network: { asn: 64500, name: null, country: null } })] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    // Twice over: as the label at level one, standing in for the name it does not have, and
+    // again in the expander where the number is the field's own subject.
+    const [label] = screen.getAllByText('AS64500');
+    expect(label).toBeVisible();
+  });
+
+  it('shows nothing where the network is unknown rather than guessing at one', async () => {
+    // Absent stays absent. There is no nearest network to reach for, and a wrong name is not
+    // a missing name — it is a false statement about where someone's traffic went.
+    render(
+      <AppCard
+        app={app({ endpoints: [endpoint({ network: null })] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/AS\d/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('More about this connection'));
+
+    expect(screen.queryByText('Whose network it is')).not.toBeInTheDocument();
   });
 });

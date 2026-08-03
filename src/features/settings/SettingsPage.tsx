@@ -26,7 +26,8 @@ export const SettingsPage = () => {
     );
   }
 
-  const { settings, countries, minIntervalSecs, maxIntervalSecs, problem } = state.view;
+  const { settings, countries, minIntervalSecs, maxIntervalSecs, problem, networkSnapshot } =
+    state.view;
   const countryName = new Intl.DisplayNames([i18n.language], { type: 'region' });
 
   return (
@@ -111,6 +112,27 @@ export const SettingsPage = () => {
         />
         <label htmlFor="nm-remember-servers">{t('settings.rememberGameServers')}</label>
         <p className="nm-field__hint">{t('settings.rememberGameServersHint')}</p>
+      </div>
+
+      {/* The one setting here that buys memory rather than behaviour, so the hint states the
+          figure. The snapshot date sits with it rather than on every endpoint: it describes
+          the directory, not any one row, and it is the answer to "why is this named after a
+          company I have never heard of" — a block that changed hands after the photograph
+          was taken. It is omitted rather than guessed at while the core is still answering. */}
+      <div className="nm-field nm-field--inline">
+        <input
+          id="nm-name-networks"
+          type="checkbox"
+          checked={settings.nameNetworks}
+          onChange={(event) => {
+            change({ nameNetworks: event.target.checked });
+          }}
+        />
+        <label htmlFor="nm-name-networks">{t('settings.nameNetworks')}</label>
+        <p className="nm-field__hint">
+          {t('settings.nameNetworksHint')}{' '}
+          {t('settings.nameNetworksSnapshot', { date: networkSnapshot })}
+        </p>
       </div>
 
       <p className="nm-settings__privacy">{t('settings.privacyNote')}</p>

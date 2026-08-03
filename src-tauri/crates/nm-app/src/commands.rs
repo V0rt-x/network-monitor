@@ -128,6 +128,13 @@ pub struct SettingsView {
     pub min_interval_secs: u32,
     /// Longest baseline interval the core accepts, in seconds.
     pub max_interval_secs: u32,
+    /// The day the bundled directory of networks was taken, as an ISO date.
+    ///
+    /// Here rather than with the core version because it belongs to the thing the setting
+    /// beside it switches on. It answers "how old is what this is telling me": a directory
+    /// of networks is a photograph of the internet on one day, and an address block that has
+    /// changed hands since is explained by this date and by nothing else on the page.
+    pub network_snapshot: String,
 }
 
 impl SettingsView {
@@ -141,6 +148,7 @@ impl SettingsView {
                 .collect(),
             min_interval_secs: MIN_BASELINE_INTERVAL_SECS,
             max_interval_secs: MAX_BASELINE_INTERVAL_SECS,
+            network_snapshot: crate::asn::SNAPSHOT_DATE.to_owned(),
         }
     }
 }

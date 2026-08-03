@@ -46,6 +46,7 @@ export type {
   HealthView,
   LivenessView,
   NetworkHealth,
+  NetworkView,
   PathPositionView,
   PathQualityView,
   PathView,

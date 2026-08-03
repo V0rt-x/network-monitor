@@ -7,6 +7,7 @@ import type { EndpointView } from '../../shared/ipc';
 import { healthKey, healthModifier, probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { FlowPanel } from './FlowPanel';
+import { networkName } from './networkName';
 import { ageKindKey, livenessKey, probingKey, transportKey } from './labels';
 import { PathPanel } from './PathPanel';
 import { WhyNotYourPing } from './WhyNotYourPing';
@@ -145,6 +146,18 @@ export const EndpointRow = ({
           <span className="nm-visually-hidden">{t('apps.chart.highlight')}</span>
         </button>
         <span className="nm-endpoint__transport">{t(transportKey(endpoint.transport))}</span>
+        {/* Level one, and the only thing on the row a reader can recognise without knowing
+            what a single one of the figures means. It is a label rather than a figure, so it
+            does not count against the three, and it goes beside the address because it is
+            what the address *is*. Absent where the directory is off, still loading, or
+            simply does not know — there is no nearest network to fall back to, and a wrong
+            name is a false statement about where someone's traffic went, not a rounding. */}
+        {endpoint.network !== null && (
+          <span className="nm-endpoint__network">
+            {networkName(endpoint.network, t)}
+            <MetricHelp topic="network" />
+          </span>
+        )}
         {/* How long it has been there, which is what tells a new endpoint from one that has
             been carrying the match all along. One figure at level one under a neutral word:
             it is two different facts depending on the transport, and the expander below
@@ -268,6 +281,25 @@ export const EndpointRow = ({
             <div>
               <dt>{t(ageKindKey(endpoint.age.kind))}</dt>
               <dd>{t(age.key, age.params)}</dd>
+            </div>
+          )}
+          {/* Level two: what qualifies the name rather than being it. The number is the
+              durable identity a reader can search for; the country is where the network was
+              *registered*, which for any large provider is routinely nowhere near the
+              machine that answered — so it is worded as a registration and never as a
+              location. How old the directory is belongs to the directory, not to each row,
+              and is stated once in Settings. */}
+          {endpoint.network !== null && (
+            <div>
+              <dt>
+                {t('apps.details.network')}
+                <MetricHelp topic="network" />
+              </dt>
+              <dd>
+                {t('apps.network.as', { asn: endpoint.network.asn })}
+                {endpoint.network.country !== null &&
+                  ` · ${t('apps.network.registeredIn', { country: endpoint.network.country })}`}
+              </dd>
             </div>
           )}
           <div>

@@ -193,7 +193,8 @@
       "use": "In use",
       "incoming": "Coming back",
       "route": "How far the route reaches",
-      "egress": "Which adapter it leaves by"
+      "egress": "Which adapter it leaves by",
+      "network": "Whose network it is"
     },
     "whyPing": {
       "summary": "Why this is not the ping your game shows",
@@ -252,6 +253,12 @@
       "notPermitted": "This account may not open a tracing session, so UDP endpoints and traffic counters are missing — TCP endpoints are still found. Adding your account to the local “Performance Log Users” group once, from an elevated prompt, restores them. The app never does this for you.",
       "stopped": "The tracing session stopped — something else on this machine took it over. UDP endpoints and traffic counters are missing until it is back; the app is retrying every second.",
       "unavailable": "Per-process flow events are unavailable on this system, so UDP endpoints and traffic counters are missing. TCP endpoints are still found."
+    },
+    "network": {
+      "label": "Network",
+      "unnamed": "AS{{asn}}",
+      "as": "AS{{asn}}",
+      "registeredIn": "registered in {{country}}"
     }
   },
   "help": {
@@ -380,6 +387,11 @@
         "title": "Through a tunnel",
         "short": "A VPN or proxy on this machine carries this traffic, so the round trip is measured end to end through it rather than by a ping.",
         "body": "A tunnel client running on your machine answers a great deal by itself. Send it a ping meant for a game server on another continent and its own software replies, in well under a millisecond, without a packet ever leaving your computer. The same is true of a bare connection attempt. Those numbers look wonderful and mean nothing, so this app refuses them: an endpoint marked this way is measured with a full exchange instead, which the tunnel has to carry to the real server and back before it can answer. That figure is honest, and it is the round trip your traffic actually experiences — the tunnel included, because the tunnel is genuinely in the way. It is not comparable with a figure measured without one, which is exactly why the badge is here. The app finds the tunnel two ways: it asks the system which adapter your packets would leave by, and it checks whether replies arriving from far-away addresses have really travelled. A reply that crossed no router on the way back did not come from another continent. Nothing here sends traffic outside your tunnel to compare, because that would show your provider what your tunnel exists to hide."
+      },
+      "network": {
+        "title": "Whose network it is",
+        "short": "The company whose network answers at this address — a hosting provider, a game operator, or your own internet provider.",
+        "body": "Every address on the internet belongs to a network that somebody runs, and knowing who that is turns a row of numbers into something you can act on. \"Amazon\" or \"Google Cloud\" beside a game server means the match is running in a data centre. Your own provider’s name on a router in the route means the traffic has not left their network yet, so a problem that far is theirs. A transit company you have never heard of usually means the traffic has crossed a border.\n\nThe name comes from a directory of networks that ships inside the app. Nothing is looked up over the internet: asking a remote service to name each address would tell that service which servers you are playing on, and this app does not do that to you. The cost of carrying it instead is that it is a photograph of one day — the date it was taken is in Settings — so a block of addresses that has changed hands since may still be named for whoever held it before.\n\nThe registration country is not a location. It is the country the network was registered in, which for a large provider is often nowhere near the machine that answered: an address announced from dozens of cities at once has one registration and many locations. Judge distance by the measured round trip, never by this.\n\nWhere a name is missing, nothing is known about that address and nothing is guessed in its place. The whole directory can be switched off in Settings, which frees about 12 MB of memory."
       }
     }
   },
@@ -465,6 +477,9 @@
       "unreadable": "The settings file could not be read; defaults are in use.",
       "malformed": "The settings file could not be understood; defaults are in use and your file was left untouched.",
       "notWritable": "Settings cannot be saved on this machine; changes last until you quit."
-    }
+    },
+    "nameNetworks": "Name the networks behind addresses",
+    "nameNetworksHint": "Labels endpoints and route hops with whose network they belong to — a hosting provider, a game operator, your own ISP. The directory ships inside the app, so nothing is looked up over the internet and nothing is sent anywhere. Turning it off frees about 12 MB of memory.",
+    "nameNetworksSnapshot": "Snapshot of {{date}}."
   }
 }

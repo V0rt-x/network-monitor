@@ -126,6 +126,7 @@ fn settings_survive_a_round_trip_through_the_file() {
         baseline_interval_secs: 12,
         autostart: true,
         remember_game_servers: false,
+        name_networks: false,
     };
 
     settings::store(&scratch.file(), &wanted).expect("the directory must be created");

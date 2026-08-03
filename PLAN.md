@@ -564,9 +564,9 @@ Stated by the user after Phase 5A landed, and ordered as they stated them. Both 
 Phase 4 shipped and come before Phase 6.
 
 A third was stated with them — naming an endpoint's destination by ASN or provider — and the
-user placed it explicitly last. It now lives where the work will happen, under **Phase 8+,
-endpoint enrichment**, with the options and the rejected ones written out there. It is not
-part of Phase 4 and nothing here waits on it.
+user placed it explicitly last. It was last, and it has since landed: see **Endpoint
+enrichment** below, between Phase 6.5 and Phase 7. It was never part of Phase 4 and nothing
+here waited on it.
 
 - [x] **1. An application is a set of processes, not a pid.** The picker, the caps, the endpoint
       lists and the IPC surface are all keyed on one process id today, and that is not the thing
@@ -1948,6 +1948,71 @@ caught the tunnel at registration, so the lying kinds were never tried and the h
 never had to fire. The cheap structural check did the work; the expensive proof stayed in
 reserve for the platforms and adapters it exists for.
 
+## Endpoint enrichment — name the destination
+
+Stated by the user on 2026-07-31 alongside the two Phase 4 amendments and placed by them
+explicitly last of the three; brought forward and built on 2026-08-03 on their instruction.
+It sat under Phase 8+ until then, which is where its options were argued out.
+
+An address means nothing to a user. "Amazon", "Cloudflare", the name of their own provider
+means something, and it is what turns the route panel and Phase 6's verdicts from a column of
+numbers into a sentence about where the traffic goes and where it stops going.
+
+- [x] **A bundled offline IP→ASN table.** Chosen by the user over the cheaper option of
+      bundling the published cloud and CDN prefix lists, because those name only the five or
+      six providers that publish them — never a transit network and never an ISP, which is
+      exactly what the route panel needs named.
+      **The licence was verified before anything was bundled, as this plan required.**
+      iptoasn's combined table is Open Data Commons PDDL v1.0: public domain, no attribution,
+      no obligation of any kind. DB-IP's Lite database was rejected — CC BY 4.0, requiring a
+      visible link back to db-ip.com on any page showing its results — and MaxMind's GeoLite2
+      for requiring an account and acceptance of an EULA, which is a poor thing to ask of this
+      audience before its download is even considered.
+- [x] **Bundled, not downloaded — and that was reconsidered rather than inherited.** The user
+      proposed fetching the database at install time with a forced-update button in Settings,
+      which would have meant a smaller installer and a fresher table. Checking it killed it:
+      every ready-made copy of this data — iptoasn, DB-IP, GitHub raw, jsDelivr — is served
+      from behind Cloudflare or Fastly, and Russian ISPs have throttled Cloudflare-backed
+      responses to roughly the first 16 KB of any asset since June 2025, which breaks a
+      multi-megabyte download outright. The only sources on their own infrastructure are RIPE
+      NCC and RouteViews, and neither publishes a lookup table — they publish raw BGP dumps,
+      an order of magnitude larger and needing an MRT parser. There is no host reliably
+      reachable from the countries this product is for, and one reachable today may not be
+      next year. **The user reached this conclusion themselves and stated it: bundle is the
+      only durable option.** A manual "import from file" fallback was proposed and rejected by
+      them as a bad answer for this audience, correctly — it is a workaround, not a design.
+- [x] **The bundle is 5.11 MB, not 8.46.** Upstream repeats each AS description on every row
+      it appears in; splitting the descriptions into a directory of their own removes the
+      repetition and leaves both halves plain tab-separated text that can be diffed against
+      upstream. `assets/asn/README.md` records the source, the licence, the retrieval date,
+      the upstream checksum and the one-line command that regenerates both files.
+- [x] **The lookup is pure and lives in `nm-core`**: sorted arrays binary-searched per address
+      family, names in a shared arena — 12 bytes per IPv4 block, 36 per IPv6, ~12 MB resident
+      for 573 125 announced blocks and 86 628 autonomous systems. `nm-app` streams the two
+      gzipped assets through it a line at a time, on the blocking pool, so neither the 17 MB of
+      decompressed text nor a stalled runtime is ever paid for.
+- [x] **It is a setting, because it costs memory rather than privacy.** ~12 MB is a quarter of
+      the core's budget and the only part of this application a user might reasonably trade
+      away on a machine where the game needs every megabyte. On by default; switching it off
+      releases the table at once rather than at the next restart. Nothing is looked up over the
+      internet, so there is no privacy cost to weigh against it.
+- [x] **Runtime lookup — RDAP, whois, Team Cymru's DNS interface — stays rejected rather than
+      deferred.** It tells a third party which servers this user is playing on, from a machine
+      under surveillance, and that is the phone-home the product promises never to make.
+- [x] **The registration country is not a location, and the page never lets it become one.**
+      It is worded as *registered in*, it lives at level two, and both the module documentation
+      and the help topic state that anycast and cloud regions routinely put it thousands of
+      kilometres from the machine that answered — the measured round trip is the better
+      evidence of distance, never this. GeoIP city-level data was not adopted at all.
+- [x] **Two levels, and the ⓘ.** Level one is the name beside the address, and the name beside
+      where the route stops — a label, not a figure, so it does not count against the three.
+      Level two carries the AS number and the registration country. The `network` help topic
+      carries the explanation, including that the directory is a photograph of one day; the
+      snapshot date is stated once in Settings, beside the switch, rather than on every row.
+- **Accept**: an endpoint and a route hop are named on the page; a name the directory does not
+  have is absent rather than guessed; the licence and the bundling decision are written down
+  where the next person will look for them. *Met.*
+
 ## Phase 7 — Polish, persistence, packaging
 
 - [ ] Local history persistence (bounded, e.g. rolling 24 h; SQLite or compact custom format) + history view
@@ -1983,32 +2048,6 @@ reserve for the platforms and adapters it exists for.
 
 - Linux support (`sock_diag` netlink + `/proc`, unprivileged-ICMP handling)
 - macOS support (`libproc`; note: Tauri e2e tooling unavailable on macOS — rely on unit/headless layers)
-- **Endpoint enrichment — name the destination: ASN / provider per endpoint.** Stated by the
-  user on 2026-07-31 alongside the two Phase 4 amendments, and placed by them explicitly last
-  of the three. An address means nothing to a user; "Akamai", "an AWS region", "your own ISP's
-  network" means something, and it is what turns the path panel and Phase 6's verdicts from a
-  list of numbers into a sentence. Options, cheapest first:
-  - **(a) Bundled published cloud/CDN prefix lists.** AWS, GCP, Azure, Cloudflare and Fastly
-    publish their ranges as stable machine-readable files. This is data of exactly the kind
-    `assets/targets/` already holds, needs no ASN database, and covers a large share of game
-    servers — but it names only those providers, never a transit network or an ISP.
-  - **(b) A bundled offline IP→ASN table**, the real answer. Candidates to evaluate:
-    iptoasn.com's RouteViews-derived table (small, permissively licensed), DB-IP's lite ASN
-    database, MaxMind's GeoLite2-ASN (widest coverage, but an account and an EULA).
-    **Licensing must be verified before anything is bundled, not assumed.** Whatever ships
-    updates with releases and never auto-fetches, exactly like the target lists. Cost against
-    the < 50 MB core budget is real but small: a sorted prefix array, binary-searched, loaded
-    lazily and only if the feature is enabled.
-  - **(c) Runtime lookup — RDAP, whois, or Team Cymru's DNS interface — is rejected rather
-    than deferred.** It tells a third party which servers this user is playing on, from a
-    machine under surveillance, and that is the phone-home the product promises never to
-    make. The same objection as reverse DNS, which is why *that* one is user-toggleable and
-    off by default — it generates visible DNS traffic.
-  - **(d) GeoIP location is a weaker claim than ASN and must be presented as one.** Anycast
-    and cloud regions routinely put a database's "city" thousands of kilometres from the
-    machine that answered. Useful as "which region did the game put me in"; never as a
-    distance to check a round trip against — the measured RTT is the better evidence of
-    distance, not the other way round.
 - Detection of known accelerator/VPN virtual adapters (ExitLag, WTFast, WireGuard, …) for
   clearer egress labeling and per-process-interceptor warnings
 - Alerts (jitter/loss thresholds → tray notification), overlay-friendly compact mode

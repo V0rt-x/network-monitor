@@ -20,11 +20,13 @@ const view = (overrides: Partial<SettingsView> = {}): SettingsView => ({
     baselineIntervalSecs: 5,
     autostart: false,
     rememberGameServers: true,
+    nameNetworks: true,
   },
   problem: null,
   countries: ['ru', 'ir'],
   minIntervalSecs: 1,
   maxIntervalSecs: 60,
+  networkSnapshot: '2026-08-03',
   ...overrides,
 });
 
@@ -57,6 +59,7 @@ describe('SettingsPage', () => {
       baselineIntervalSecs: 5,
       autostart: false,
       rememberGameServers: true,
+      nameNetworks: true,
     });
   });
 
@@ -80,6 +83,7 @@ describe('SettingsPage', () => {
           baselineIntervalSecs: 5,
           autostart: false,
           rememberGameServers: true,
+          nameNetworks: true,
         },
       }),
     );
@@ -113,5 +117,21 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Settings could not be reached');
+  });
+
+  it('offers the network directory as a switch, and says what it costs', async () => {
+    render(<SettingsPage />);
+
+    const toggle = await screen.findByLabelText('Name the networks behind addresses');
+    expect(toggle).toBeChecked();
+    // The one setting here that buys memory rather than behaviour, so the figure is stated.
+    expect(screen.getByText(/12 MB/)).toBeVisible();
+    // A directory is a photograph of one day, and this is what explains a name that has
+    // since gone stale.
+    expect(screen.getByText(/Snapshot of 2026-08-03/)).toBeVisible();
+
+    await userEvent.click(toggle);
+
+    expect(storeSettings).toHaveBeenCalledWith(expect.objectContaining({ nameNetworks: false }));
   });
 });
