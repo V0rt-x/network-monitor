@@ -137,6 +137,12 @@ pub struct Report {
 pub struct TargetProgress {
     /// The probe kind now in use, or [`None`] once every kind has been ruled out.
     pub kind: Option<ProbeKind>,
+    /// Whether a tunnel on this machine stands between the probe and the endpoint.
+    ///
+    /// Carried on every report rather than settled once at registration, because it can be
+    /// *learned*: a reply proving a tunnel answered it changes this mid-session, and so
+    /// does a user switching a VPN on. A flag read once would be wrong from then on.
+    pub tunnelled: bool,
     /// Whether a probe kind has been *proven* filtered on this path.
     pub filtering_confirmed: bool,
     /// Whether anything honest is left to try — a probe kind, or a path walk.
@@ -464,6 +470,7 @@ impl ProbeRunner {
         let chain = &self.targets.get(&id)?.chain;
         Some(TargetProgress {
             kind: chain.current_kind(),
+            tunnelled: chain.class().is_behind_a_tunnel(),
             filtering_confirmed: chain.filtering_confirmed(),
             // A path walk is still a measurement of something, so an endpoint that has
             // exhausted every probe kind is only *unmeasurable* when even that is ruled
@@ -1899,6 +1906,7 @@ mod tests {
             completed.progress,
             TargetProgress {
                 kind: Some(ProbeKind::IcmpEcho),
+                tunnelled: false,
                 filtering_confirmed: false,
                 measurable: true,
             }
@@ -1996,6 +2004,7 @@ mod tests {
             runner.progress(id(0)),
             Some(TargetProgress {
                 kind: Some(ProbeKind::IcmpEcho),
+                tunnelled: false,
                 filtering_confirmed: false,
                 measurable: true,
             })

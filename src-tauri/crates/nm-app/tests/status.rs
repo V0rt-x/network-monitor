@@ -297,6 +297,55 @@ fn a_tunnelled_endpoint_is_labelled_rather_than_presented_as_a_round_trip() {
 }
 
 #[test]
+fn a_tunnel_found_after_registration_reaches_the_card() {
+    // An ordinary public address reached through a TUN client looks innocent when it is
+    // registered: nothing about the address says a tunnel will take it. The engine learns
+    // it from the route or from a reply that crossed no router, and the finding arrives
+    // with the next report rather than waiting for a restart.
+    let now = Instant::now();
+    let (mut monitor, ids, _registry) = one_service(1);
+    assert!(!only(&monitor, now).endpoints[0].tunnelled);
+
+    monitor.note_probe_state(
+        ids[0],
+        Some(nm_probes::probe::ProbeKind::TlsHello),
+        true,
+        false,
+        true,
+    );
+    feed(&mut monitor, ids[0], now, &[ok(180), ok(175)]);
+
+    assert!(only(&monitor, now).endpoints[0].tunnelled);
+}
+
+#[test]
+fn a_tunnel_switched_off_stops_being_claimed() {
+    // The other half, and the reason the flag travels with every report instead of being
+    // settled once: a user turning their VPN off must not keep a badge saying their
+    // figures are measured through something that is no longer there.
+    let now = Instant::now();
+    let (mut monitor, ids, _registry) = one_service(1);
+    monitor.note_probe_state(
+        ids[0],
+        Some(nm_probes::probe::ProbeKind::TlsHello),
+        true,
+        false,
+        true,
+    );
+    assert!(only(&monitor, now).endpoints[0].tunnelled);
+
+    monitor.note_probe_state(
+        ids[0],
+        Some(nm_probes::probe::ProbeKind::IcmpEcho),
+        false,
+        false,
+        true,
+    );
+
+    assert!(!only(&monitor, now).endpoints[0].tunnelled);
+}
+
+#[test]
 fn an_endpoint_that_ran_out_of_probe_kinds_says_so() {
     let now = Instant::now();
     let (mut monitor, ids, _registry) = one_service(1);

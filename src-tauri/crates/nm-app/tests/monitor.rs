@@ -269,6 +269,7 @@ fn the_probe_kind_and_proven_filtering_reach_the_view() {
     monitor.note_probe_state(
         ids[0],
         Some(nm_probes::probe::ProbeKind::TlsHello),
+        false,
         true,
         true,
     );
@@ -410,6 +411,7 @@ fn a_sample_for_an_unknown_handle_is_ignored_rather_than_misfiled() {
     monitor.note_probe_state(
         ids[1],
         Some(nm_probes::probe::ProbeKind::IcmpEcho),
+        false,
         true,
         true,
     );

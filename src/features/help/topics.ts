@@ -25,6 +25,10 @@ export const HELP_TOPICS = [
   'traffic',
   'probeKind',
   'egress',
+  // Not a figure but a reason figures change, and the one the reader is owed most: with a
+  // VPN or proxy client running, this badge is on nearly every endpoint on the page, and
+  // it is why their round trips are measured a different way from everyone else's.
+  'tunnel',
   // The status page's own figures. Its round trips are the same quantity as the ones above
   // and still need topics of their own: what distinguishes them is *which* checks each one
   // folds in, and that is exactly what a reader averaging a strip by eye has got wrong.

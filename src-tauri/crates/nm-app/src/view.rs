@@ -356,6 +356,13 @@ pub enum CheckMarkView {
     Refused,
     /// The probe kind was filtered, so this check measured nothing at all.
     Filtered,
+    /// A tunnel on this machine answered instead of the service.
+    ///
+    /// Its own word rather than one of the four above. Read as filtering it would send a
+    /// user looking for a block that is not there; read as loss — which is what the
+    /// catch-all below used to do to any mark it had no word for — it would report a
+    /// dropped packet where a packet was never sent.
+    AnsweredLocally,
 }
 
 impl From<CheckMark> for CheckMarkView {
@@ -365,6 +372,7 @@ impl From<CheckMark> for CheckMarkView {
             CheckMark::Slow => Self::Slow,
             CheckMark::Refused => Self::Refused,
             CheckMark::Filtered => Self::Filtered,
+            CheckMark::AnsweredLocally => Self::AnsweredLocally,
             // A mark this build has no word for must not read as an answer.
             _ => Self::Lost,
         }

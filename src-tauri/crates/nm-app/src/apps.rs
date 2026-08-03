@@ -45,7 +45,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
-use nm_core::address::{AddressClass, AddressPolicy};
+use nm_core::address::AddressPolicy;
 use nm_core::edge::{EdgePolicy, EdgeReading, PathEdge};
 use nm_core::endpoint::{
     AppId, EndpointKey, EndpointTracker, LifecyclePolicy, Liveness, Probing, TrackedEndpoint,
@@ -441,7 +441,15 @@ impl AppMonitor {
             return Ok(());
         }
 
-        let tunnelled = self.policy.classify(endpoint.address.ip()) == AddressClass::TunnelSentinel;
+        // A seed from the address alone, which is all that is known before the endpoint is
+        // registered with the probe engine. It catches a synthetic address immediately; an
+        // ordinary address reached through a TUN client looks innocent here and is
+        // corrected by `note_probe_state` on the first report, which is also the only thing
+        // that can notice a VPN switched on later.
+        let tunnelled = self
+            .policy
+            .classify(endpoint.address.ip())
+            .is_behind_a_tunnel();
         let history = SampleHistory::new(HISTORY_CAPACITY).map_err(nm_probes::Error::Core)?;
         let mut metrics =
             FlowMetrics::with_policy(self.flow_policy).map_err(nm_probes::Error::Core)?;
@@ -974,12 +982,17 @@ impl AppMonitor {
         &mut self,
         id: TargetId,
         kind: Option<ProbeKind>,
+        tunnelled: bool,
         filtering_confirmed: bool,
         measurable: bool,
     ) {
         for key in self.members_of(id) {
             if let Some(entry) = self.entries.get_mut(&key) {
                 entry.probe_kind = kind;
+                // Refreshed on every report rather than fixed when the endpoint was
+                // discovered: a tunnel can be proven from a reply, and the user switching a
+                // VPN on mid-game is the case this product exists to make visible.
+                entry.tunnelled = tunnelled;
                 entry.filtering_confirmed = filtering_confirmed;
                 entry.measurable = measurable;
                 // No kind left, but the route is still there to measure. Only reachable from

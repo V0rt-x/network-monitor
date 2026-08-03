@@ -328,7 +328,11 @@ fn every_caveat_travels_with_the_number() {
         .observe(APP, sentinel, Some(egress), Some(traffic(4_096)), now)
         .unwrap();
     let ids = registered(&mut monitor, &mut registry, now);
-    monitor.note_probe_state(ids[0], Some(ProbeKind::TlsHello), true, true);
+    // Tunnelled, because this endpoint is a fake-IP sentinel and the engine classifies it
+    // as one. The flag arrives with every report rather than being fixed at discovery, so
+    // a run that said otherwise here would be a run that had stopped believing its own
+    // classification.
+    monitor.note_probe_state(ids[0], Some(ProbeKind::TlsHello), true, true, true);
 
     let view = view(&mut monitor, now);
     let endpoints = flat(&view);
@@ -1042,6 +1046,7 @@ fn a_warm_up_never_hides_something_already_certain() {
     monitor.note_probe_state(
         ids[&udp(1).address.ip()],
         Some(ProbeKind::TlsHello),
+        false,
         true,
         true,
     );

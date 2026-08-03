@@ -138,7 +138,14 @@ describe('StatusPage', () => {
     ).toBeInTheDocument();
 
     const legend = screen.getByRole('list', { name: 'What a cell can say' });
-    for (const state of ['No answer', 'Probe filtered', 'Refused', 'Answered slowly', 'Answered']) {
+    for (const state of [
+      'No answer',
+      'Probe filtered',
+      'Your tunnel answered',
+      'Refused',
+      'Answered slowly',
+      'Answered',
+    ]) {
       expect(within(legend).getByText(state)).toBeInTheDocument();
     }
   });

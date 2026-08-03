@@ -354,7 +354,7 @@
       "checks": {
         "title": "The check strip",
         "short": "One cell is one check of that service, oldest on the left. Colour is never the only signal — every cell carries its word.",
-        "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. A cell is a fact rather than a verdict: it says what that single check produced — answered, answered slowly, no answer, refused, or the probe was filtered — and keeping those apart is the point, because a single colour on the card cannot. Pointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
+        "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. A cell is a fact rather than a verdict: it says what that single check produced — answered, answered slowly, no answer, refused, the probe was filtered, or your tunnel answered — and keeping those apart is the point, because a single colour on the card cannot. Pointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
       },
       "medianRtt": {
         "title": "Ping, median",
@@ -375,6 +375,11 @@
         "title": "Which adapter it leaves by",
         "short": "The network adapter this application's traffic uses — Wi-Fi, Ethernet, a VPN or an accelerator.",
         "body": "The app binds its probes to the same local address your application's own traffic leaves from, so they follow the same route through any VPN or accelerator. Naming the adapter is what lets you check a before-and-after comparison: turn the VPN on, and this should change. Where the probe cannot be made to follow — another monitored application reaches the same endpoint by a different route, or the address was already being measured for something else — the row says so plainly rather than quietly measuring the wrong path."
+      },
+      "tunnel": {
+        "title": "Through a tunnel",
+        "short": "A VPN or proxy on this machine carries this traffic, so the round trip is measured end to end through it rather than by a ping.",
+        "body": "A tunnel client running on your machine answers a great deal by itself. Send it a ping meant for a game server on another continent and its own software replies, in well under a millisecond, without a packet ever leaving your computer. The same is true of a bare connection attempt. Those numbers look wonderful and mean nothing, so this app refuses them: an endpoint marked this way is measured with a full exchange instead, which the tunnel has to carry to the real server and back before it can answer. That figure is honest, and it is the round trip your traffic actually experiences — the tunnel included, because the tunnel is genuinely in the way. It is not comparable with a figure measured without one, which is exactly why the badge is here. The app finds the tunnel two ways: it asks the system which adapter your packets would leave by, and it checks whether replies arriving from far-away addresses have really travelled. A reply that crossed no router on the way back did not come from another continent. Nothing here sends traffic outside your tunnel to compare, because that would show your provider what your tunnel exists to hide."
       }
     }
   },
@@ -420,7 +425,8 @@
       "slow": "Answered slowly",
       "lost": "No answer",
       "refused": "Refused",
-      "filtered": "Probe filtered"
+      "filtered": "Probe filtered",
+      "answeredLocally": "Your tunnel answered"
     },
     "timeline": {
       "heading": "What one cell is",

@@ -1122,6 +1122,12 @@ details.nm-endpointgroup > summary {
   background: var(--nm-blocked);
 }
 
+/* Grey, the colour of nothing learned — because that is exactly what happened. Not the
+   purple of a filtered check: something did answer, it simply was not the service. */
+.nm-check--answeredLocally {
+  background: var(--nm-unknown);
+}
+
 .nm-visually-hidden {
   position: absolute;
   width: 1px;

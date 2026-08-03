@@ -653,18 +653,21 @@ fn fold_in(
     baselines.note_probe_state(
         id,
         completed.progress.kind,
+        completed.progress.tunnelled,
         completed.progress.filtering_confirmed,
         completed.progress.measurable,
     );
     services.note_probe_state(
         id,
         completed.progress.kind,
+        completed.progress.tunnelled,
         completed.progress.filtering_confirmed,
         completed.progress.measurable,
     );
     apps.note_probe_state(
         id,
         completed.progress.kind,
+        completed.progress.tunnelled,
         completed.progress.filtering_confirmed,
         completed.progress.measurable,
     );
@@ -784,6 +787,14 @@ async fn build(
     let now = Instant::now();
     let mut runner = ProbeRunner::new(policy.clone(), probers.kinds(), now)?
         .with_intervals(settings.baseline_interval(), MAX_INTERVAL);
+    // Without the route table the engine sees only addresses, and a tunnel that takes
+    // traffic by installing routes is invisible to it: every name resolves to the real
+    // public address of the real service while the tunnel answers the cheap probes itself.
+    // A platform with no backend simply keeps the behaviour it had — the hop-limit proof
+    // covers that case from the reply instead.
+    if let Ok(routes) = nm_platform::route::system_table() {
+        runner = runner.with_routes(routes);
+    }
 
     let domestic = baselines::domestic(&settings.country)?;
     let foreign = baselines::foreign()?;
@@ -799,7 +810,7 @@ async fn build(
     // quietly double the traffic the product promises not to send.
     let list = services::ServiceList::bundled()?;
     for service in &services::resolve_list(&list).await {
-        register_service(registry, &mut runner, services, policy, service, now)?;
+        register_service(registry, &mut runner, services, service, now)?;
     }
 
     Ok(Engine { runner, probers })
@@ -814,7 +825,6 @@ fn register_service(
     registry: &mut TargetRegistry,
     runner: &mut ProbeRunner,
     monitor: &mut ServiceMonitor,
-    policy: &AddressPolicy,
     service: &ResolvedService,
     now: Instant,
 ) -> Result<(), Error> {
@@ -830,9 +840,6 @@ fn register_service(
         };
 
         let id = registry.insert(address, TargetTag::StatusService)?;
-        if policy.classify(address.ip) == AddressClass::TunnelSentinel {
-            tunnelled.push(id);
-        }
         // The list's probe-kind hint only reorders the kinds the address class already
         // allows — see `FallbackChain::starting_with`. It is here to save a status page
         // several whole check intervals of silence on a front door that does not answer
@@ -843,6 +850,17 @@ fn register_service(
         {
             handles.push(None);
             continue;
+        }
+        // Asked of the runner rather than derived from the address here, because only the
+        // runner has consulted the route: an ordinary public address reached through a TUN
+        // client is tunnelled and nothing about the address says so. Seeded now so the
+        // first card is right before any probe has landed; kept right afterwards by
+        // `note_probe_state`, which carries the same fact on every report.
+        if runner
+            .class_of(id)
+            .is_some_and(AddressClass::is_behind_a_tunnel)
+        {
+            tunnelled.push(id);
         }
         let _ = runner.set_interval(id, crate::status::CHECK_INTERVAL, now);
         handles.push(Some(id));
@@ -876,11 +894,19 @@ fn register(
         return Ok(());
     };
 
-    let tunnelled = policy.classify(address.ip) == AddressClass::TunnelSentinel;
     let id = registry.insert(address, tag)?;
+    let registered = runner.add(id, address, None, now).is_ok();
+    // The runner's answer rather than the address's: it has consulted the route, and an
+    // ordinary public address reached through a TUN client is tunnelled without anything
+    // about the address saying so. Falls back to the address alone when registration was
+    // refused, since there is then no chain to ask.
+    let tunnelled = runner.class_of(id).map_or_else(
+        || policy.classify(address.ip).is_behind_a_tunnel(),
+        AddressClass::is_behind_a_tunnel,
+    );
     monitor.add(target, Some(id), tunnelled)?;
 
-    if runner.add(id, address, None, now).is_err() {
+    if !registered {
         // No probe kind can honestly measure this address — a tunnelled endpoint with no
         // end-to-end prober, or a range not worth probing at all. Said out loud rather
         // than shown as a target that mysteriously never updates.

@@ -30,12 +30,15 @@ export const serviceGroupHintKey = (group: ServiceGroup) => {
  *
  * Worst to best rather than in the enum's order: a reader scanning the legend for the colour
  * they can see on a card is looking for a problem, not for the colour of "answered".
- * Exhaustive by construction — the `satisfies` makes a new Rust variant a compile error
- * here, so a state can never reach the page without a place in the legend that explains it.
+ *
+ * "Answered locally" sits beside "filtered" because the two are the same shape of thing —
+ * a check that produced no measurement — and apart from it because the reasons are
+ * opposite: filtering happens *on* the path, a tunnel answering happens before it.
  */
 export const CHECK_MARKS = [
   'lost',
   'filtered',
+  'answeredLocally',
   'refused',
   'slow',
   'answered',
@@ -53,6 +56,8 @@ export const checkMarkKey = (mark: CheckMarkView) => {
       return 'status.check.refused' as const;
     case 'filtered':
       return 'status.check.filtered' as const;
+    case 'answeredLocally':
+      return 'status.check.answeredLocally' as const;
   }
 };
 

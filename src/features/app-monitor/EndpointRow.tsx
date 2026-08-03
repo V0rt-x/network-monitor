@@ -179,6 +179,15 @@ export const EndpointRow = ({
         {!endpoint.measurable && (
           <span className="nm-badge nm-badge--warn">{t('dashboard.badge.notMeasurable')}</span>
         )}
+        {/* Promoted out of the expander. It qualifies every figure on the row rather than
+            describing how one of them was taken, and a reader who never opens the details
+            would otherwise read a tunnel's round trip as the server's. */}
+        {endpoint.tunnelled && (
+          <span className="nm-badge">
+            {t('dashboard.badge.tunnelled')}
+            <MetricHelp topic="tunnel" />
+          </span>
+        )}
       </div>
 
       {/* Level one: three figures and nothing else, under the names the rest of the
@@ -245,7 +254,8 @@ export const EndpointRow = ({
               {endpoint.probeKind === null
                 ? t('apps.details.probeKindNone')
                 : t(probeKindKey(endpoint.probeKind))}
-              {endpoint.tunnelled && ` · ${t('dashboard.badge.tunnelled')}`}
+              {/* The tunnel is stated at level one now, beside the health, because it
+                  qualifies the figures rather than describing how one was taken. */}
               {endpoint.filteringConfirmed && ` · ${t('dashboard.badge.filteringConfirmed')}`}
             </dd>
           </div>

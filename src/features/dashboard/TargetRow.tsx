@@ -41,7 +41,14 @@ export const TargetRow = ({ target }: TargetRowProps) => {
         {target.probeKind !== null && (
           <span className="nm-badge">{t(probeKindKey(target.probeKind))}</span>
         )}
-        {target.tunnelled && <span className="nm-badge">{t('dashboard.badge.tunnelled')}</span>}
+        {/* The one badge with an ⓘ. It is not a caveat on the row, it is the reason the
+            figures beside it were measured a different way. */}
+        {target.tunnelled && (
+          <span className="nm-badge">
+            {t('dashboard.badge.tunnelled')}
+            <MetricHelp topic="tunnel" />
+          </span>
+        )}
         {target.filteringConfirmed && (
           <span className="nm-badge">{t('dashboard.badge.filteringConfirmed')}</span>
         )}

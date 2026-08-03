@@ -187,11 +187,15 @@ impl BaselineMonitor {
         &mut self,
         id: TargetId,
         kind: Option<ProbeKind>,
+        tunnelled: bool,
         filtering_confirmed: bool,
         measurable: bool,
     ) {
         if let Some(entry) = self.entry_mut(id) {
             entry.probe_kind = kind;
+            // Refreshed on every report rather than fixed when the target was registered: a
+            // tunnel can be proven from a reply, and a user can switch a VPN on mid-session.
+            entry.tunnelled = tunnelled;
             entry.filtering_confirmed = filtering_confirmed;
             entry.measurable = measurable;
         }

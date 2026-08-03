@@ -417,8 +417,12 @@ describe('AppCard', () => {
     );
 
     // The caveats live a level down, where they qualify the figure instead of competing
-    // with it — except the egress conflict, which is a warning and stays on the row.
-    expect(screen.getByText(/TLS · Through a tunnel · Filtering confirmed/)).toBeInTheDocument();
+    // with it — except the egress conflict, which is a warning and stays on the row, and
+    // the tunnel, which is not a caveat on one figure but the reason every figure on the
+    // row was measured a different way.
+    expect(screen.getByText(/TLS · Filtering confirmed/)).toBeInTheDocument();
+    expect(screen.getByText('Through a tunnel')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'What Through a tunnel means' })).toBeInTheDocument();
     expect(screen.getByText("Probe may not follow this app's route")).toBeInTheDocument();
     expect(screen.getByText("Probe may not follow this app's route")).toBeVisible();
     expect(

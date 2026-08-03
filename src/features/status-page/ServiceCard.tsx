@@ -60,7 +60,15 @@ const EndpointRow = ({ endpoint, serviceLabel, alone }: EndpointRowProps) => {
           {endpoint.probeKind !== null && (
             <span className="nm-badge">{t(probeKindKey(endpoint.probeKind))}</span>
           )}
-          {endpoint.tunnelled && <span className="nm-badge">{t('dashboard.badge.tunnelled')}</span>}
+          {/* The one badge with an ⓘ. It is not a caveat on the row, it is the reason the
+              figures beside it were measured a different way, and with a VPN running it is
+              on nearly every endpoint on the page. */}
+          {endpoint.tunnelled && (
+            <span className="nm-badge">
+              {t('dashboard.badge.tunnelled')}
+              <MetricHelp topic="tunnel" />
+            </span>
+          )}
           {endpoint.filteringConfirmed && (
             <span className="nm-badge">{t('dashboard.badge.filteringConfirmed')}</span>
           )}

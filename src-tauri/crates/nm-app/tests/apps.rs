@@ -480,7 +480,7 @@ fn probe_state_is_carried_onto_the_endpoint() {
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
 
-    monitor.note_probe_state(registered[0], Some(ProbeKind::TlsHello), true, true);
+    monitor.note_probe_state(registered[0], Some(ProbeKind::TlsHello), false, true, true);
 
     let report = &monitor.endpoints(APP, now)[0];
     assert_eq!(report.probe_kind, Some(ProbeKind::TlsHello));
@@ -518,7 +518,7 @@ fn never_and_not_yet_are_different_answers_about_the_probe_figures() {
     monitor.observe(APP, udp(1), None, None, now).unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
 
-    monitor.note_probe_state(registered[0], Some(ProbeKind::IcmpEcho), false, true);
+    monitor.note_probe_state(registered[0], Some(ProbeKind::IcmpEcho), false, false, true);
     assert!(
         monitor.endpoints(APP, now)[0].probes_measure_it,
         "a chain still working through kinds has a figure coming"
@@ -526,7 +526,7 @@ fn never_and_not_yet_are_different_answers_about_the_probe_figures() {
 
     // Every kind ruled out, the route left to walk: the route is a measurement of a router
     // short of the endpoint, and it is never the endpoint's own round trip.
-    monitor.note_probe_state(registered[0], None, true, true);
+    monitor.note_probe_state(registered[0], None, false, true, true);
     assert!(!monitor.endpoints(APP, now)[0].probes_measure_it);
 
     // And the tunnelled endpoint that exhausts even the TLS hello, where not even a route
@@ -736,7 +736,7 @@ fn silent_but_busy() -> (
 
     // No probe kind left, and the route still worth measuring — the probe engine's own
     // report of an endpoint that has fallen through to walking its path.
-    monitor.note_probe_state(endpoint, None, false, true);
+    monitor.note_probe_state(endpoint, None, false, false, true);
     let changes = monitor.sweep(&mut registry, now);
     (monitor, registry, now, endpoint, changes)
 }
@@ -756,7 +756,7 @@ fn an_endpoint_that_can_still_be_probed_is_left_alone() {
         .observe(APP, udp(1), Some(local(9)), Some(traffic(64_000)), now)
         .unwrap();
     let endpoint = registrations(&monitor.sweep(&mut registry, now))[0];
-    monitor.note_probe_state(endpoint, Some(ProbeKind::IcmpEcho), false, true);
+    monitor.note_probe_state(endpoint, Some(ProbeKind::IcmpEcho), false, false, true);
 
     assert!(walk_requests(&monitor.sweep(&mut registry, now)).is_empty());
     assert!(monitor.endpoints(APP, now)[0].path.is_none());
@@ -901,7 +901,7 @@ fn only_the_busiest_endpoint_of_an_application_is_given_a_path_edge() {
         .unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, now));
     for id in &registered {
-        monitor.note_probe_state(*id, None, false, true);
+        monitor.note_probe_state(*id, None, false, false, true);
     }
 
     let asked = walk_requests(&monitor.sweep(&mut registry, now));
@@ -933,7 +933,7 @@ fn an_edge_that_moves_to_another_endpoint_gives_up_its_hops_first() {
         .observe(APP, udp(2), Some(local(9)), Some(traffic(500_000)), later)
         .unwrap();
     let registered = registrations(&monitor.sweep(&mut registry, later));
-    monitor.note_probe_state(registered[0], None, false, true);
+    monitor.note_probe_state(registered[0], None, false, false, true);
     let changes = monitor.sweep(&mut registry, later);
 
     let released = unregistrations(&changes);
@@ -994,7 +994,7 @@ fn a_hop_that_answers_no_probe_of_ours_is_released() {
     let hops =
         registrations(&monitor.note_path_trace(&mut registry, endpoint, &typical_route(), now));
 
-    monitor.note_probe_state(hops[2], None, false, true);
+    monitor.note_probe_state(hops[2], None, false, false, true);
     let changes = monitor.sweep(&mut registry, now);
 
     assert_eq!(unregistrations(&changes), vec![hops[2]]);

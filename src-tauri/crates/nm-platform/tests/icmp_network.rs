@@ -59,9 +59,23 @@ fn loopback_replies_immediately() {
     println!("loopback: {outcome:?}");
 
     match outcome {
-        EchoOutcome::Replied { from, rtt } => {
+        EchoOutcome::Replied {
+            from,
+            rtt,
+            hop_limit,
+        } => {
             assert_eq!(from, IpAddr::V4(Ipv4Addr::LOCALHOST));
             assert!(rtt < Duration::from_millis(100), "loopback took {rtt:?}");
+            // The field the tunnel proof rests on, against the real stack. Loopback is the
+            // one destination guaranteed to be zero routers away, so a reply from it must
+            // carry an untouched initial hop limit — which is exactly the reading that
+            // convicts a tunnel answering for a public address.
+            assert_eq!(
+                hop_limit,
+                Some(128),
+                "a loopback reply crossed no router, so Windows' initial hop limit must \
+                 arrive unchanged"
+            );
         }
         other => panic!("expected a reply from the loopback, got {other:?}"),
     }

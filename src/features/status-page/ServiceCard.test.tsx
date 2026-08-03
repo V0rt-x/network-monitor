@@ -243,6 +243,30 @@ describe('ServiceCard', () => {
     );
 
     expect(screen.getByText('Through a tunnel')).toBeInTheDocument();
+    // The only badge with an ⓘ, because it is the reason the figures beside it were
+    // measured a different way rather than a caveat on one of them.
+    expect(screen.getByRole('button', { name: 'What Through a tunnel means' })).toBeInTheDocument();
+  });
+
+  it('names a check the tunnel answered rather than calling it a lost packet', () => {
+    // Before this state existed, a mark the view had no word for fell through to "no
+    // answer" — reporting a dropped packet where a packet was never sent. It is also not
+    // "probe filtered": filtering happens on the path, and this happened before it.
+    render(
+      <ServiceCard
+        service={service({
+          endpoints: [endpoint({ checks: checks(['answeredLocally', 'answered']) })],
+        })}
+        checkIntervalSecs={45}
+      />,
+    );
+
+    const strip = screen.getByRole('list', {
+      name: 'Recent checks of Steam at api.steampowered.com',
+    });
+    expect(within(strip).getByText('Your tunnel answered')).toBeInTheDocument();
+    expect(within(strip).queryByText('No answer')).not.toBeInTheDocument();
+    expect(within(strip).queryByText('Probe filtered')).not.toBeInTheDocument();
   });
 
   it('marks an endpoint whose name never resolved', () => {

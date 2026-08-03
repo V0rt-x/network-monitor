@@ -299,7 +299,16 @@ export type CheckMarkView =
 /**  The destination answered that it cannot be reached. */
 "refused" | 
 /**  The probe kind was filtered, so this check measured nothing at all. */
-"filtered";
+"filtered" | 
+/**
+ *  A tunnel on this machine answered instead of the service.
+ * 
+ *  Its own word rather than one of the four above. Read as filtering it would send a
+ *  user looking for a block that is not there; read as loss — which is what the
+ *  catch-all below used to do to any mark it had no word for — it would report a
+ *  dropped packet where a packet was never sent.
+ */
+"answeredLocally";
 
 /**  One check on the mini-timeline. */
 export type CheckView = {
