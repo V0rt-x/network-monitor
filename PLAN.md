@@ -2070,15 +2070,15 @@ move down a level, and each item below names the level they land on.
 
 ### P1 — the system, and the structure it holds up
 
-- [ ] **9. Design tokens.** The stylesheet carries 16 spacing values, 15 font sizes, 10 radii
+- [x] **9. Design tokens.** The stylesheet carries 16 spacing values, 15 font sizes, 10 radii
       and **two incompatible palettes** (Tailwind for surfaces, GitHub Primer for states, plus
       a third amber duplicating a second one). One spacing scale, one type scale, three radii,
       one palette. This is the single change that removes most of the "homemade" reading.
-- [ ] **10. Vertical rhythm by `gap`, never by `margin-top`.** `.nm-appcard` is a plain block
+- [x] **10. Vertical rhythm by `gap`, never by `margin-top`.** `.nm-appcard` is a plain block
       whose children each choose their own top margin, so the distances between them are
       arbitrary and collapse unpredictably. Cards become flex columns with one gap, and no
       `margin-top` survives inside one.
-- [ ] **11. One breakpoint system.** Four different `minmax()` bases on one page mean columns
+- [x] **11. One breakpoint system.** Four different `minmax()` bases on one page mean columns
       reflow at four different window widths while resizing.
 - [ ] **12. `Match traffic` / `Supporting connections` → `UDP flows` / `TCP connections`.**
       *Approved by the user on 2026-08-03, variant A.* The old names claim a **role** from a

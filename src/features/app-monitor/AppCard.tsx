@@ -173,8 +173,10 @@ export const AppCard = ({
         className="nm-appcard__distribution"
       />
 
+      {/* The chart and its caption are one block with a tighter gap of its own, so the card's
+          own rhythm does not push a caption away from the picture it captions. */}
       {lines.length > 0 && (
-        <>
+        <div className="nm-appcard__chart">
           <EndpointChart
             elapsedSecs={app.chartElapsedSecs}
             lines={lines}
@@ -191,7 +193,7 @@ export const AppCard = ({
             {t('apps.chart.caption', { seconds: chartStepSecs })}
             <MetricHelp topic="chart" />
           </p>
-        </>
+        </div>
       )}
 
       {endpoints.length === 0 && <p className="nm-state--pending">{t('apps.noEndpoints')}</p>}

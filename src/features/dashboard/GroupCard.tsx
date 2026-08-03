@@ -41,7 +41,7 @@ export const GroupCard = ({ group }: GroupCardProps) => {
   return (
     <section className="nm-group">
       <header className="nm-group__header">
-        <div>
+        <div className="nm-group__identity">
           <h3 className="nm-group__title">{t(groupKey(group.group))}</h3>
           <p className="nm-group__hint">{t(groupHintKey(group.group))}</p>
         </div>

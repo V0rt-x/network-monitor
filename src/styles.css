@@ -1,15 +1,45 @@
+/*
+ * The design system: one spacing scale, one type scale, three radii, one palette.
+ *
+ * What was here before was sixteen spacing values, fifteen font sizes, ten radii and two
+ * incompatible palettes at once — Tailwind's slate/sky for the surfaces and GitHub Primer's
+ * for the states, plus a third amber duplicating a second one. Nothing lined up with
+ * anything, because there was nothing to line up with, and that is the single largest
+ * reason the product read as homemade: the eye can see that the distances between blocks
+ * are arbitrary long before it can say why.
+ *
+ * Every value below is a decision made once. A component that needs a number reaches for a
+ * token; a component that needs a number no token has is a component asking the wrong
+ * question.
+ */
 :root {
   color-scheme: dark;
-  --nm-bg: #0f172a;
-  --nm-surface: #16213c;
-  --nm-border: #1e3a5f;
-  --nm-text: #e2e8f0;
-  --nm-muted: #94a3b8;
-  --nm-accent: #38bdf8;
-  --nm-warn: #fbbf24;
 
-  /* Health states. Kept in step with the strokes in Sparkline.tsx, which draws to a
-     canvas and so cannot take a class. */
+  /*
+   * Primer's dark palette, and only Primer's.
+   *
+   * The states were already Primer — it is designed for a dark canvas and its contrast is
+   * verified — so the neutrals move to meet them rather than the other way round. `--nm-warn`
+   * is gone: it was a second amber for the same meaning as `--nm-degraded`, from a different
+   * system, and two ambers on one page read as two different warnings.
+   */
+  --nm-bg: #0d1117;
+  --nm-surface: #161b22;
+  --nm-border: #30363d;
+  --nm-text: #e6edf3;
+  /*
+   * For labels that are always on screen — a metric's name, a transport, an age.
+   *
+   * Distinct from `--nm-muted` on purpose: those sit at the smallest size the page uses, and
+   * the muted grey at that size is below the threshold at which reading is comfortable.
+   * `--nm-muted` keeps the prose that a reader can choose to skip.
+   */
+  --nm-text-secondary: #b1bac4;
+  --nm-muted: #8b949e;
+  --nm-accent: #79c0ff;
+
+  /* Health states. Kept in step with the strokes the chart draws, which go to a canvas and
+     so cannot take a class. */
   --nm-ok: #3fb950;
   --nm-degraded: #d29922;
   --nm-unreachable: #f85149;
@@ -18,19 +48,57 @@
   --nm-alive: #58a6ff;
   --nm-unknown: #8b949e;
 
+  /* Spacing, on a 4 px step. Seven steps cover everything from the gap inside a pill to the
+     distance between two sections. */
+  --nm-space-1: 0.25rem;
+  --nm-space-2: 0.5rem;
+  --nm-space-3: 0.75rem;
+  --nm-space-4: 1rem;
+  --nm-space-5: 1.5rem;
+  --nm-space-6: 2rem;
+  --nm-space-7: 3rem;
+
+  /* Below the scale on purpose, and the only value that is: it separates two cells of the
+     check strip, and sixty of them cannot afford a 4 px gutter each. */
+  --nm-hairline: 2px;
+
+  /*
+   * Type. Six sizes, and 12 px is the floor for anything permanently on screen.
+   *
+   * The root stays at the browser's own 16 px so that a rem means what everyone else means
+   * by it; `--nm-text-md` is 15 px, which is the size the app already read at.
+   */
+  --nm-text-xs: 0.75rem;
+  --nm-text-sm: 0.8125rem;
+  --nm-text-md: 0.9375rem;
+  --nm-text-lg: 1.0625rem;
+  --nm-text-xl: 1.25rem;
+  --nm-text-2xl: 1.5rem;
+
   /* Corner radii. Three sizes and a pill, which is as many distinctions as a reader can
-     see; the rest of the stylesheet is converted onto them by the design-token pass. */
+     see at these sizes. */
   --nm-radius-sm: 4px;
   --nm-radius-md: 8px;
   --nm-radius-lg: 12px;
   --nm-radius-pill: 999px;
+
+  /*
+   * One breakpoint system.
+   *
+   * Four different `minmax()` bases were in use on a single page, so the columns reflowed at
+   * four different window widths as it was resized — which is a large part of why the page
+   * felt like it was moving on its own. Two widths, and no bare value in a `minmax()`
+   * anywhere in this file.
+   */
+  --nm-col-narrow: 18rem;
+  --nm-col-wide: 26rem;
 
   font-family:
     'Segoe UI',
     system-ui,
     -apple-system,
     sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -65,37 +133,37 @@ body {
 .nm-app {
   max-width: 72rem;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: var(--nm-space-5);
 }
 
 .nm-app__header {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 1rem 2rem;
-  margin-bottom: 1.5rem;
+  gap: var(--nm-space-4) var(--nm-space-6);
+  margin-bottom: var(--nm-space-5);
 }
 
 .nm-app__title {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: var(--nm-text-xl);
 }
 
 .nm-app__tagline {
-  margin: 0.15rem 0 0;
+  margin: var(--nm-space-1) 0 0;
   color: var(--nm-muted);
-  font-size: 0.85rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-app__actions {
   margin-left: auto;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-nav {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--nm-space-1);
   align-self: center;
 }
 
@@ -105,8 +173,8 @@ body {
   color: var(--nm-text);
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
-  border-radius: 0.5rem;
-  padding: 0.35rem 0.85rem;
+  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-2) var(--nm-space-3);
   cursor: pointer;
 }
 
@@ -120,55 +188,64 @@ body {
 }
 
 .nm-dashboard__window {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--nm-space-3);
   color: var(--nm-muted);
-  font-size: 0.85rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-dashboard__groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--nm-col-wide), 1fr));
+  gap: var(--nm-space-4);
+  margin-bottom: var(--nm-space-5);
 }
 
 .nm-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-4);
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
-  border-radius: 0.75rem;
-  padding: 1rem 1.25rem;
+  border-radius: var(--nm-radius-lg);
+  padding: var(--nm-space-4) var(--nm-space-5);
 }
 
 .nm-group__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-group__title {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--nm-text-lg);
+}
+
+.nm-group__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
 }
 
 .nm-group__hint {
-  margin: 0.15rem 0 0;
+  margin: 0;
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
   max-width: 22rem;
 }
 
 .nm-group__metrics,
 .nm-target__metrics {
   display: flex;
-  gap: 1.5rem;
-  margin: 0.85rem 0 0;
+  gap: var(--nm-space-5);
+  margin: 0;
 }
 
 .nm-group__metrics dt,
 .nm-target__metrics dt {
-  color: var(--nm-muted);
-  font-size: 0.72rem;
+  color: var(--nm-text-secondary);
+  font-size: var(--nm-text-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -180,35 +257,35 @@ body {
 }
 
 .nm-group__metrics dd {
-  font-size: 1.2rem;
+  font-size: var(--nm-text-xl);
 }
 
 .nm-group__distribution {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--nm-space-2);
   list-style: none;
-  margin: 0.85rem 0 0;
+  margin: 0;
   padding: 0;
 }
 
 .nm-group__targets {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-target {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.25rem 1rem;
+  gap: var(--nm-space-1) var(--nm-space-4);
   align-items: center;
-  padding: 0.6rem 0.75rem;
+  padding: var(--nm-space-2) var(--nm-space-3);
   border: 1px solid var(--nm-border);
-  border-radius: 0.5rem;
+  border-radius: var(--nm-radius-md);
 }
 
 .nm-target__identity {
@@ -223,7 +300,7 @@ body {
 
 .nm-target__address {
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -232,39 +309,39 @@ body {
 .nm-target__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--nm-space-1);
   justify-content: flex-end;
 }
 
 .nm-target__metrics {
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-badge {
   border: 1px solid var(--nm-border);
-  border-radius: 999px;
-  padding: 0.05rem 0.5rem;
-  font-size: 0.72rem;
-  color: var(--nm-muted);
+  border-radius: var(--nm-radius-pill);
+  padding: var(--nm-space-1) var(--nm-space-2);
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-secondary);
   white-space: nowrap;
 }
 
 .nm-badge--warn {
-  color: var(--nm-warn);
-  border-color: var(--nm-warn);
+  color: var(--nm-degraded);
+  border-color: var(--nm-degraded);
 }
 
 .nm-health {
-  border-radius: 999px;
-  padding: 0.05rem 0.55rem;
-  font-size: 0.75rem;
+  border-radius: var(--nm-radius-pill);
+  padding: var(--nm-space-1) var(--nm-space-2);
+  font-size: var(--nm-text-xs);
   white-space: nowrap;
   border: 1px solid currentcolor;
 }
 
 .nm-health--lg {
-  font-size: 0.9rem;
-  padding: 0.2rem 0.75rem;
+  font-size: var(--nm-text-sm);
+  padding: var(--nm-space-1) var(--nm-space-3);
 }
 
 .nm-health--ok {
@@ -296,20 +373,20 @@ body {
   max-width: 34rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--nm-space-5);
 }
 
 .nm-field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-field--inline {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: var(--nm-space-1) var(--nm-space-2);
 }
 
 .nm-field--inline .nm-field__hint {
@@ -323,7 +400,7 @@ body {
 .nm-field__hint {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-field select,
@@ -332,29 +409,29 @@ body {
   color: var(--nm-text);
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
-  border-radius: 0.5rem;
-  padding: 0.35rem 0.5rem;
+  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-2) var(--nm-space-2);
   max-width: 18rem;
 }
 
 .nm-settings__privacy {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
   border-top: 1px solid var(--nm-border);
-  padding-top: 1rem;
+  padding-top: var(--nm-space-4);
 }
 
 .nm-panel {
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
-  border-radius: 0.75rem;
-  padding: 1.25rem 1.5rem;
+  border-radius: var(--nm-radius-lg);
+  padding: var(--nm-space-5) var(--nm-space-5);
 }
 
 .nm-panel__heading {
-  margin: 0 0 1rem;
-  font-size: 1rem;
+  margin: 0 0 var(--nm-space-4);
+  font-size: var(--nm-text-md);
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--nm-muted);
@@ -363,12 +440,12 @@ body {
 .nm-facts {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.5rem 1.5rem;
+  gap: var(--nm-space-2) var(--nm-space-5);
   margin: 0;
 }
 
 .nm-facts dt {
-  color: var(--nm-muted);
+  color: var(--nm-text-secondary);
 }
 
 .nm-facts dd {
@@ -377,7 +454,7 @@ body {
 }
 
 .nm-state--degraded {
-  color: var(--nm-warn);
+  color: var(--nm-degraded);
 }
 
 .nm-state--pending {
@@ -389,53 +466,56 @@ body {
 .nm-apps {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-apps__flow {
   margin: 0;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--nm-warn);
-  border-radius: 0.5rem;
-  color: var(--nm-warn);
-  font-size: 0.85rem;
+  padding: var(--nm-space-2) var(--nm-space-3);
+  border: 1px solid var(--nm-degraded);
+  border-radius: var(--nm-radius-md);
+  color: var(--nm-degraded);
+  font-size: var(--nm-text-sm);
 }
 
 .nm-apps__window {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.85rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-apps__list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-3);
   border: 1px solid var(--nm-border);
-  border-radius: 0.75rem;
+  border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
-  padding: 1rem;
+  padding: var(--nm-space-4);
 }
 
 .nm-picker__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-picker__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--nm-text-md);
 }
 
 .nm-picker__hint {
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
 }
 
 /*
@@ -449,28 +529,26 @@ body {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-  margin-top: 0.5rem;
+  gap: var(--nm-space-1) var(--nm-space-3);
 }
 
 .nm-picker__toggle {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
+  gap: var(--nm-space-2);
+  font-size: var(--nm-text-sm);
 }
 
 .nm-picker__hidden {
   color: var(--nm-muted);
-  font-size: 0.75rem;
+  font-size: var(--nm-text-xs);
 }
 
 .nm-picker__search {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.75rem;
-  font-size: 0.8rem;
+  gap: var(--nm-space-1);
+  font-size: var(--nm-text-sm);
   color: var(--nm-muted);
 }
 
@@ -478,18 +556,18 @@ body {
   background: var(--nm-bg);
   color: var(--nm-text);
   border: 1px solid var(--nm-border);
-  border-radius: 0.4rem;
-  padding: 0.4rem 0.6rem;
+  border-radius: var(--nm-radius-md);
+  padding: var(--nm-space-2) var(--nm-space-2);
   font: inherit;
 }
 
 .nm-picker__list {
   list-style: none;
-  margin: 0.75rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--nm-space-2);
   max-height: 16rem;
   overflow-y: auto;
 }
@@ -500,15 +578,15 @@ body {
      column collapses to nothing when the process is free, which is the common case. */
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.3rem 0.5rem;
+  gap: var(--nm-space-3);
+  padding: var(--nm-space-1) var(--nm-space-2);
   border: 1px solid var(--nm-border);
-  border-radius: 0.4rem;
+  border-radius: var(--nm-radius-md);
 }
 
 .nm-picker__owner {
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
   white-space: nowrap;
 }
 
@@ -522,30 +600,41 @@ body {
 .nm-picker__pid,
 .nm-picker__more {
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-picker__more {
-  margin: 0.5rem 0 0;
+  margin: 0;
 }
 
+/*
+ * A card sets the distances inside it, once.
+ *
+ * It was a plain block whose children each chose their own top margin — 1.1rem, 1rem,
+ * 0.85rem, 0.75rem, 0.35rem — so the distances between them were arbitrary and, because
+ * adjacent margins collapse, unpredictable as well. One flex column with one gap is the
+ * whole fix, and no  survives inside a card anywhere in this file.
+ */
 .nm-appcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-4);
   border: 1px solid var(--nm-border);
-  border-radius: 0.75rem;
+  border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
-  padding: 1rem;
+  padding: var(--nm-space-4);
 }
 
 .nm-appcard__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-appcard__title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--nm-text-lg);
 }
 
 /* The processes an application currently consists of. Listed rather than counted: a
@@ -553,29 +642,36 @@ body {
 .nm-appcard__processes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem 0.75rem;
-  margin: 0.15rem 0 0;
+  gap: var(--nm-space-1) var(--nm-space-3);
+  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 /* One chart per application, every endpoint on it. The list below is the authority on
    health; this answers "which of these is the odd one out", which a column of separate
    sparklines cannot. */
 .nm-endpointchart {
-  margin-top: 0.75rem;
   width: 100%;
   /* Reserves the chart's height before it is drawn. Without it the card jumps as data
      arrives, and a chart that failed to draw is invisible rather than obviously absent. */
   min-height: 200px;
 }
 
+/* The chart and its caption, with a tighter gap of their own: the card's rhythm would
+   otherwise push a caption away from the picture it captions. */
+.nm-appcard__chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+}
+
 .nm-appcard__chartnote {
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 /* Raised and dimmed, never shown and hidden: the endpoint the user is not looking at is
@@ -591,7 +687,7 @@ body {
 .nm-endpoint__select {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--nm-space-2);
   padding: 0;
   border: 0;
   background: none;
@@ -610,14 +706,14 @@ body {
 .nm-endpoint__swatch {
   width: 0.65rem;
   height: 0.65rem;
-  border-radius: 0.15rem;
+  border-radius: var(--nm-radius-sm);
   flex: none;
 }
 
 /* Only ever present when the probe cannot follow the application. It is a disclosure, not
    a decoration, so it stands out from the line it follows. */
 .nm-endpoint__egress-probe {
-  color: var(--nm-warn);
+  color: var(--nm-degraded);
 }
 
 .nm-visually-hidden {
@@ -635,28 +731,26 @@ body {
 .nm-distribution {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--nm-space-2);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.nm-appcard__distribution {
-  margin: 0.85rem 0 0;
-}
-
 /* The match traffic first, the supporting connections below and folded when they are all
    clean. A group is a section rather than a filter: nothing is removed from the page. */
 .nm-endpointgroup {
-  margin: 1.1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
 }
 
 .nm-endpointgroup__header {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.15rem 0;
+  gap: var(--nm-space-2);
+  padding: var(--nm-space-1) 0;
 }
 
 details.nm-endpointgroup > summary {
@@ -665,12 +759,12 @@ details.nm-endpointgroup > summary {
 
 .nm-endpointgroup__title {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: var(--nm-text-md);
 }
 
 .nm-endpointgroup__hint {
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-distribution--inline {
@@ -679,27 +773,27 @@ details.nm-endpointgroup > summary {
 
 .nm-appcard__endpoints {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-endpoint {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.25rem 1rem;
+  gap: var(--nm-space-1) var(--nm-space-4);
   align-items: center;
-  padding: 0.6rem 0.75rem;
+  padding: var(--nm-space-2) var(--nm-space-3);
   border: 1px solid var(--nm-border);
-  border-radius: 0.5rem;
+  border-radius: var(--nm-radius-md);
 }
 
 .nm-endpoint__identity {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--nm-space-2);
   min-width: 0;
 }
 
@@ -711,8 +805,8 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-endpoint__transport {
-  color: var(--nm-muted);
-  font-size: 0.72rem;
+  color: var(--nm-text-secondary);
+  font-size: var(--nm-text-xs);
   letter-spacing: 0.04em;
 }
 
@@ -730,30 +824,30 @@ details.nm-endpointgroup > summary {
 .nm-endpoint__age {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  color: var(--nm-muted);
-  font-size: 0.72rem;
+  gap: var(--nm-space-1);
+  color: var(--nm-text-secondary);
+  font-size: var(--nm-text-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .nm-endpoint__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--nm-space-1);
   justify-content: flex-end;
 }
 
 .nm-endpoint__metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: var(--nm-space-4);
   margin: 0;
   grid-column: 1 / -1;
 }
 
 .nm-endpoint__metrics dt {
-  color: var(--nm-muted);
-  font-size: 0.72rem;
+  color: var(--nm-text-secondary);
+  font-size: var(--nm-text-xs);
 }
 
 .nm-endpoint__metrics dd {
@@ -765,7 +859,7 @@ details.nm-endpointgroup > summary {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.72rem;
+  font-size: var(--nm-text-xs);
 }
 
 .nm-health--carryingTraffic {
@@ -788,18 +882,18 @@ details.nm-endpointgroup > summary {
 .nm-endpoint__columns {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--nm-col-narrow), 1fr));
+  gap: var(--nm-space-2);
 }
 
 .nm-path,
 .nm-flow {
   grid-column: 1 / -1;
   display: grid;
-  gap: 0.35rem;
-  padding: 0.6rem 0.75rem;
+  gap: var(--nm-space-2);
+  padding: var(--nm-space-2) var(--nm-space-3);
   border: 1px dashed var(--nm-border);
-  border-radius: 0.5rem;
+  border-radius: var(--nm-radius-md);
   align-content: start;
 }
 
@@ -813,12 +907,12 @@ details.nm-endpointgroup > summary {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
 }
 
 .nm-panel__title {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
   font-weight: 600;
 }
 
@@ -826,7 +920,7 @@ details.nm-endpointgroup > summary {
 .nm-panel__where {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.72rem;
+  font-size: var(--nm-text-xs);
 }
 
 /*
@@ -840,18 +934,18 @@ details.nm-endpointgroup > summary {
 .nm-network {
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
+  gap: var(--nm-space-6);
 }
 
 .nm-network__half {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
 }
 
 .nm-network__heading {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--nm-text-md);
   font-weight: 600;
 }
 
@@ -864,66 +958,66 @@ details.nm-endpointgroup > summary {
 .nm-status {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--nm-space-5);
 }
 
 .nm-status__cadence,
 .nm-status__caveat {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-status__shelf {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
 }
 
 .nm-status__shelfhead {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
   flex-wrap: wrap;
 }
 
 .nm-status__shelftitle {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--nm-text-md);
 }
 
 .nm-status__shelfhint {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-status__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(var(--nm-col-narrow), 1fr));
+  gap: var(--nm-space-3);
 }
 
 .nm-service {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.85rem 1rem;
+  gap: var(--nm-space-2);
+  padding: var(--nm-space-3) var(--nm-space-4);
   background: var(--nm-surface);
   border: 1px solid var(--nm-border);
-  border-radius: 0.6rem;
+  border-radius: var(--nm-radius-lg);
 }
 
 .nm-service__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
 }
 
 .nm-service__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--nm-text-md);
 }
 
 .nm-service__meta {
@@ -931,25 +1025,25 @@ details.nm-endpointgroup > summary {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--nm-space-3);
 }
 
 /* The headline figure was a bare number: which round trip on this card, over what, across
    what, was nowhere on screen. It now travels with its own label. */
 .nm-service__rttlabel {
-  color: var(--nm-muted);
-  font-size: 0.7rem;
+  color: var(--nm-text-secondary);
+  font-size: var(--nm-text-xs);
 }
 
 .nm-service__rtt {
   font-variant-numeric: tabular-nums;
-  font-size: 1.15rem;
+  font-size: var(--nm-text-lg);
   margin-inline-end: auto;
 }
 
 .nm-service__checked {
   color: var(--nm-muted);
-  font-size: 0.75rem;
+  font-size: var(--nm-text-xs);
 }
 
 /*
@@ -957,8 +1051,8 @@ details.nm-endpointgroup > summary {
  * status page whose data quietly stopped arriving looks exactly like one reporting calm.
  */
 .nm-service__stale {
-  color: var(--nm-warn);
-  font-size: 0.75rem;
+  color: var(--nm-degraded);
+  font-size: var(--nm-text-xs);
 }
 
 /*
@@ -971,22 +1065,22 @@ details.nm-endpointgroup > summary {
 .nm-status__legend {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.6rem 0.75rem;
+  gap: var(--nm-space-1);
+  padding: var(--nm-space-2) var(--nm-space-3);
   border: 1px solid var(--nm-border);
-  border-radius: 8px;
+  border-radius: var(--nm-radius-md);
 }
 
 .nm-status__legendtitle {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--nm-text-sm);
   font-weight: 600;
 }
 
 .nm-status__legendnote {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.75rem;
+  font-size: var(--nm-text-xs);
 }
 
 .nm-status__marks {
@@ -995,15 +1089,15 @@ details.nm-endpointgroup > summary {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.9rem;
-  font-size: 0.72rem;
-  color: var(--nm-muted);
+  gap: var(--nm-space-1) var(--nm-space-3);
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-secondary);
 }
 
 .nm-status__mark {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--nm-space-1);
 }
 
 /* The swatch is the same cell the strip draws, at a size a legend can carry. */
@@ -1019,26 +1113,26 @@ details.nm-endpointgroup > summary {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-service__endpoint {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--nm-space-2);
 }
 
 .nm-service__endpointhead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--nm-space-2);
   flex-wrap: wrap;
 }
 
 .nm-service__address {
   color: var(--nm-muted);
-  font-size: 0.75rem;
+  font-size: var(--nm-text-xs);
   word-break: break-all;
 }
 
@@ -1046,12 +1140,12 @@ details.nm-endpointgroup > summary {
   margin: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  gap: var(--nm-space-1) var(--nm-space-2);
+  font-size: var(--nm-text-xs);
 }
 
 .nm-service__metrics dt {
-  color: var(--nm-muted);
+  color: var(--nm-text-secondary);
 }
 
 .nm-service__metrics dd {
@@ -1070,7 +1164,7 @@ details.nm-endpointgroup > summary {
 .nm-timeline__strip {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--nm-space-1);
 }
 
 .nm-timeline {
@@ -1078,9 +1172,9 @@ details.nm-endpointgroup > summary {
   margin: 0;
   padding: 0;
   display: flex;
-  gap: 2px;
+  gap: var(--nm-hairline);
   height: 18px;
-  border-radius: 3px;
+  border-radius: var(--nm-radius-sm);
 }
 
 /* One tab stop for the whole strip, with the arrow keys inside it: a stop per cell would
@@ -1094,7 +1188,7 @@ details.nm-endpointgroup > summary {
   margin: 0;
   min-height: 1.1rem;
   color: var(--nm-muted);
-  font-size: 0.7rem;
+  font-size: var(--nm-text-xs);
 }
 
 /* The cell currently being read, so the pointer and the arrow keys land somewhere visible
@@ -1107,13 +1201,13 @@ details.nm-endpointgroup > summary {
 .nm-timeline__empty {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.75rem;
+  font-size: var(--nm-text-xs);
 }
 
 .nm-check {
   flex: 1 1 0;
   min-width: 3px;
-  border-radius: 2px;
+  border-radius: var(--nm-radius-sm);
   background: var(--nm-unknown);
 }
 
@@ -1155,9 +1249,9 @@ details.nm-endpointgroup > summary {
 .nm-verdict {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.6rem 0.85rem;
-  border-radius: 0.5rem;
+  gap: var(--nm-space-1);
+  padding: var(--nm-space-2) var(--nm-space-3);
+  border-radius: var(--nm-radius-md);
   border: 1px solid var(--nm-border);
   border-left-width: 4px;
   background: var(--nm-surface);
@@ -1166,14 +1260,14 @@ details.nm-endpointgroup > summary {
 .nm-verdict__headline {
   margin: 0;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-verdict__scope,
 .nm-verdict__advice {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 /* States of not knowing stay grey: neither reassuring nor alarming. */
@@ -1204,12 +1298,12 @@ details.nm-endpointgroup > summary {
   margin: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.2rem 0.6rem;
-  font-size: 0.75rem;
+  gap: var(--nm-space-1) var(--nm-space-2);
+  font-size: var(--nm-text-xs);
 }
 
 .nm-pool__metrics dt {
-  color: var(--nm-muted);
+  color: var(--nm-text-secondary);
 }
 
 .nm-pool__metrics dd {
@@ -1224,7 +1318,7 @@ details.nm-endpointgroup > summary {
 .nm-help {
   position: relative;
   display: inline-flex;
-  margin-left: 0.3rem;
+  margin-left: var(--nm-space-1);
 }
 
 .nm-help__mark {
@@ -1235,7 +1329,7 @@ details.nm-endpointgroup > summary {
   border-radius: 50%;
   background: transparent;
   color: var(--nm-muted);
-  font-size: 0.62rem;
+  font-size: var(--nm-text-xs);
   font-style: italic;
   line-height: 1;
   cursor: help;
@@ -1258,16 +1352,16 @@ details.nm-endpointgroup > summary {
 .nm-help__panel {
   position: absolute;
   z-index: 20;
-  top: 1.4rem;
+  top: var(--nm-space-5);
   left: 0;
   width: min(22rem, 60vw);
   display: block;
-  padding: 0.5rem 0.6rem;
+  padding: var(--nm-space-2) var(--nm-space-2);
   border: 1px solid var(--nm-border);
-  border-radius: 0.4rem;
+  border-radius: var(--nm-radius-md);
   background: var(--nm-surface);
   box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
   font-weight: 400;
   line-height: 1.35;
   color: var(--nm-text);
@@ -1285,7 +1379,7 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-help__more {
-  margin-top: 0.35rem;
+  margin-top: var(--nm-space-2);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1298,8 +1392,8 @@ details.nm-endpointgroup > summary {
 /* One line until asked, because it is the same explanation every time — and the most
    important one in the application. */
 .nm-whyping {
-  margin: 0.5rem 0 0;
-  font-size: 0.78rem;
+  margin: 0;
+  font-size: var(--nm-text-sm);
   color: var(--nm-muted);
 }
 
@@ -1308,19 +1402,19 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-whyping__points {
-  margin: 0.4rem 0 0;
-  padding-left: 1.1rem;
+  margin: var(--nm-space-2) 0 0;
+  /* Inside the disclosure, under its own summary — not between two of a card`s children. */
+  padding-left: var(--nm-space-4);
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--nm-space-1);
   line-height: 1.4;
 }
 
 /* Level two: everything that qualifies a number rather than being one. */
 .nm-endpoint__details {
   grid-column: 1 / -1;
-  margin-top: 0.4rem;
-  font-size: 0.78rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-endpoint__details > summary {
@@ -1329,14 +1423,14 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-endpoint__detail-list {
-  margin: 0.5rem 0 0;
+  margin: var(--nm-space-2) 0 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.4rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--nm-col-narrow), 1fr));
+  gap: var(--nm-space-2) var(--nm-space-4);
 }
 
 .nm-endpoint__detail-list dt {
-  color: var(--nm-muted);
+  color: var(--nm-text-secondary);
 }
 
 .nm-endpoint__detail-list dd {
@@ -1347,18 +1441,18 @@ details.nm-endpointgroup > summary {
   max-width: 46rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--nm-space-4);
 }
 
 .nm-help-page__title {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--nm-text-lg);
 }
 
 .nm-help-page__subtitle {
   margin: 0;
   color: var(--nm-muted);
-  font-size: 0.85rem;
+  font-size: var(--nm-text-sm);
 }
 
 .nm-help-page__intro {
@@ -1367,9 +1461,12 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-help-page__section {
-  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+  padding: var(--nm-space-3);
   border: 1px solid var(--nm-border);
-  border-radius: 0.5rem;
+  border-radius: var(--nm-radius-md);
   background: var(--nm-surface);
 }
 
@@ -1378,8 +1475,8 @@ details.nm-endpointgroup > summary {
 }
 
 .nm-help-page__heading {
-  margin: 0 0 0.4rem;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: var(--nm-text-md);
 }
 
 .nm-help-page__body {

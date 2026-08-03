@@ -49,6 +49,17 @@ const AXIS_LABEL_SIZE = 20;
 const AXIS_LABEL_FONT = '12px "Segoe UI", system-ui, sans-serif';
 
 /**
+ * The chart's own share of the palette, spelled out because a canvas cannot take a class.
+ *
+ * Kept in step with `--nm-text-secondary` and `--nm-border` in `styles.css` by hand. Reading
+ * them off the document at draw time was considered and rejected: it is a layout read on a
+ * path that runs whenever the set of lines changes, for two colours that change when the
+ * stylesheet does and never otherwise.
+ */
+const AXIS_STROKE = '#b1bac4';
+const GRID_STROKE = '#30363d';
+
+/**
  * Every endpoint of one application on one time axis.
  *
  * The page's list of rows answers "how is this endpoint". The question a user actually has
@@ -152,9 +163,9 @@ export const EndpointChart = ({
           },
           axes: [
             {
-              stroke: '#94a3b8',
-              grid: { stroke: '#1e3a5f' },
-              ticks: { stroke: '#1e3a5f' },
+              stroke: AXIS_STROKE,
+              grid: { stroke: GRID_STROKE },
+              ticks: { stroke: GRID_STROKE },
               // Time since monitoring began, as minutes and seconds. Not an age: the axis is
               // anchored at the start, which is what lets the drawing grow from the left.
               values: (_chart, splits) =>
@@ -164,9 +175,9 @@ export const EndpointChart = ({
               labelFont: AXIS_LABEL_FONT,
             },
             {
-              stroke: '#94a3b8',
-              grid: { stroke: '#1e3a5f' },
-              ticks: { stroke: '#1e3a5f' },
+              stroke: AXIS_STROKE,
+              grid: { stroke: GRID_STROKE },
+              ticks: { stroke: GRID_STROKE },
               // Plain milliseconds rather than uPlot's exponent notation: the reader is
               // comparing latencies, not reading a science plot.
               values: (_chart, splits) =>
