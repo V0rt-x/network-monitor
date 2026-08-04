@@ -54,6 +54,20 @@ export const commands = {
 	 */
 	forgetApp: (app: number) => __TAURI_INVOKE<void>("forget_app", { app }),
 	/**
+	 *  One application's chart history, as far back as the ring reaches.
+	 * 
+	 *  **Fetched, never pushed**, and that is the whole design of the deeper chart: the event
+	 *  goes on carrying the last forty slots at the emission rate, so the steady-state cost of a
+	 *  running session does not change at all, while an hour of depth is asked for a handful of
+	 *  times a session -- when a card mounts, when the window is shown again after being hidden,
+	 *  and when the reader scrolls past what they already hold.
+	 * 
+	 *  The backfill on show is what stops a hidden window leaving a gap, and that matters more
+	 *  than convenience: a gap on this chart means packets that did not come back, so one the UI
+	 *  created by not listening would be a fabricated loss.
+	 */
+	chartHistory: (app: number) => typedError<ChartHistoryView, null>(__TAURI_INVOKE("chart_history", { app })),
+	/**
 	 *  Gives the tray menu its labels, translated by the UI.
 	 * 
 	 *  Returns whether the menu is now in place. It is deliberately not an error type: a tray
@@ -182,6 +196,19 @@ export type AppView = {
 	 */
 	chartElapsedSecs: (number | null)[],
 	/**
+	 *  Wall-clock milliseconds at elapsed zero, so the axis can be read as a clock.
+	 * 
+	 *  "−45 s" answers "how long ago", and the reader's question after a stutter is "was that
+	 *  when it happened" — which needs a clock. The axis is formatted as a time of day
+	 *  through `Intl`; the *measurement* and the alignment stay on the monotonic clock, and
+	 *  this is display only, which is exactly what `CLAUDE.md` permits.
+	 * 
+	 *  Recomputed on every emission as the wall clock now minus the monotonic elapsed since
+	 *  the chart began, so a system clock adjusted mid-session moves every label together and
+	 *  **no sample moves relative to its neighbours**.
+	 */
+	chartEpochMs: number | null,
+	/**
 	 *  Its endpoints, grouped by transport — the match traffic first — and worst first
 	 *  within each group.
 	 * 
@@ -271,6 +298,49 @@ export type ApplicationListView = {
 	 *  is running nothing.
 	 */
 	problem: ApplicationListProblem | null,
+};
+
+/**
+ *  One endpoint's stored history, as far back as the ring reaches.
+ * 
+ *  Aligned to [`ChartHistoryView::elapsed_secs`], which every endpoint of the application
+ *  shares — the same ladder the pushed window sits on, so the UI concatenates two aligned
+ *  arrays rather than deciding anything about where they meet.
+ */
+export type ChartHistoryEntryView = {
+	/**  Which endpoint it belongs to. */
+	key: string,
+	/**
+	 *  Round-trip time per slot, oldest first. A slot with nothing in it is `null` — a gap,
+	 *  never a zero and never an interpolation.
+	 */
+	rttMs: (number | null)[],
+	/**
+	 *  Round trip to the route's reported hop, in the same slots.
+	 * 
+	 *  Never a round trip to the endpoint and never merged with one: it belongs to a router
+	 *  short of it, at an unknown distance. Kept as its own array here for the same reason the
+	 *  chart draws it as its own dashed line.
+	 */
+	pathMs: (number | null)[],
+};
+
+/**
+ *  One application's chart history, fetched rather than pushed.
+ * 
+ *  The event goes on carrying the last forty slots at the emission rate; this is the hour
+ *  behind them, asked for when a card mounts, when the window is shown again after being
+ *  hidden, and when the reader scrolls past what they already hold.
+ * 
+ *  **A window that was hidden leaves no gap**, because this is what closes it — and that
+ *  matters more than convenience: a gap on this chart means packets that did not come back,
+ *  so one the UI created by not listening would be a fabricated loss.
+ */
+export type ChartHistoryView = {
+	/**  Seconds since monitoring began for each slot, ascending. */
+	elapsedSecs: (number | null)[],
+	/**  One entry per endpoint with any history at all. */
+	endpoints: ChartHistoryEntryView[],
 };
 
 /**
@@ -1261,6 +1331,15 @@ export type VerdictView =
 "gameServersPartlyUnreachable";
 
 /* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
+
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
 function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {

@@ -888,6 +888,37 @@ body {
   flex: none;
 }
 
+/* The way back to the present, and what the view covers. Both belong under the picture:
+   one is an action, the other is level two. */
+.nm-endpointchart__controls {
+  display: flex;
+  align-items: baseline;
+  gap: var(--nm-space-3);
+}
+
+.nm-endpointchart__span {
+  color: var(--nm-muted);
+  font-size: var(--nm-text-xs);
+}
+
+.nm-endpointchart__span > summary {
+  cursor: pointer;
+}
+
+.nm-endpointchart__span p {
+  margin: var(--nm-space-1) 0 0;
+  max-width: var(--nm-col-wide);
+}
+
+/* Dragging the chart pans it, so the cursor has to say so before the drag starts. */
+.nm-endpointchart {
+  cursor: grab;
+}
+
+.nm-endpointchart:active {
+  cursor: grabbing;
+}
+
 .nm-endpointchart__readout {
   margin: 0;
   min-height: 1.1rem;

@@ -141,13 +141,15 @@ impl Grid {
     /// Whole steps from the anchor, so the boundaries are the same for every endpoint of an
     /// application and do not move between emissions. That is the stepping: the ladder
     /// advances when `now` crosses a boundary, not continuously.
-    fn slot_of(&self, start: Instant, at: Instant) -> u64 {
+    #[must_use]
+    pub fn slot_of(&self, start: Instant, at: Instant) -> u64 {
         let elapsed = at.saturating_duration_since(start);
         u64::try_from(elapsed.as_nanos() / self.step.as_nanos().max(1)).unwrap_or(u64::MAX)
     }
 
     /// The newest slot the window may show.
-    fn newest_slot(&self, start: Instant, now: Instant) -> u64 {
+    #[must_use]
+    pub fn newest_slot(&self, start: Instant, now: Instant) -> u64 {
         self.slot_of(start, now)
     }
 
@@ -156,9 +158,133 @@ impl Grid {
     /// Zero until a whole window has elapsed, which is what anchors the drawing at the left
     /// edge while it grows; after that it advances one slot at a time and the window
     /// scrolls.
-    fn first_slot(&self, start: Instant, now: Instant) -> u64 {
+    #[must_use]
+    pub fn first_slot(&self, start: Instant, now: Instant) -> u64 {
         let span = u64::try_from(self.points.saturating_sub(1)).unwrap_or(u64::MAX);
         self.newest_slot(start, now).saturating_sub(span)
+    }
+
+    /// Seconds since `start` for `count` slots beginning at absolute slot `first`.
+    ///
+    /// The same ladder [`Grid::elapsed_secs`] produces, for a window the caller names rather
+    /// than the one ending at `now` — which is what lets a history reaching back an hour be
+    /// stitched onto the live window by slot number rather than by guesswork.
+    #[must_use]
+    pub fn elapsed_secs_from(&self, first: u64, count: usize) -> Vec<f64> {
+        let step = self.step.as_secs_f64();
+        (0..count)
+            .map(|index| {
+                // A session is hours and a slot is seconds; both convert exactly.
+                #[allow(clippy::cast_precision_loss)]
+                let slot = first.saturating_add(index as u64) as f64;
+                slot * step
+            })
+            .collect()
+    }
+}
+
+/// A long ring of slot values, so a chart can look further back than it is sent.
+///
+/// # Why the ring holds slots rather than samples
+///
+/// The chart the UI is *pushed* holds two minutes, which cannot answer "is this worse than it
+/// was at the start of the match". Holding an hour by sending an hour is not an option: at the
+/// enforced ceiling that is 1 200 slots × 2 series × 16 endpoints × 5 applications, once a
+/// second, into a `WebView` that is supposed to cost less than 1 % of a core.
+///
+/// So the depth lives here and is *fetched*: a ring of already-bucketed slot values, 8 bytes
+/// each, ≈ 19 KB per endpoint for an hour and ≈ 1.5 MB at the ceiling — inside the 50 MB core
+/// budget, and nothing crosses the IPC boundary until a reader asks.
+///
+/// # Why merging a window is safe to repeat
+///
+/// [`SlotRing::merge`] takes the same worst-per-slot window [`Grid::place`] already computes
+/// on the emission beat and folds it in by taking the larger of the two. A slot is therefore
+/// idempotent under re-merging and only ever grows towards the worst sample it saw — which is
+/// the rule the whole module keeps, so the fetched history and the pushed window can never
+/// disagree about a slot they both cover.
+///
+/// A slot with nothing in it stays [`None`], here as everywhere: a gap is packets that did not
+/// come back, never a zero and never an interpolation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlotRing {
+    /// Value per cell, indexed by absolute slot modulo capacity.
+    values: Vec<Option<f64>>,
+    /// Which absolute slot each cell currently holds, so a wrap cannot be read as data.
+    slots: Vec<Option<u64>>,
+}
+
+impl SlotRing {
+    /// Builds a ring holding `capacity` slots.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ZeroCapacity`] for a ring with no slots at all.
+    pub fn new(capacity: usize) -> Result<Self, Error> {
+        if capacity == 0 {
+            return Err(Error::ZeroCapacity);
+        }
+        Ok(Self {
+            values: vec![None; capacity],
+            slots: vec![None; capacity],
+        })
+    }
+
+    /// How many slots it holds.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Folds a window of slot values, oldest first, beginning at absolute slot `first`.
+    ///
+    /// A cell holding a different slot is overwritten — that slot has scrolled out of the
+    /// ring — and a cell holding the same slot keeps whichever value is larger, which is the
+    /// worst-per-slot rule applied across repeated merges of overlapping windows.
+    pub fn merge(&mut self, first: u64, values: &[Option<f64>]) {
+        let capacity = self.capacity();
+        for (offset, value) in values.iter().enumerate() {
+            let slot = first.saturating_add(offset as u64);
+            let index = usize::try_from(slot % capacity as u64).unwrap_or(0);
+            let (Some(cell), Some(held)) = (self.values.get_mut(index), self.slots.get_mut(index))
+            else {
+                continue;
+            };
+            if *held != Some(slot) {
+                *held = Some(slot);
+                *cell = *value;
+            } else if let Some(fresh) = *value {
+                *cell = Some(cell.map_or(fresh, |kept: f64| kept.max(fresh)));
+            }
+        }
+    }
+
+    /// The values for `count` slots beginning at absolute slot `first`, oldest first.
+    ///
+    /// A slot the ring never held, or one that has scrolled out of it, is [`None`] — which is
+    /// the same thing the chart draws for a slot nothing answered in, and deliberately so: a
+    /// reader who scrolls past the end of the history sees the line stop rather than a
+    /// fabricated one continue.
+    #[must_use]
+    pub fn window(&self, first: u64, count: usize) -> Vec<Option<f64>> {
+        let capacity = self.capacity();
+        (0..count)
+            .map(|offset| {
+                let slot = first.saturating_add(offset as u64);
+                let index = usize::try_from(slot % capacity as u64).unwrap_or(0);
+                if self.slots.get(index).copied().flatten() == Some(slot) {
+                    self.values.get(index).copied().flatten()
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Whether it has ever been given anything.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.slots.iter().all(Option::is_none)
     }
 }
 
@@ -411,6 +537,27 @@ mod tests {
     }
 
     #[test]
+    fn the_axis_can_be_asked_for_a_window_the_caller_names() {
+        // What lets a fetched history be stitched onto the pushed window by slot number
+        // rather than by guessing where the two meet.
+        let grid = Grid::new(Duration::from_secs(3), 5).unwrap();
+        assert_eq!(grid.elapsed_secs_from(10, 4), vec![30.0, 33.0, 36.0, 39.0]);
+        assert_eq!(grid.elapsed_secs_from(0, 0), Vec::<f64>::new());
+    }
+
+    #[test]
+    fn the_slot_a_moment_belongs_to_is_the_same_for_every_endpoint() {
+        let start = Instant::now();
+        let grid = Grid::new(Duration::from_secs(3), 5).unwrap();
+        assert_eq!(grid.slot_of(start, start + Duration::from_millis(2_999)), 0);
+        assert_eq!(grid.slot_of(start, start + Duration::from_secs(3)), 1);
+        // The window ending at `now` is the last `points` of them, and never negative.
+        assert_eq!(grid.first_slot(start, start + Duration::from_secs(3)), 0);
+        assert_eq!(grid.first_slot(start, start + Duration::from_secs(30)), 6);
+        assert_eq!(grid.newest_slot(start, start + Duration::from_secs(30)), 10);
+    }
+
+    #[test]
     fn a_slow_endpoint_keeps_its_few_points_rather_than_none() {
         // A demoted endpoint is probed a tenth as often. Its line is sparse, which is the
         // truth about it, and it must still be on the chart.
@@ -427,5 +574,85 @@ mod tests {
         assert_eq!(placed[0], Some(1.0));
         assert_eq!(placed[10], Some(2.0));
         assert_eq!(placed[20], Some(3.0));
+    }
+}
+
+#[cfg(test)]
+mod ring_tests {
+    use super::*;
+
+    fn ring() -> SlotRing {
+        SlotRing::new(4).unwrap()
+    }
+
+    #[test]
+    fn rejects_a_ring_that_could_hold_nothing() {
+        assert_eq!(SlotRing::new(0).unwrap_err(), Error::ZeroCapacity);
+        assert!(ring().is_empty());
+    }
+
+    #[test]
+    fn gives_back_what_it_was_given() {
+        let mut ring = ring();
+        ring.merge(0, &[Some(1.0), None, Some(3.0)]);
+
+        assert_eq!(ring.window(0, 3), vec![Some(1.0), None, Some(3.0)]);
+        assert!(!ring.is_empty());
+    }
+
+    #[test]
+    fn a_slot_it_never_held_is_a_gap_rather_than_a_guess() {
+        // A reader who scrolls past the end of the history must see the line stop, not a
+        // fabricated one continue.
+        let mut ring = ring();
+        ring.merge(2, &[Some(5.0)]);
+
+        assert_eq!(ring.window(0, 4), vec![None, None, Some(5.0), None]);
+    }
+
+    #[test]
+    fn re_merging_an_overlapping_window_keeps_the_worst_sample() {
+        // The emission beat re-sends the same forty slots every second, so a slot is merged
+        // dozens of times. It must be idempotent, and it must keep the spike — the pushed
+        // window and the fetched history can never be allowed to disagree about a slot they
+        // both cover.
+        let mut ring = ring();
+        ring.merge(0, &[Some(9.0), Some(1.0)]);
+        ring.merge(0, &[Some(2.0), Some(4.0)]);
+
+        assert_eq!(ring.window(0, 2), vec![Some(9.0), Some(4.0)]);
+    }
+
+    #[test]
+    fn a_wrapped_cell_is_not_read_as_the_slot_it_used_to_hold() {
+        // The failure this exists to prevent: an hour-old value reappearing an hour later
+        // under a slot number it never belonged to, which would be a fabricated measurement.
+        let mut ring = ring();
+        ring.merge(0, &[Some(1.0), Some(2.0), Some(3.0), Some(4.0)]);
+        ring.merge(4, &[Some(5.0)]);
+
+        assert_eq!(ring.window(0, 1), vec![None], "slot 0 has scrolled out");
+        assert_eq!(ring.window(4, 1), vec![Some(5.0)]);
+        assert_eq!(ring.window(1, 3), vec![Some(2.0), Some(3.0), Some(4.0)]);
+    }
+
+    #[test]
+    fn a_gap_overwrites_a_value_from_a_slot_that_has_scrolled_away() {
+        // Overwriting a wrapped cell with `None` is what makes an outage in the newest hour
+        // read as an outage rather than as whatever was there an hour ago.
+        let mut ring = ring();
+        ring.merge(0, &[Some(1.0)]);
+        ring.merge(4, &[None]);
+
+        assert_eq!(ring.window(4, 1), vec![None]);
+    }
+
+    #[test]
+    fn an_hour_of_slots_costs_what_the_budget_was_told_it_would() {
+        // The figure the design argued from: 1 200 slots of 8 bytes is ~9.4 KB per series,
+        // two series per endpoint, eighty endpoints at the enforced ceiling.
+        let ring = SlotRing::new(1_200).unwrap();
+        assert_eq!(ring.capacity(), 1_200);
+        assert_eq!(ring.window(0, 1_200).len(), 1_200);
     }
 }

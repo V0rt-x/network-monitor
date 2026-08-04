@@ -2420,14 +2420,14 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P3 — the chart becomes navigable
 
-- [ ] **13. The x axis shows the time of day.** "−45 s" answers "how long ago" and the reader's
+- [x] **13. The x axis shows the time of day.** "−45 s" answers "how long ago" and the reader's
       question after a stutter is "was that when it happened" — which needs a clock. Absolute,
       no date, seconds shown (`14:32:05`), formatted through `Intl` with the active locale.
       The event carries the wall-clock stamp of the newest slot; wall clock **for display
       only**, which is what `CLAUDE.md` permits — the measurement and the alignment stay on the
       monotonic clock, and a system clock adjusted mid-session must not move a sample relative
       to its neighbours.
-- [ ] **14. Twenty minutes by default, scrollable back and zoomable.** The chart holds two
+- [x] **14. Twenty minutes by default, scrollable back and zoomable.** The chart holds two
       minutes today (`SERIES_POINTS = 40` at `CHART_STEP = 3 s`), which cannot answer "is this
       worse than it was at the start of the match".
       **The payload is the whole design problem here**, and it is why this is not simply a
@@ -2457,6 +2457,19 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       The zoom does **not** change the resolution: a slot is three seconds at every zoom level,
       because a chart that re-buckets under the reader shows a different spike from the one they
       zoomed in on.
+      — the ring is `nm_core::series::SlotRing`, fed on the emission beat by merging the same
+      worst-per-slot window the reports already carry: merging is idempotent and keeps the
+      larger value, so the fetched history and the pushed window can never disagree about a
+      slot they both cover, and a test asserts the seam is not a seam. `chart_history` is a
+      request over the monitor channel rather than a second push, and `AppView` gained one
+      number for the clock — the wall clock minus the *monotonic* elapsed, recomputed every
+      emission, so an adjusted system clock moves every label together and moves no sample
+      relative to its neighbours.
+      **The pan and zoom keys had to take a modifier.** 6.7 gave the bare arrows and
+      `Home`/`End` to the crosshair, which a reader uses far more often, so `Shift` moves the
+      view and `+`/`-` zoom it. The view window itself is `chartWindow.ts`, pure and tested:
+      it can never scroll into empty space at either end, it will not zoom past two minutes or
+      past the ring, and a window back at the right edge silently resumes following.
 
 ### P4 — the picker
 

@@ -43,7 +43,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use nm_core::address::AddressPolicy;
 use nm_core::edge::{EdgePolicy, EdgeReading, PathEdge};
@@ -55,7 +55,7 @@ use nm_core::health::HealthThresholds;
 use nm_core::history::SampleHistory;
 use nm_core::path::PathTrace;
 use nm_core::sample::ProbeSample;
-use nm_core::series::Grid;
+use nm_core::series::{Grid, SlotRing};
 use nm_core::settle::{Settling, ORDER_HOLD};
 use nm_core::stats::WindowStats;
 use nm_core::target::{TargetAddress, TargetId, TargetRegistry, TargetTag};
@@ -96,6 +96,19 @@ pub const SERIES_POINTS: usize = 40;
 /// The cost is resolution, and it is paid where it hurts least: a slot shows its *slowest*
 /// sample, so a spike inside it survives — see [`nm_core::series`].
 pub const CHART_STEP: Duration = Duration::from_secs(3);
+
+/// How far back the fetched history reaches, in slots of [`CHART_STEP`].
+///
+/// Sixty minutes. The reader's question after a long match is "is this worse than it was at
+/// the start", which two minutes cannot answer at all — but sending an hour is not the way to
+/// answer it: at the enforced ceiling that would be 1 200 slots × 2 series × 16 endpoints × 5
+/// applications, once a second, into a `WebView` with a 1 % CPU budget.
+///
+/// So the ring is kept here and fetched on demand. 1 200 slots × 2 series × 8 bytes is ≈ 19 KB
+/// per endpoint and ≈ 1.5 MB at the ceiling, well inside the 50 MB core budget, and the
+/// steady-state cost of a running session does not change at all: the event still sends the
+/// last [`SERIES_POINTS`] slots and nothing else.
+pub const CHART_RING_POINTS: usize = 1_200;
 
 /// Something the probe engine must be told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +331,63 @@ pub struct AppMonitor {
     /// what the numbers mean — which slot a sample belongs to, and that an empty slot stays
     /// empty — so it lives in `nm-core` and is applied here rather than in the UI.
     grid: Grid,
+    /// An hour of already-bucketed slots per endpoint, so the chart can be scrolled back.
+    ///
+    /// The pushed window stays forty slots — two minutes — because that is what the emission
+    /// budget affords once a second at the enforced ceiling. The *depth* lives here and is
+    /// fetched rather than pushed: it is asked for a handful of times a session, and pushing
+    /// it would spend the budget continuously to answer a question asked rarely.
+    ///
+    /// Fed on the emission beat by merging the same worst-per-slot window the reports already
+    /// carry, which is why the two can never disagree about a slot they both cover.
+    rings: BTreeMap<(AppId, EndpointKey), ChartRings>,
+    /// An empty pair of rings, cloned for each new endpoint.
+    ///
+    /// Built once, where a fallible constructor belongs, so discovering an endpoint on the
+    /// hot path cannot fail and needs no `unwrap` to say so.
+    ring_prototype: ChartRings,
+}
+
+/// One endpoint's long history: its round trips, and the route drawn beside them.
+///
+/// Two rings rather than one, because they are two quantities and the never-merge rule holds
+/// as firmly in a stored history as it does on the page.
+#[derive(Debug, Clone, PartialEq)]
+struct ChartRings {
+    rtt: SlotRing,
+    path: SlotRing,
+}
+
+impl ChartRings {
+    fn new() -> Result<Self, Error> {
+        Ok(Self {
+            rtt: SlotRing::new(CHART_RING_POINTS)?,
+            path: SlotRing::new(CHART_RING_POINTS)?,
+        })
+    }
+}
+
+/// One endpoint's stored history, as far back as the ring reaches.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartHistoryEntry {
+    /// Which endpoint it belongs to.
+    pub key: EndpointKey,
+    /// Round-trip time per slot, oldest first.
+    pub rtt_ms: Vec<Option<f64>>,
+    /// Round trip to the route's reported hop per slot, in the same slots. Never a round trip
+    /// to the endpoint, and never merged with one.
+    pub path_ms: Vec<Option<f64>>,
+}
+
+/// Everything one application's chart can be scrolled back through.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ChartHistory {
+    /// Seconds since monitoring began for each slot, ascending — the same ladder the pushed
+    /// window uses, so the UI stitches the two by slot rather than by guessing where they
+    /// meet.
+    pub elapsed_secs: Vec<f64>,
+    /// One entry per endpoint that has any history at all.
+    pub endpoints: Vec<ChartHistoryEntry>,
 }
 
 impl AppMonitor {
@@ -347,6 +417,8 @@ impl AppMonitor {
             gone: Vec::new(),
             started: BTreeMap::new(),
             grid: Grid::new(CHART_STEP, SERIES_POINTS)?,
+            rings: BTreeMap::new(),
+            ring_prototype: ChartRings::new()?,
         })
     }
 
@@ -935,6 +1007,9 @@ impl AppMonitor {
     ) {
         // Before the endpoint itself, or its hops would outlive the reason they were probed.
         self.drop_edge(registry, app, key, changes);
+        // An endpoint the application has let go of has no chart to scroll back through, and
+        // an hour of slots per forgotten endpoint would be the only unbounded thing here.
+        self.rings.remove(&(app, key));
         let Some(entry) = self.entries.remove(&(app, key)) else {
             return;
         };
@@ -1062,8 +1137,14 @@ impl AppMonitor {
             window,
             edges,
             grid,
+            rings,
+            ring_prototype: prototype,
             ..
         } = self;
+        // Where the pushed window begins, in absolute slots. The same number the rings are
+        // merged at, which is what makes the fetched history and the pushed window line up
+        // by slot rather than by anyone's arithmetic at the other end.
+        let first_slot = grid.first_slot(started, now);
         tracker
             .endpoints(app)
             .filter_map(|tracked| {
@@ -1083,7 +1164,7 @@ impl AppMonitor {
                     .id
                     .and_then(|id| users.get(&id))
                     .and_then(|users| users.source);
-                Some(EndpointReport::build(
+                let report = EndpointReport::build(
                     tracked,
                     entry,
                     probe_source,
@@ -1094,9 +1175,62 @@ impl AppMonitor {
                     now,
                     *window,
                     thresholds,
-                ))
+                );
+                // The depth, fed from the window that was just computed rather than from a
+                // second pass over the samples. Merging is idempotent and keeps the worst
+                // value in a slot, so re-merging the same forty slots on every beat costs a
+                // loop the length of the window and can never make the two views disagree.
+                let held = rings
+                    .entry((app, report.key))
+                    .or_insert_with(|| prototype.clone());
+                held.rtt.merge(first_slot, &report.chart_rtt_ms);
+                held.path.merge(first_slot, &report.chart_path_ms);
+                Some(report)
             })
             .collect()
+    }
+
+    /// One application's stored history, as far back as the ring reaches.
+    ///
+    /// **Fetched, never pushed.** A history is asked for a handful of times in a session —
+    /// when a card mounts, when the window is shown again, when the reader scrolls past what
+    /// they hold — and pushing it would spend the emission budget continuously to answer a
+    /// question asked rarely.
+    ///
+    /// The slots are the same slots the pushed window uses, on the same ladder, so the UI
+    /// concatenates two aligned arrays rather than deciding anything: Rust owns where a slot
+    /// begins and what is in it, which is where every other calculation in this product
+    /// lives.
+    ///
+    /// **A window that was hidden leaves no gap**, because this is what closes it — and that
+    /// matters more here than convenience: a gap on this chart means packets that did not
+    /// come back, so one the UI created by not listening would be a fabricated loss.
+    #[must_use]
+    pub fn chart_history(&self, app: AppId, now: Instant) -> ChartHistory {
+        let started = self.started_at(app, now);
+        let newest = self.grid.newest_slot(started, now);
+        // The ring holds an hour; a session shorter than that begins at slot zero rather than
+        // at a negative one, so a young chart is short instead of padded with invented gaps.
+        let count = usize::try_from(newest.saturating_add(1)).unwrap_or(CHART_RING_POINTS);
+        let count = count.min(CHART_RING_POINTS);
+        let first = newest.saturating_add(1).saturating_sub(count as u64);
+
+        let endpoints = self
+            .rings
+            .iter()
+            .filter(|((owner, _), _)| *owner == app)
+            .filter(|(_, rings)| !rings.rtt.is_empty() || !rings.path.is_empty())
+            .map(|((_, key), rings)| ChartHistoryEntry {
+                key: *key,
+                rtt_ms: rings.rtt.window(first, count),
+                path_ms: rings.path.window(first, count),
+            })
+            .collect();
+
+        ChartHistory {
+            elapsed_secs: self.grid.elapsed_secs_from(first, count),
+            endpoints,
+        }
     }
 
     /// Seconds since monitoring began for each slot of the chart every endpoint is drawn on.
@@ -1108,6 +1242,24 @@ impl AppMonitor {
     #[must_use]
     pub fn chart_elapsed_secs(&self, app: AppId, now: Instant) -> Vec<f64> {
         self.grid.elapsed_secs(self.started_at(app, now), now)
+    }
+
+    /// Wall-clock milliseconds at elapsed zero, so the axis can be read as a clock.
+    ///
+    /// Derived rather than stored: `wall` minus however long the chart has been running on
+    /// the *monotonic* clock. A system clock adjusted mid-session therefore moves every label
+    /// on the axis together and moves no sample relative to its neighbours — the measurement
+    /// never leaves `Instant`, and this is display only, which is what `CLAUDE.md` permits.
+    #[must_use]
+    pub fn chart_epoch_ms(&self, app: AppId, now: Instant, wall: SystemTime) -> f64 {
+        let running = now.saturating_duration_since(self.started_at(app, now));
+        let since_epoch = wall
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .saturating_sub(running);
+        // Milliseconds since 1970 is ~1.8e12, far inside what an `f64` holds exactly, and
+        // `specta` refuses 64-bit integers because JavaScript cannot carry them.
+        since_epoch.as_secs_f64() * 1_000.0
     }
 
     /// How much of the application's own warm-up is left, or [`None`] once it is over.

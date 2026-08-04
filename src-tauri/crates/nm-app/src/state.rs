@@ -10,10 +10,11 @@ use std::sync::Arc;
 
 use nm_core::endpoint::AppId;
 use nm_platform::process::Pid;
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 
 use crate::runtime::{MonitorCommand, MonitorHandle};
 use crate::settings::{Settings, SettingsProblem};
+use crate::view::ChartHistoryView;
 
 /// Everything a command may need to reach.
 #[derive(Debug)]
@@ -96,6 +97,25 @@ impl AppState {
     /// descendants — not the identity it is followed by afterwards.
     pub fn monitor_app(&self, pid: Pid) {
         self.monitor.send(MonitorCommand::MonitorApp(pid));
+    }
+
+    /// Asks the monitor for one application's stored chart history.
+    ///
+    /// Fetched rather than pushed: the event carries the last forty slots at the emission
+    /// rate, and the hour behind them is asked for a handful of times a session. A monitor
+    /// that has already stopped answers with an empty history rather than an error, because
+    /// there is nothing a reader could do about a core shutting down under them.
+    pub async fn chart_history(&self, app: AppId) -> ChartHistoryView {
+        let (reply, answer) = oneshot::channel();
+        if self
+            .monitor
+            .request(MonitorCommand::ChartHistory { app, reply })
+            .await
+            .is_err()
+        {
+            return ChartHistoryView::default();
+        }
+        answer.await.unwrap_or_default()
     }
 
     /// Stops following one application's endpoints.

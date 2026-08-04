@@ -10,7 +10,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use nm_app::apps::{AppMonitor, TargetChange};
 use nm_core::address::AddressPolicy;
@@ -872,6 +872,118 @@ fn a_silent_endpoint_is_on_the_chart_by_its_path_and_not_by_a_round_trip() {
     assert_eq!(
         report.chart_path_ms.len(),
         monitor.chart_elapsed_secs(APP, now).len()
+    );
+}
+
+#[test]
+fn the_history_reaches_back_further_than_the_window_that_is_pushed() {
+    // The whole point of the ring: the event carries two minutes because that is what the
+    // emission budget affords once a second at the enforced ceiling, and "is this worse than
+    // it was at the start of the match" needs an hour. So the depth is kept here and fetched.
+    let (mut monitor, mut registry, start) = watching();
+    let id = {
+        monitor
+            .observe(APP, udp(1), Some(local(9)), Some(traffic(64)), start)
+            .unwrap();
+        registrations(&monitor.sweep(&mut registry, start))[0]
+    };
+
+    // Ten minutes of measurement, one sample every three seconds, reported on the beat.
+    for step in 0..200 {
+        let at = start + Duration::from_secs(step * 3);
+        monitor.record(
+            id,
+            ProbeSample::new(at, ProbeOutcome::Success(Rtt::from_micros(10_000))),
+        );
+        let _ = monitor.endpoints(APP, at);
+    }
+    let now = start + Duration::from_secs(600);
+
+    let pushed = &monitor.endpoints(APP, now)[0].chart_rtt_ms;
+    let history = monitor.chart_history(APP, now);
+
+    assert_eq!(
+        pushed.len(),
+        nm_app::apps::SERIES_POINTS,
+        "the event's size is unchanged"
+    );
+    assert_eq!(
+        history.elapsed_secs.len(),
+        201,
+        "the history is every slot since monitoring began, up to the ring's hour"
+    );
+    let entry = history
+        .endpoints
+        .iter()
+        .find(|entry| entry.key == udp(1))
+        .expect("the endpoint has a history");
+    assert_eq!(entry.rtt_ms.len(), history.elapsed_secs.len());
+    assert!(
+        entry.rtt_ms.iter().filter(|value| value.is_some()).count() > nm_app::apps::SERIES_POINTS,
+        "and it holds more than the pushed window ever could"
+    );
+
+    // The two must agree about the slots they both cover, or a reader who scrolls back would
+    // watch the line change under them at the seam.
+    let overlap = &entry.rtt_ms[entry.rtt_ms.len() - nm_app::apps::SERIES_POINTS..];
+    assert_eq!(overlap, pushed.as_slice(), "the seam is not a seam");
+}
+
+#[test]
+fn a_history_asked_for_before_anything_was_measured_is_empty_rather_than_invented() {
+    let (mut monitor, mut registry, start) = watching();
+    monitor
+        .observe(APP, udp(1), Some(local(9)), Some(traffic(64)), start)
+        .unwrap();
+    monitor.sweep(&mut registry, start);
+
+    let history = monitor.chart_history(APP, start);
+
+    assert_eq!(history.elapsed_secs, vec![0.0]);
+    assert!(
+        history.endpoints.is_empty(),
+        "an endpoint with nothing in its ring is left out rather than sent as a row of gaps"
+    );
+}
+
+#[test]
+fn a_forgotten_endpoint_takes_its_history_with_it() {
+    // An hour of slots per endpoint is the only thing here that could grow without bound.
+    let (mut monitor, mut registry, start) = watching();
+    let id = {
+        monitor
+            .observe(APP, udp(1), Some(local(9)), Some(traffic(64)), start)
+            .unwrap();
+        registrations(&monitor.sweep(&mut registry, start))[0]
+    };
+    monitor.record(
+        id,
+        ProbeSample::new(start, ProbeOutcome::Success(Rtt::from_micros(10_000))),
+    );
+    let _ = monitor.endpoints(APP, start);
+    assert_eq!(monitor.chart_history(APP, start).endpoints.len(), 1);
+
+    let _ = monitor.forget(&mut registry, APP);
+
+    assert!(monitor.chart_history(APP, start).endpoints.is_empty());
+}
+
+#[test]
+fn the_axis_can_be_read_as_a_clock_without_the_measurement_leaving_the_monotonic_one() {
+    // "−45 s" answers "how long ago"; the reader's question after a stutter is "was that when
+    // it happened". The epoch is derived from the wall clock *minus* the monotonic elapsed, so
+    // a clock adjusted mid-session moves every label together and no sample moves relative to
+    // its neighbours.
+    let (monitor, _registry, start) = watching();
+    let wall = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+
+    let at_start = monitor.chart_epoch_ms(APP, start, wall);
+    let later = monitor.chart_epoch_ms(APP, start + Duration::from_secs(60), wall);
+
+    assert!((at_start - 1_800_000_000_000.0).abs() < 1.0);
+    assert!(
+        (later - (at_start - 60_000.0)).abs() < 1.0,
+        "a minute of monotonic time moves the epoch a minute earlier, so the labels stay put"
     );
 }
 

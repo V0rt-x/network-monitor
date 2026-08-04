@@ -6,15 +6,20 @@ import '../../i18n';
 import { AppMonitorPage } from './AppMonitorPage';
 import type { AppEndpoints } from '../../shared/ipc';
 
-const { fetchApplications, forgetApp, monitorApp, subscribeToAppEndpoints } = vi.hoisted(() => ({
-  fetchApplications: vi.fn(),
-  forgetApp: vi.fn(),
-  monitorApp: vi.fn(),
-  subscribeToAppEndpoints: vi.fn(),
-}));
+const { fetchApplications, fetchChartHistory, forgetApp, monitorApp, subscribeToAppEndpoints } =
+  vi.hoisted(() => ({
+    fetchApplications: vi.fn(),
+    // The hour behind the pushed window, fetched rather than pushed. Empty here: these
+    // tests are about the page, and the chart is a stand-in.
+    fetchChartHistory: vi.fn(() => Promise.resolve({ elapsedSecs: [], endpoints: [] })),
+    forgetApp: vi.fn(),
+    monitorApp: vi.fn(),
+    subscribeToAppEndpoints: vi.fn(),
+  }));
 
 vi.mock('../../shared/ipc', () => ({
   fetchApplications,
+  fetchChartHistory,
   forgetApp,
   monitorApp,
   subscribeToAppEndpoints,
@@ -42,6 +47,7 @@ const ENDPOINTS: AppEndpoints = {
       pool: null,
       warmupSecsRemaining: null,
       chartElapsedSecs: [],
+      chartEpochMs: 1_800_000_000_000,
       primaryEndpoint: null,
       groups: [
         {

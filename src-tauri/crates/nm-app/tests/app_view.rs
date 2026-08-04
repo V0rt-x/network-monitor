@@ -215,6 +215,7 @@ fn view_named(
         "game.exe".to_owned(),
         vec![PID],
         axis,
+        0.0,
         warmup,
         &adapters(),
         names,

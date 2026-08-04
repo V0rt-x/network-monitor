@@ -4,6 +4,7 @@ import { commands, events } from '../bindings';
 import type {
   AppEndpoints,
   ApplicationListView,
+  ChartHistoryView,
   CoreHeartbeat,
   CoreStatus,
   NetworkSnapshot,
@@ -22,6 +23,8 @@ import type {
 export type {
   AppEndpoints,
   ApplicationChoiceView,
+  ChartHistoryEntryView,
+  ChartHistoryView,
   ApplicationListProblem,
   ApplicationListView,
   AppView,
@@ -99,3 +102,20 @@ export const storeSettings = (settings: Settings): Promise<SettingsView> =>
 
 export const registerTrayLabels = (labels: TrayLabels): Promise<boolean> =>
   commands.applyTrayLabels(labels);
+
+/**
+ * One application's chart history, as far back as the hour Rust keeps.
+ *
+ * **Fetched, never pushed.** The event carries the last forty slots at the emission rate, so
+ * the steady-state cost of a running session is unchanged; the depth behind them is asked for
+ * a handful of times a session — when a card mounts, when the window is shown again, when the
+ * reader scrolls past what they hold — and pushing it would spend the whole render budget
+ * answering a question asked rarely.
+ *
+ * A core that has stopped answers with nothing rather than an error: the chart then shows the
+ * live window alone, which is what it showed before this existed.
+ */
+export const fetchChartHistory = async (app: number): Promise<ChartHistoryView> => {
+  const answer = await commands.chartHistory(app);
+  return answer.status === 'ok' ? answer.data : { elapsedSecs: [], endpoints: [] };
+};

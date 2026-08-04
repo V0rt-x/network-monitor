@@ -82,6 +82,7 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::list_applications,
             commands::monitor_app,
             commands::forget_app,
+            commands::chart_history,
             commands::apply_tray_labels,
         ])
         .events(collect_events![

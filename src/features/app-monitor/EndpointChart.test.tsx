@@ -38,6 +38,12 @@ vi.mock('uplot', () => {
     destroy() {
       /* nothing to tear down */
     }
+    setScale() {
+      /* the view is React's; nothing is drawn here */
+    }
+    posToVal() {
+      return 0;
+    }
     valToPos() {
       return 0;
     }
@@ -69,6 +75,8 @@ const line = (overrides: Partial<ChartLine> = {}): ChartLine => ({
 const chart = (props: Partial<Parameters<typeof EndpointChart>[0]> = {}) => (
   <EndpointChart
     elapsedSecs={[0, 3, 6]}
+    epochMs={1_800_000_000_000}
+    stepSecs={3}
     lines={[line()]}
     highlighted={null}
     onHover={vi.fn()}
@@ -95,6 +103,46 @@ describe('EndpointChart', () => {
     for (const axis of lastBuild().axes) {
       expect(axis.grid?.show).toBe(false);
     }
+  });
+
+  it('opens on twenty minutes and offers no way back until there is one', async () => {
+    // Two minutes cannot answer "is this worse than it was at the start of the match", which
+    // is the question a reader has after one. `Now` appears only once they have left the
+    // present: a control that is always there and usually does nothing teaches nobody
+    // anything.
+    const minutes = Array.from({ length: 800 }, (_, index) => index * 3);
+    render(
+      chart({
+        elapsedSecs: minutes,
+        lines: [line({ values: minutes.map(() => 24) })],
+      }),
+    );
+
+    expect(screen.getByText('Showing 20 min')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull();
+
+    // Shift moves the view; the bare arrows still move the crosshair, which is what 6.7 gave
+    // this chart and what a reader uses far more often.
+    screen.getByRole('img').focus();
+    await userEvent.keyboard('{Shift>}{ArrowLeft}{/Shift}');
+
+    expect(screen.getByRole('button', { name: 'Now' })).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Now' }));
+
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull();
+  });
+
+  it('states the span and that the resolution does not change with it', async () => {
+    // Level two, and the second half of it matters: a chart that re-buckets under the reader
+    // shows a different spike from the one they zoomed in on, so a slot is three seconds at
+    // every zoom level and the page says so where it is asked.
+    const minutes = Array.from({ length: 800 }, (_, index) => index * 3);
+    render(chart({ elapsedSecs: minutes, lines: [line({ values: minutes.map(() => 24) })] }));
+
+    await userEvent.click(screen.getByText('Showing 20 min'));
+
+    expect(screen.getByText(/One point is still 3 s at every zoom/)).toBeVisible();
   });
 
   it('lists every line at the moment being read, not only the nearest one', async () => {
@@ -206,10 +254,13 @@ describe('EndpointChart', () => {
 
     surface.focus();
     await userEvent.keyboard('{End}');
-    expect(screen.getByRole('status')).toHaveTextContent('At 0:06');
+    // A time of day, which is what answers "was that when it happened". The exact hour
+    // depends on the machine's zone; that it is a clock does not.
+    expect(screen.getByRole('status').textContent).toMatch(/At \d\d:\d\d:\d\d/);
+    const newest = screen.getByRole('status').textContent;
 
     await userEvent.keyboard('{ArrowLeft}');
-    expect(screen.getByRole('status')).toHaveTextContent('At 0:03');
+    expect(screen.getByRole('status').textContent).not.toBe(newest);
 
     await userEvent.keyboard('{ArrowDown}');
     expect(onHover).toHaveBeenLastCalledWith('udp/1.1.1.2:27015');

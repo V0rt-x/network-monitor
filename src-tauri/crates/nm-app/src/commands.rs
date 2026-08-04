@@ -26,7 +26,9 @@ use crate::settings::{
 };
 use crate::shell::TrayLabels;
 use crate::state::AppState;
-use crate::view::{ApplicationChoiceView, ApplicationListProblem, ApplicationListView};
+use crate::view::{
+    ApplicationChoiceView, ApplicationListProblem, ApplicationListView, ChartHistoryView,
+};
 use crate::{applications, shell, targets};
 
 /// Platform backend the core will use, as seen across the IPC boundary.
@@ -262,6 +264,23 @@ pub fn monitor_app(state: State<'_, AppState>, pid: u32) {
 #[specta::specta]
 pub fn forget_app(state: State<'_, AppState>, app: u32) {
     state.forget_app(AppId::new(app));
+}
+
+/// One application's chart history, as far back as the ring reaches.
+///
+/// **Fetched, never pushed**, and that is the whole design of the deeper chart: the event
+/// goes on carrying the last forty slots at the emission rate, so the steady-state cost of a
+/// running session does not change at all, while an hour of depth is asked for a handful of
+/// times a session -- when a card mounts, when the window is shown again after being hidden,
+/// and when the reader scrolls past what they already hold.
+///
+/// The backfill on show is what stops a hidden window leaving a gap, and that matters more
+/// than convenience: a gap on this chart means packets that did not come back, so one the UI
+/// created by not listening would be a fabricated loss.
+#[tauri::command]
+#[specta::specta]
+pub async fn chart_history(state: State<'_, AppState>, app: u32) -> Result<ChartHistoryView, ()> {
+    Ok(state.chart_history(AppId::new(app)).await)
 }
 
 /// Gives the tray menu its labels, translated by the UI.

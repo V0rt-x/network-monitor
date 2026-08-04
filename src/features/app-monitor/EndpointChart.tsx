@@ -4,7 +4,16 @@ import uPlot from 'uplot';
 
 import { useFigures } from '../../shared/useFigures';
 import type { ChartLine, ChartReadingEntry } from './chartSeries';
-import { alignSeries, formatAxisElapsed, formatAxisMs, readingAt } from './chartSeries';
+import { alignSeries, formatAxisMs, formatClock, formatSpan, readingAt } from './chartSeries';
+import type { ChartBounds, ChartWindow } from './chartWindow';
+import {
+  clampWindow,
+  DEFAULT_SPAN_SECS,
+  isLive,
+  liveWindow,
+  panWindow,
+  zoomWindow,
+} from './chartWindow';
 
 interface EndpointChartProps {
   /**
@@ -15,6 +24,15 @@ interface EndpointChartProps {
    * rightwards into it instead of being stretched across it.
    */
   readonly elapsedSecs: readonly (number | null)[];
+  /**
+   * Wall-clock milliseconds at elapsed zero, so the axis can be read as a clock.
+   *
+   * `null` where the core sent no epoch, in which case the axis carries no labels rather
+   * than labels anchored at 1970 — an absent figure stays absent here as everywhere.
+   */
+  readonly epochMs: number | null;
+  /** How wide one slot is, which is what the resolution never changes from. */
+  readonly stepSecs: number;
   readonly lines: readonly ChartLine[];
   /** The endpoint whose lines are raised, and whose siblings are dimmed. */
   readonly highlighted: string | null;
@@ -101,18 +119,48 @@ const TOOLTIP_WIDTH = 260;
  */
 export const EndpointChart = ({
   elapsedSecs,
+  epochMs,
+  stepSecs,
   lines,
   highlighted,
   onHover,
   onSelect,
   label,
 }: EndpointChartProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const figures = useFigures();
   const keyboardId = useId();
   const host = useRef<HTMLDivElement>(null);
   const plot = useRef<uPlot | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+
+  // How much of the axis is on screen. View state and nothing else: it decides which slots
+  // are drawn and nothing about what is in them. `null` means following new samples, which
+  // is the only state in which the picture moves on its own.
+  const [view, setView] = useState<ChartWindow | null>(null);
+  const [span, setSpan] = useState(DEFAULT_SPAN_SECS);
+
+  const bounds = useMemo<ChartBounds>(() => {
+    const known = elapsedSecs.filter((value): value is number => value !== null);
+    return { oldestSecs: known[0] ?? 0, newestSecs: known[known.length - 1] ?? 0 };
+  }, [elapsedSecs]);
+
+  // Recomputed on every emission while following, so a live chart advances a slot at a time
+  // without the reader touching anything; frozen the moment they drag, wheel or arrow.
+  const shown = useMemo(
+    () => (view === null ? liveWindow(bounds, span) : clampWindow(view, bounds)),
+    [view, bounds, span],
+  );
+
+  /** Freezes the view where it is and moves it, which is what any pan or zoom does. */
+  const move = (next: ChartWindow) => {
+    const held = clampWindow(next, bounds);
+    setSpan(held.toSecs - held.fromSecs);
+    // Back at the right edge is back to following: a reader who dragged to the present did
+    // not mean to stop the chart there.
+    setView(isLive(held, bounds, stepSecs) ? null : held);
+  };
 
   // Which moment is being read, and which line inside it. `null` is nobody pointing at or
   // arrowing through the chart, which is the state it spends most of its life in.
@@ -132,6 +180,15 @@ export const EndpointChart = ({
   currentHighlight.current = highlighted;
   const currentAligned = useRef(aligned);
   currentAligned.current = aligned;
+  // Read by the axis formatter at draw time. In refs because the chart is rebuilt only when
+  // the *set* of lines changes, and the epoch moves on every emission — baking it in would
+  // leave the clock reading whatever it said when the last endpoint appeared.
+  const currentEpoch = useRef<number | null>(epochMs);
+  currentEpoch.current = epochMs;
+  const currentLocale = useRef(locale);
+  currentLocale.current = locale;
+  const currentView = useRef(shown);
+  currentView.current = shown;
 
   // The chart is rebuilt when the *set* of lines changes — an endpoint appearing or going
   // away — and only then. New numbers for the same endpoints are a `setData`, which is what
@@ -173,7 +230,13 @@ export const EndpointChart = ({
             y: false,
           },
           scales: {
-            x: { time: false },
+            // The window React holds, not one uPlot picks: panning and zooming are ours, so
+            // the scale has to be told rather than inferred from the data.
+            x: {
+              time: false,
+              auto: false,
+              range: () => [currentView.current.fromSecs, currentView.current.toSecs],
+            },
             // Round-trip times on one chart span two orders of magnitude — a hop inside the
             // ISP at 4 ms beside a server across an ocean at 200 ms — and one spike to 400
             // flattens everything else against the floor. A logarithmic axis gives every
@@ -199,11 +262,14 @@ export const EndpointChart = ({
               // which is already there. The tick marks and the labels stay.
               grid: { show: false },
               ticks: { stroke: GRID_STROKE },
-              // Time since monitoring began, as minutes and seconds. Not an age: the axis is
-              // anchored at the start, which is what lets the drawing grow from the left.
+              // The time of day. "−45 s" answers "how long ago", and the reader's question
+              // after a stutter is "was that when it happened" — which needs a clock. The
+              // measurement stays on the monotonic clock; only the label is wall time.
               values: (_chart, splits) =>
-                (splits as unknown as (number | null)[]).map((value) => formatAxisElapsed(value)),
-              label: t('apps.chart.axisElapsed'),
+                (splits as unknown as (number | null)[]).map((value) =>
+                  formatClock(value, currentEpoch.current, currentLocale.current),
+                ),
+              label: t('apps.chart.axisClock'),
               labelSize: AXIS_LABEL_SIZE,
               labelFont: AXIS_LABEL_FONT,
             },
@@ -286,6 +352,13 @@ export const EndpointChart = ({
     chart.setData(aligned as unknown as uPlot.AlignedData);
   }, [aligned]);
 
+  // The view the reader chose, applied to the scale. Separate from the data effect above
+  // because panning and zooming change neither the lines nor their values — only which
+  // stretch of the axis is on screen — and a `setData` for that would redraw everything.
+  useEffect(() => {
+    plot.current?.setScale('x', { min: shown.fromSecs, max: shown.toSecs });
+  }, [shown.fromSecs, shown.toSecs]);
+
   // A redraw rather than a rebuild: the data has not changed, only which line is raised.
   useEffect(() => {
     plot.current?.redraw();
@@ -345,6 +418,21 @@ export const EndpointChart = ({
     onHover(lines[next]?.endpoint ?? null);
   };
 
+  /** Which moment a pixel offset inside the plot is over, for zooming about the pointer. */
+  const secondsAt = (clientX: number): number => {
+    const chart = plot.current;
+    const box = chart?.over.getBoundingClientRect();
+    if (!chart || box === undefined || box.width === 0) {
+      return (shown.fromSecs + shown.toSecs) / 2;
+    }
+    const at = chart.posToVal(clientX - box.left, 'x');
+    return Number.isFinite(at) ? at : (shown.fromSecs + shown.toSecs) / 2;
+  };
+
+  // Dragging pans. Held in a ref rather than in state because it changes on every pointer
+  // move and none of those need a render of their own — the window does the rendering.
+  const drag = useRef<{ x: number; from: number } | null>(null);
+
   // Keeps the crosshair with the keyboard. uPlot draws its cursor where it was last told
   // the pointer was, so arrowing through time without this would move the tooltip and leave
   // the line behind.
@@ -385,20 +473,61 @@ export const EndpointChart = ({
           onMouseLeave={() => {
             onHover(null);
             setSlot(null);
+            drag.current = null;
           }}
           onClick={() => {
             // uPlot has already told us which line the cursor is nearest; a click pins it
             // and brings its row into view.
             if (focusedEndpoint !== null) onSelect(focusedEndpoint);
           }}
+          // Drag to pan. The grab is recorded in seconds rather than in pixels so that a
+          // zoom part-way through a drag cannot make the picture jump.
+          onPointerDown={(event) => {
+            drag.current = { x: event.clientX, from: shown.fromSecs };
+          }}
+          onPointerUp={() => {
+            drag.current = null;
+          }}
+          onPointerMove={(event) => {
+            const held = drag.current;
+            if (held === null) return;
+            const width = plot.current?.over.getBoundingClientRect().width ?? 0;
+            if (width === 0) return;
+            const perPixel = (shown.toSecs - shown.fromSecs) / width;
+            // Leftwards drag goes forward in time, which is how every map behaves.
+            const by = held.from - (event.clientX - held.x) * perPixel - shown.fromSecs;
+            move(panWindow(shown, bounds, by));
+          }}
+          // Wheel to zoom, about whatever is under the pointer. The resolution does not
+          // change with it: a slot is three seconds at every zoom level, because a chart
+          // that re-buckets under the reader shows a different spike from the one they
+          // zoomed in on.
+          onWheel={(event) => {
+            move(
+              zoomWindow(shown, bounds, event.deltaY > 0 ? 1.25 : 0.8, secondsAt(event.clientX)),
+            );
+          }}
           onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') stepSlot(-1);
+            // Shift moves the *view*; the bare keys move the crosshair, which is what 6.7
+            // gave this chart and what a reader uses far more often.
+            if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+              const step = (shown.toSecs - shown.fromSecs) / 4;
+              move(panWindow(shown, bounds, event.key === 'ArrowLeft' ? -step : step));
+            } else if (event.shiftKey && event.key === 'Home') {
+              move({ fromSecs: bounds.oldestSecs, toSecs: bounds.oldestSecs + span });
+            } else if (event.shiftKey && event.key === 'End') {
+              setView(null);
+            } else if (event.key === 'ArrowLeft') stepSlot(-1);
             else if (event.key === 'ArrowRight') stepSlot(1);
             else if (event.key === 'ArrowUp') stepLine(-1);
             else if (event.key === 'ArrowDown') stepLine(1);
             else if (event.key === 'Home') setSlot(0);
             else if (event.key === 'End') setSlot(slots === 0 ? null : slots - 1);
-            else if (event.key === 'Enter') {
+            else if (event.key === '+' || event.key === '=') {
+              move(zoomWindow(shown, bounds, 0.8, (shown.fromSecs + shown.toSecs) / 2));
+            } else if (event.key === '-') {
+              move(zoomWindow(shown, bounds, 1.25, (shown.fromSecs + shown.toSecs) / 2));
+            } else if (event.key === 'Enter') {
               if (focusedEndpoint !== null) onSelect(focusedEndpoint);
             } else if (event.key === 'Escape') {
               setSlot(null);
@@ -427,7 +556,7 @@ export const EndpointChart = ({
             }
           >
             <p className="nm-charttip__at">
-              {t('apps.chart.at', { time: formatAxisElapsed(reading.elapsedSecs) })}
+              {t('apps.chart.at', { time: formatClock(reading.elapsedSecs, epochMs, locale) })}
             </p>
             <ul className="nm-charttip__lines">
               {entries.map((entry) => (
@@ -466,6 +595,38 @@ export const EndpointChart = ({
         </span>
       </div>
 
+      {/* The only state in which the view follows new samples, and the way back to it. It
+          appears only when the reader has left it, because a control that is always there and
+          usually does nothing is a control that teaches nobody anything. */}
+      <div className="nm-endpointchart__controls">
+        {view !== null && (
+          <button
+            type="button"
+            className="nm-button"
+            onClick={() => {
+              setView(null);
+            }}
+          >
+            {t('apps.chart.now')}
+          </button>
+        )}
+        {/* Level two: what the view covers and at what resolution. The span changes as the
+            reader zooms; the resolution never does, and saying both together is what makes
+            that visible rather than something they have to notice. */}
+        <details className="nm-endpointchart__span">
+          <summary>
+            {t('apps.chart.spanSummary', { span: formatSpan(shown.toSecs - shown.fromSecs) })}
+          </summary>
+          <p>
+            {t('apps.chart.spanDetail', {
+              span: formatSpan(shown.toSecs - shown.fromSecs),
+              held: formatSpan(bounds.newestSecs - bounds.oldestSecs),
+              seconds: stepSecs,
+            })}
+          </p>
+        </details>
+      </div>
+
       {/* Polite rather than assertive: a reading the user asked for by pointing or by
           arrowing, not an announcement that should interrupt. The focused line is spoken
           first and the rest follow, so the region carries what the tooltip shows without
@@ -474,7 +635,7 @@ export const EndpointChart = ({
         {reading === null
           ? ''
           : [
-              t('apps.chart.at', { time: formatAxisElapsed(reading.elapsedSecs) }),
+              t('apps.chart.at', { time: formatClock(reading.elapsedSecs, epochMs, locale) }),
               ...[...entries]
                 .sort((left, right) =>
                   left.endpoint === focusedEndpoint

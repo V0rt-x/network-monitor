@@ -46,7 +46,7 @@ use nm_probes::tcp::TcpConnectProber;
 use nm_probes::tls::TlsHelloProber;
 use tauri::{AppHandle, Wry};
 use tauri_specta::Event as _;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::applications::{Application, Applications};
 use crate::apps::{AppMonitor, TargetChange};
@@ -58,7 +58,7 @@ use crate::pools::{LearnedPools, PoolMonitor, PoolSeeds};
 use crate::presets::PresetList;
 use crate::settings::Settings;
 use crate::targets::{self, ResolvedTarget};
-use crate::view::AppView;
+use crate::view::{AppView, ChartHistoryView};
 use crate::Error;
 
 /// How often a snapshot is pushed to a visible window.
@@ -111,6 +111,19 @@ pub enum MonitorCommand {
     MonitorApp(Pid),
     /// Stop following an application and release the endpoints nothing else uses.
     ForgetApp(AppId),
+    /// Send back one application's stored chart history.
+    ///
+    /// **Fetched, never pushed.** The event goes on carrying the last forty slots, so the
+    /// steady-state cost of a running session does not change at all; an hour of depth is
+    /// asked for a handful of times a session: when a card mounts, when the window is shown
+    /// again, when the reader scrolls past what they hold. Pushing it would spend the
+    /// emission budget continuously to answer a question asked rarely.
+    ChartHistory {
+        /// Which application.
+        app: AppId,
+        /// Where to send the answer. A dropped receiver is a UI that stopped waiting.
+        reply: oneshot::Sender<ChartHistoryView>,
+    },
 }
 
 /// Handle for talking to the running monitor task.
@@ -124,6 +137,22 @@ impl MonitorHandle {
     ///
     /// A task that has already stopped is ignored: that only happens as the app shuts
     /// down, when there is nothing useful left to do about it.
+    /// Sends a command and waits for the task to take it.
+    ///
+    /// The counterpart of [`MonitorHandle::send`] for the one command that has an answer.
+    /// A closed channel is a monitor that has already stopped, which happens only as the
+    /// app shuts down.
+    ///
+    /// # Errors
+    ///
+    /// Returns the command back when the monitor task is gone.
+    pub async fn request(
+        &self,
+        command: MonitorCommand,
+    ) -> Result<(), mpsc::error::SendError<MonitorCommand>> {
+        self.commands.send(command).await
+    }
+
     pub fn send(&self, command: MonitorCommand) {
         let commands = self.commands.clone();
         tauri::async_runtime::spawn(async move {
@@ -356,6 +385,9 @@ async fn session(
                             discovery.watch(&applications.watched_pids());
                         }
                     }
+                }
+                Some(MonitorCommand::ChartHistory { app: id, reply }) => {
+                    let _ = reply.send(ChartHistoryView::of(&apps.chart_history(id, Instant::now())));
                 }
                 Some(MonitorCommand::ForgetApp(id)) => {
                     if applications.forget(id) {
@@ -751,6 +783,12 @@ fn emit_apps(
     flow_status: FlowStatus,
 ) {
     let now = Instant::now();
+    // The one wall-clock reading in the whole measurement path, and it exists only so the
+    // chart's axis can be labelled with a time of day: "−45 s" answers "how long ago", and
+    // the reader's question after a stutter is "was that when it happened". Everything
+    // measured stays on the monotonic clock, which is what keeps a system clock adjusted
+    // mid-session from moving one sample relative to its neighbours.
+    let wall = SystemTime::now();
     // Read once for the whole emission rather than per application: it is the same answer
     // for all of them, and it is what stops an application being blamed for a network that
     // is failing underneath it.
@@ -776,6 +814,7 @@ fn emit_apps(
                 application.label().to_owned(),
                 pids,
                 apps.chart_elapsed_secs(application.id(), now),
+                apps.chart_epoch_ms(application.id(), now, wall),
                 apps.warmup_remaining(application.id(), now),
                 interfaces,
                 names,

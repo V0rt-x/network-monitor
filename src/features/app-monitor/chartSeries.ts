@@ -64,31 +64,87 @@ export const formatAxisMs = (value: number | null | undefined): string => {
 };
 
 /**
- * A tick label on the chart's time axis.
+ * A tick label on the chart's time axis: the time of day, to the second.
  *
- * The axis runs from where monitoring began, so the values are elapsed seconds rather than
- * ages: `0:00` is the moment the user started watching this application, and the drawing
- * grows rightwards from it. Minutes and seconds because two minutes of history read as
- * `1:30` far more readily than as `90`.
+ * It used to read elapsed time — `1:30` for a slot ninety seconds after monitoring began.
+ * That answers "how long ago", and the reader's question after a stutter is "**was that when
+ * it happened**", which needs a clock. No date, because the axis never spans one; seconds,
+ * because a three-second slot cannot be placed without them.
  *
- * **Hours appear as hours.** Found by running the build against a session that had been
- * watching a game for eleven hours: the axis read `652:10`, which is arithmetically the truth
- * and unreadable as a time. A monitor is left running for exactly that long — that is what it
- * is for — so anything past an hour reads `10:52:10`.
+ * `epochMs` is the wall-clock moment of elapsed zero, sent by Rust and recomputed on every
+ * emission as the wall clock minus the *monotonic* elapsed. So the measurement never leaves
+ * the monotonic clock — a system clock adjusted mid-session moves every label together and
+ * moves no sample relative to its neighbours — and the wall clock is used for display only,
+ * which is exactly what `CLAUDE.md` permits.
  *
  * A blanked split arrives as `null`, exactly as on the round-trip axis, and treating one as a
  * number throws in the middle of a draw — which leaves an empty canvas and no error anywhere.
  */
-export const formatAxisElapsed = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return '';
-  if (!Number.isFinite(value)) return '';
-  const total = Math.max(0, Math.round(value));
-  const seconds = total % 60;
-  const minutes = Math.floor(total / 60) % 60;
-  const hours = Math.floor(total / 3_600);
-  const tail = `${String(minutes).padStart(hours > 0 ? 2 : 1, '0')}:${String(seconds).padStart(2, '0')}`;
-  return hours > 0 ? `${String(hours)}:${tail}` : tail;
+export const formatClock = (
+  elapsedSecs: number | null | undefined,
+  epochMs: number | null,
+  locale: string,
+): string => {
+  if (elapsedSecs === null || elapsedSecs === undefined || epochMs === null) return '';
+  if (!Number.isFinite(elapsedSecs) || !Number.isFinite(epochMs)) return '';
+  const at = new Date(epochMs + elapsedSecs * 1_000);
+  if (Number.isNaN(at.getTime())) return '';
+  return new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(at);
 };
+
+/**
+ * A span of the chart, as a duration a reader can be told.
+ *
+ * Level two states what the view covers and at what resolution; this is the first half of
+ * that sentence. Whole minutes past a minute, because a span is chosen by dragging and no
+ * reader cares that it landed on 19 min 43 s.
+ */
+export const formatSpan = (seconds: number): string => {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${String(total)} s`;
+  const minutes = Math.round(total / 60);
+  if (minutes < 60) return `${String(minutes)} min`;
+  return `${String(Math.floor(minutes / 60))} h ${String(minutes % 60)} min`;
+};
+
+/**
+ * Joins the fetched history to the pushed window, by slot.
+ *
+ * Rust decides where a slot begins and what is in it; this concatenates two arrays that are
+ * already on the same ladder, which is not a decision about the numbers. The seam is the
+ * first elapsed value the live window carries: everything strictly before it comes from the
+ * history, everything from it onwards from the live window, so a slot they both hold is taken
+ * from the live one and never drawn twice.
+ *
+ * **A gap the UI created would be a fabricated loss.** A break in this chart means packets
+ * that did not come back, so the backfill matters more than convenience: while the window was
+ * hidden Rust kept measuring and emitted nothing, and this is what closes the hole that left.
+ */
+export const stitchAxis = (
+  history: readonly (number | null)[],
+  live: readonly (number | null)[],
+): { elapsedSecs: (number | null)[]; fromHistory: number } => {
+  const seam = live.find((value) => value !== null) ?? Number.POSITIVE_INFINITY;
+  const before = history.filter((elapsed): elapsed is number => elapsed !== null && elapsed < seam);
+  return { elapsedSecs: [...before, ...live], fromHistory: before.length };
+};
+
+/** One line's values on a stitched axis, taking the live window wherever the two overlap. */
+export const stitchValues = (
+  history: readonly (number | null)[],
+  fromHistory: number,
+  live: readonly (number | null)[],
+): (number | null)[] => [
+  // A history shorter than its own axis pads with gaps rather than sliding: every array on
+  // this axis has to be the same length or the samples land on the wrong moments.
+  ...Array.from({ length: fromHistory }, (_, index) => history[index] ?? null),
+  ...live,
+];
 
 /**
  * The smallest round trip the chart's logarithmic axis can place, in milliseconds.

@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { ChartLine } from './chartSeries';
 import {
   alignSeries,
-  formatAxisElapsed,
   formatAxisMs,
+  formatClock,
+  formatSpan,
   LOG_FLOOR_MS,
   readingAt,
+  stitchAxis,
+  stitchValues,
 } from './chartSeries';
 
 const line = (values: (number | null)[], overrides: Partial<ChartLine> = {}): ChartLine => ({
@@ -110,31 +113,70 @@ describe('formatAxisMs', () => {
   });
 });
 
-describe('formatAxisElapsed', () => {
+describe('formatClock', () => {
+  /** Midday UTC, so the assertions below do not depend on where the machine is. */
+  const NOON = Date.UTC(2026, 7, 4, 12, 0, 0);
+
   it('labels a blanked tick with nothing rather than throwing', () => {
     // The same hazard as the round-trip axis, and the same consequence: a formatter that
     // throws leaves an empty canvas and no error anywhere.
-    expect(formatAxisElapsed(null)).toBe('');
-    expect(formatAxisElapsed(undefined)).toBe('');
-    expect(formatAxisElapsed(Number.NaN)).toBe('');
+    expect(formatClock(null, NOON, 'en-GB')).toBe('');
+    expect(formatClock(undefined, NOON, 'en-GB')).toBe('');
+    expect(formatClock(Number.NaN, NOON, 'en-GB')).toBe('');
   });
 
-  it('reads as time since monitoring began, not as an age', () => {
-    // The axis is anchored where the user started watching, which is what lets the drawing
-    // grow rightwards from the left edge instead of sliding under the pointer.
-    expect(formatAxisElapsed(0)).toBe('0:00');
-    expect(formatAxisElapsed(9)).toBe('0:09');
-    expect(formatAxisElapsed(90)).toBe('1:30');
-    expect(formatAxisElapsed(117)).toBe('1:57');
+  it('says nothing at all where there is no epoch to anchor it to', () => {
+    // Absent stays absent: an axis labelled from 1970 would be a figure that is wrong rather
+    // than a figure that is missing.
+    expect(formatClock(90, null, 'en-GB')).toBe('');
   });
 
-  it('reads a long session in hours', () => {
-    // Found by running the build against a session eleven hours old: the axis read `652:10`,
-    // which is the truth and unreadable as a time. A monitor is left running exactly that
-    // long — that is what it is for.
-    expect(formatAxisElapsed(3_600)).toBe('1:00:00');
-    expect(formatAxisElapsed(39_130)).toBe('10:52:10');
-    expect(formatAxisElapsed(3_599)).toBe('59:59');
+  it('reads as a time of day, to the second', () => {
+    // "−45 s" answers "how long ago", and the reader's question after a stutter is "was that
+    // when it happened" — which needs a clock. Seconds, because a three-second slot cannot be
+    // placed without them; no date, because the axis never spans one.
+    expect(formatClock(0, NOON, 'en-GB')).toMatch(/^\d\d:00:00$/);
+    expect(formatClock(90, NOON, 'en-GB')).toMatch(/^\d\d:01:30$/);
+  });
+
+  it('moves with the epoch rather than with the sample', () => {
+    // The epoch is the wall clock minus the *monotonic* elapsed, so a system clock adjusted
+    // mid-session moves every label together and moves no sample relative to its neighbours.
+    const shifted = formatClock(90, NOON + 3_600_000, 'en-GB');
+    expect(shifted).not.toBe(formatClock(90, NOON, 'en-GB'));
+    expect(shifted).toMatch(/^\d\d:01:30$/);
+  });
+});
+
+describe('stitching a fetched history onto the pushed window', () => {
+  it('takes the live window wherever the two overlap, and never draws a slot twice', () => {
+    // Rust decided where every slot begins and what is in it; this concatenates two arrays
+    // already on the same ladder. A slot they both hold is the live one's.
+    const axis = stitchAxis([0, 3, 6, 9], [6, 9, 12]);
+
+    expect(axis.elapsedSecs).toEqual([0, 3, 6, 9, 12]);
+    expect(axis.fromHistory).toBe(2);
+    expect(stitchValues([1, 2, 3, 4], axis.fromHistory, [30, 40, 50])).toEqual([1, 2, 30, 40, 50]);
+  });
+
+  it('pads a history shorter than the axis with gaps rather than sliding it', () => {
+    // Every array on one axis has to be the same length, or the samples land on the wrong
+    // moments — which would be a fabricated measurement rather than a missing one.
+    expect(stitchValues([], 2, [30])).toEqual([null, null, 30]);
+  });
+
+  it('keeps the whole history when the live window has nothing in it yet', () => {
+    const axis = stitchAxis([0, 3], [null, null]);
+    expect(axis.fromHistory).toBe(2);
+    expect(axis.elapsedSecs).toEqual([0, 3, null, null]);
+  });
+});
+
+describe('formatSpan', () => {
+  it('says what the view covers in a unit a reader thinks in', () => {
+    expect(formatSpan(45)).toBe('45 s');
+    expect(formatSpan(1_200)).toBe('20 min');
+    expect(formatSpan(3_600)).toBe('1 h 0 min');
   });
 });
 

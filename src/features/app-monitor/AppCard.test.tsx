@@ -1,26 +1,44 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import '../../i18n';
 import { countChips, stateBadges } from '../../shared/testing';
 import { AppCard } from './AppCard';
-import type { AppView, EndpointGroupView, EndpointView, HealthCountsView } from '../../shared/ipc';
+import type {
+  AppView,
+  ChartHistoryView,
+  EndpointGroupView,
+  EndpointView,
+  HealthCountsView,
+} from '../../shared/ipc';
 
 // uPlot draws to a canvas, which jsdom does not implement. The chart is additive — every
 // figure it draws is also stated in the list beside it — so the tests replace it with a
 // stand-in that records what it was asked to draw.
+const { fetchChartHistory } = vi.hoisted(() => ({
+  // The hour behind the pushed window, fetched rather than pushed. Empty unless a test is
+  // about the stitching, because most of them are about the list.
+  fetchChartHistory: vi.fn<() => Promise<ChartHistoryView>>(() =>
+    Promise.resolve({ elapsedSecs: [], endpoints: [] }),
+  ),
+}));
+
+vi.mock('../../shared/ipc', () => ({ fetchChartHistory }));
+
 vi.mock('./EndpointChart', () => ({
   EndpointChart: ({
+    elapsedSecs,
     lines,
     label,
     onSelect,
   }: {
-    lines: { endpoint: string; label: string; isPath: boolean }[];
+    elapsedSecs: (number | null)[];
+    lines: { endpoint: string; label: string; isPath: boolean; values: (number | null)[] }[];
     label: string;
     onSelect: (endpoint: string) => void;
   }) => (
-    <div data-testid="chart" aria-label={label}>
+    <div data-testid="chart" aria-label={label} data-elapsed={JSON.stringify(elapsedSecs)}>
       {lines.map((line) => (
         // In an attribute rather than as text: the addresses are already on the page, in the
         // list, and a stand-in that repeated them would make every query ambiguous.
@@ -30,6 +48,7 @@ vi.mock('./EndpointChart', () => ({
           data-testid="chart-line"
           data-label={line.label}
           data-path={String(line.isPath)}
+          data-values={JSON.stringify(line.values)}
           onClick={() => {
             onSelect(line.endpoint);
           }}
@@ -38,6 +57,15 @@ vi.mock('./EndpointChart', () => ({
     </div>
   ),
 }));
+
+/** What the chart was asked to draw: the one axis, and every line's values on it. */
+const drawn = () =>
+  [...document.querySelectorAll('[data-testid="chart-line"]')].map((node) => ({
+    elapsed: JSON.parse(
+      document.querySelector('[data-testid="chart"]')?.getAttribute('data-elapsed') ?? '[]',
+    ) as (number | null)[],
+    values: JSON.parse(node.getAttribute('data-values') ?? '[]') as (number | null)[],
+  }));
 
 const endpoint = (overrides: Partial<EndpointView> = {}): EndpointView => ({
   key: 'udp/1.1.1.1:27015',
@@ -118,6 +146,7 @@ const app = ({
   pool: null,
   warmupSecsRemaining: null,
   chartElapsedSecs: [0, 3, 6],
+  chartEpochMs: 1_800_000_000_000,
   // No busiest flow by default: most of these tests are about the table, and a card leading
   // with one endpoint would make every query for a figure ambiguous.
   primaryEndpoint: null,
@@ -1250,6 +1279,67 @@ describe('AppCard', () => {
     await openRow('1.1.1.1:27015');
 
     expect(screen.queryByText('Whose network it is')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppCard, and the hour behind the chart', () => {
+  it('draws the fetched history in front of the pushed window, on one axis', async () => {
+    // The event carries two minutes because that is what the emission budget affords once a
+    // second at the enforced ceiling. The depth is fetched, and stitched by slot: Rust
+    // decided where every slot begins, so this concatenates two arrays already on the same
+    // ladder rather than deciding anything.
+    fetchChartHistory.mockResolvedValue({
+      elapsedSecs: [0, 3, 6, 9],
+      endpoints: [
+        { key: 'udp/1.1.1.1:27015', rttMs: [10, 11, 12, 13], pathMs: [null, null, null, null] },
+      ],
+    });
+    render(
+      <AppCard
+        app={app({ chartElapsedSecs: [6, 9, 12] })}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(drawn()).toEqual([
+        // The two slots before the seam come from the history; the three from the seam
+        // onwards come from the live window, so a slot they both hold is never drawn twice.
+        { elapsed: [0, 3, 6, 9, 12], values: [10, 11, 24, null, 25] },
+      ]);
+    });
+  });
+
+  it('asks again when the window comes back, so a hidden window leaves no gap', async () => {
+    // A break on this chart means packets that did not come back. Rust kept measuring while
+    // the window was hidden and emitted nothing, so a hole the UI created by not listening
+    // would be a fabricated loss — which is the exact failure the three-second slot was
+    // introduced to prevent.
+    fetchChartHistory.mockResolvedValue({ elapsedSecs: [], endpoints: [] });
+    fetchChartHistory.mockClear();
+    render(
+      <AppCard
+        app={app()}
+        trafficWindowSecs={30}
+        chartStepSecs={3}
+        flowStatus="active"
+        onForget={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => {
+      expect(fetchChartHistory).toHaveBeenCalledTimes(2);
+    });
   });
 });
 

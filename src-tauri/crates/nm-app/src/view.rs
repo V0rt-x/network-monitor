@@ -27,7 +27,7 @@ use nm_probes::probe::ProbeKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::apps::{EndpointAge, EndpointReport, PassiveRttReading};
+use crate::apps::{ChartHistory, EndpointAge, EndpointReport, PassiveRttReading};
 use crate::asn::{NetworkNames, NetworkView};
 use crate::discovery::FlowStatus;
 use crate::targets::Section;
@@ -1219,6 +1219,17 @@ pub struct AppView {
     /// something the reader had to chase with the pointer. The ladder advances a whole slot
     /// at a time, so the picture steps once every few seconds rather than drifting.
     pub chart_elapsed_secs: Vec<f64>,
+    /// Wall-clock milliseconds at elapsed zero, so the axis can be read as a clock.
+    ///
+    /// "−45 s" answers "how long ago", and the reader's question after a stutter is "was that
+    /// when it happened" — which needs a clock. The axis is formatted as a time of day
+    /// through `Intl`; the *measurement* and the alignment stay on the monotonic clock, and
+    /// this is display only, which is exactly what `CLAUDE.md` permits.
+    ///
+    /// Recomputed on every emission as the wall clock now minus the monotonic elapsed since
+    /// the chart began, so a system clock adjusted mid-session moves every label together and
+    /// **no sample moves relative to its neighbours**.
+    pub chart_epoch_ms: f64,
     /// Its endpoints, grouped by transport — the match traffic first — and worst first
     /// within each group.
     ///
@@ -1252,6 +1263,7 @@ impl AppView {
         name: String,
         pids: Vec<u32>,
         chart_elapsed_secs: Vec<f64>,
+        chart_epoch_ms: f64,
         warmup_remaining: Option<Duration>,
         interfaces: &InterfaceNames,
         names: &NetworkNames,
@@ -1321,6 +1333,7 @@ impl AppView {
             warmup_secs_remaining: warmup_remaining.map(|remaining| remaining.as_secs_f64()),
             pool: pool.map(|(seeded, learned, reading)| PoolView::of(seeded, learned, &reading)),
             chart_elapsed_secs,
+            chart_epoch_ms,
             groups: vec![
                 EndpointGroupView::of(TransportView::Udp, udp),
                 EndpointGroupView::of(TransportView::Tcp, tcp),
@@ -1385,4 +1398,62 @@ pub struct ApplicationListView {
     /// What went wrong, if anything. An empty list with no problem means the machine really
     /// is running nothing.
     pub problem: Option<ApplicationListProblem>,
+}
+
+/// One endpoint's stored history, as far back as the ring reaches.
+///
+/// Aligned to [`ChartHistoryView::elapsed_secs`], which every endpoint of the application
+/// shares — the same ladder the pushed window sits on, so the UI concatenates two aligned
+/// arrays rather than deciding anything about where they meet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartHistoryEntryView {
+    /// Which endpoint it belongs to.
+    pub key: String,
+    /// Round-trip time per slot, oldest first. A slot with nothing in it is `null` — a gap,
+    /// never a zero and never an interpolation.
+    pub rtt_ms: Vec<Option<f64>>,
+    /// Round trip to the route's reported hop, in the same slots.
+    ///
+    /// Never a round trip to the endpoint and never merged with one: it belongs to a router
+    /// short of it, at an unknown distance. Kept as its own array here for the same reason the
+    /// chart draws it as its own dashed line.
+    pub path_ms: Vec<Option<f64>>,
+}
+
+/// One application's chart history, fetched rather than pushed.
+///
+/// The event goes on carrying the last forty slots at the emission rate; this is the hour
+/// behind them, asked for when a card mounts, when the window is shown again after being
+/// hidden, and when the reader scrolls past what they already hold.
+///
+/// **A window that was hidden leaves no gap**, because this is what closes it — and that
+/// matters more than convenience: a gap on this chart means packets that did not come back,
+/// so one the UI created by not listening would be a fabricated loss.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartHistoryView {
+    /// Seconds since monitoring began for each slot, ascending.
+    pub elapsed_secs: Vec<f64>,
+    /// One entry per endpoint with any history at all.
+    pub endpoints: Vec<ChartHistoryEntryView>,
+}
+
+impl ChartHistoryView {
+    /// Renders a monitor's stored history.
+    #[must_use]
+    pub fn of(history: &ChartHistory) -> Self {
+        Self {
+            elapsed_secs: history.elapsed_secs.clone(),
+            endpoints: history
+                .endpoints
+                .iter()
+                .map(|entry| ChartHistoryEntryView {
+                    key: endpoint_key(&entry.key),
+                    rtt_ms: entry.rtt_ms.clone(),
+                    path_ms: entry.path_ms.clone(),
+                })
+                .collect(),
+        }
+    }
 }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { AppView, FlowStatusView } from '../../shared/ipc';
 import { VerdictBanner } from '../../shared/VerdictBanner';
 import type { ChartLine } from './chartSeries';
-import { rowIdOf } from './chartSeries';
+import { rowIdOf, stitchAxis, stitchValues } from './chartSeries';
 import { Distribution } from './Distribution';
 import { EndpointChart } from './EndpointChart';
 import { EndpointColours } from './endpointColours';
@@ -12,6 +12,7 @@ import { EndpointGroup } from './EndpointGroup';
 import { MetricHelp } from '../help/MetricHelp';
 import { PoolPanel } from './PoolPanel';
 import { PrimaryFlow } from './PrimaryFlow';
+import { useChartHistory } from './useChartHistory';
 import { WhyNotYourPing } from './WhyNotYourPing';
 
 interface AppCardProps {
@@ -119,18 +120,35 @@ export const AppCard = ({
     if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
   };
 
+  // The hour behind the two minutes the event pushes. Fetched rather than pushed, and
+  // re-fetched when the window comes back — a gap this chart did not measure would read as
+  // packets that did not come back, which is the one thing a break here must always mean.
+  const { history } = useChartHistory(app.id);
+
+  // One axis for the whole card: the fetched slots that come before the live window, then
+  // the live window itself. Rust decided where every slot begins and what is in it, so this
+  // concatenates two arrays already on the same ladder rather than deciding anything.
+  const axis = useMemo(
+    () => stitchAxis(history.elapsedSecs, app.chartElapsedSecs),
+    [history.elapsedSecs, app.chartElapsedSecs],
+  );
+
   const lines = useMemo(() => {
     colours.current.reconcile(endpoints.map((endpoint) => endpoint.key));
+    const stored = new Map(history.endpoints.map((entry) => [entry.key, entry]));
     const drawn: ChartLine[] = [];
     for (const endpoint of endpoints) {
       const colour = colours.current.of(endpoint.key);
-      if (endpoint.chartRttMs.some((value) => value !== null)) {
+      const held = stored.get(endpoint.key);
+      const rtt = stitchValues(held?.rttMs ?? [], axis.fromHistory, endpoint.chartRttMs);
+      const path = stitchValues(held?.pathMs ?? [], axis.fromHistory, endpoint.chartPathMs);
+      if (rtt.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
           address: endpoint.address,
           transport: endpoint.transport,
           label: endpoint.address,
-          values: endpoint.chartRttMs,
+          values: rtt,
           colour,
           isPath: false,
         });
@@ -138,20 +156,20 @@ export const AppCard = ({
       // The silent match server's only figure. Drawn dashed and named as the route, because
       // it belongs to a router short of the endpoint and calling it the endpoint's ping is
       // the one lie this product exists not to tell.
-      if (endpoint.chartPathMs.some((value) => value !== null)) {
+      if (path.some((value) => value !== null)) {
         drawn.push({
           endpoint: endpoint.key,
           address: endpoint.address,
           transport: endpoint.transport,
           label: t('apps.chart.pathSeries', { endpoint: endpoint.address }),
-          values: endpoint.chartPathMs,
+          values: path,
           colour,
           isPath: true,
         });
       }
     }
     return drawn;
-  }, [endpoints, t]);
+  }, [endpoints, history.endpoints, axis.fromHistory, t]);
 
   return (
     <section className="nm-appcard">
@@ -215,7 +233,9 @@ export const AppCard = ({
       {lines.length > 0 && (
         <div className="nm-appcard__chart">
           <EndpointChart
-            elapsedSecs={app.chartElapsedSecs}
+            elapsedSecs={axis.elapsedSecs}
+            epochMs={app.chartEpochMs}
+            stepSecs={chartStepSecs}
             lines={lines}
             highlighted={highlighted}
             onHover={setHovered}
