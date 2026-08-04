@@ -6,16 +6,29 @@ import { countChips, stateBadges } from '../../shared/testing';
 import type { NetworkRowView, NetworkSnapshot, RowEndpointView, Section } from '../../shared/ipc';
 import { NetworkPage } from './NetworkPage';
 
-const { subscribeToNetwork, fetchCoreStatus, subscribeToHeartbeat } = vi.hoisted(() => ({
+const {
+  subscribeToNetwork,
+  fetchCoreStatus,
+  subscribeToHeartbeat,
+  fetchNetworkCatalogue,
+  fetchSettings,
+  storeSettings,
+} = vi.hoisted(() => ({
   subscribeToNetwork: vi.fn(),
   fetchCoreStatus: vi.fn(),
   subscribeToHeartbeat: vi.fn(),
+  fetchNetworkCatalogue: vi.fn(),
+  fetchSettings: vi.fn(),
+  storeSettings: vi.fn(),
 }));
 
 vi.mock('../../shared/ipc', () => ({
   subscribeToNetwork,
   fetchCoreStatus,
   subscribeToHeartbeat,
+  fetchNetworkCatalogue,
+  fetchSettings,
+  storeSettings,
 }));
 
 const endpoint = (overrides: Partial<RowEndpointView> = {}): RowEndpointView => ({
@@ -107,40 +120,56 @@ describe('NetworkPage', () => {
     fetchCoreStatus.mockResolvedValue(new Promise(() => undefined));
     subscribeToHeartbeat.mockResolvedValue(() => undefined);
     subscribeToNetwork.mockResolvedValue(() => undefined);
+    // The catalogue editor's own hooks fetch as soon as the page mounts — folded or not,
+    // exactly as the application picker's list does — so every test needs an answer for
+    // them even when it never opens the editor.
+    fetchNetworkCatalogue.mockResolvedValue(new Promise(() => undefined));
+    fetchSettings.mockResolvedValue(new Promise(() => undefined));
   });
 
-  it('draws every target with one row component and one history component', () => {
+  it('draws every user-facing tile with one tile component and one history component', () => {
     // The failure the merge exists to end: a baseline target and a gaming platform were one
     // object drawn by two sets of components — `GroupCard`+`TargetRow` beside
-    // `ServiceCard`+`EndpointRow` — with two distribution renderings sharing their CSS.
+    // `ServiceCard`+`EndpointRow` — with two distribution renderings sharing their CSS. The
+    // same component now draws `Domestic` and `Foreign` too, inside the verdict's own
+    // evidence expander, so all four rows in the fixture still draw with it.
     show();
 
-    expect(document.querySelectorAll('.nm-row')).toHaveLength(4);
+    expect(document.querySelectorAll('.nm-tile')).toHaveLength(4);
     // One history, and it is the strip. `Sparkline` stroked round-trip time in a colour that
     // *stated health*, which is the one rule about colour this product keeps everywhere else.
     expect(document.querySelectorAll('.nm-timeline')).toHaveLength(4);
     expect(document.querySelectorAll('.nm-sparkline')).toHaveLength(0);
   });
 
-  it('lists the four sections in the order the page argues in', () => {
+  it('draws only the users own services as tiles on the page, in the order the plan lists', () => {
+    // `Domestic` and `Foreign` are not services and are not the user's to remove — they moved
+    // one level down, into the verdict banner's own expander, in Phase 6.8.
     show();
 
     const headings = [...document.querySelectorAll('.nm-section__title')].map(
       (node) => node.textContent,
     );
-    expect(headings).toEqual(['Domestic', 'Foreign', 'Gaming platforms', 'Infrastructure']);
+    expect(headings).toEqual(['Gaming platforms', 'Infrastructure']);
   });
 
-  it('marks the sections a verdict was drawn from, and only those', () => {
-    // What keeps the banner at the top checkable against the rows below it.
+  it('folds the verdict evidence away until asked, and it is where the baselines live', () => {
     show();
 
-    const marks = screen.getAllByText('Read by the verdict');
-    expect(marks).toHaveLength(2);
-    for (const mark of marks) {
-      const heading = mark.closest('.nm-section')?.querySelector('.nm-section__title');
-      expect(['Domestic', 'Foreign']).toContain(heading?.textContent);
+    const evidence = screen.getByText('What this is drawn from').closest('details');
+    if (!(evidence instanceof HTMLDetailsElement)) {
+      throw new Error('the evidence is not a folding element');
     }
+    expect(evidence).not.toHaveAttribute('open');
+
+    // `Domestic` and `Foreign` exist, inside the closed expander — a `<details>` keeps its
+    // children — and it is the only place on the page they are drawn at all.
+    expect(within(evidence).getByText('Domestic')).toBeInTheDocument();
+    expect(within(evidence).getByText('Foreign')).toBeInTheDocument();
+    expect(within(evidence).getByText('Yandex DNS')).toBeInTheDocument();
+
+    evidence.open = true;
+    expect(within(evidence).getByText('Yandex DNS')).toBeVisible();
   });
 
   it('names the round trip two ways rather than five', () => {
@@ -149,11 +178,12 @@ describe('NetworkPage', () => {
     // which-window qualifiers moved a level down and both keep their explanations.
     show();
 
-    // One per section heading, and one `Ping (RTT)` per row — the row's is the bare figure
-    // under the heading's name, which is what a folded row shows.
+    // One per section heading (two tile sections, two evidence sections) and one
+    // `Ping (RTT)` per row — the row's is the bare figure under the heading's name, which is
+    // what a folded row shows.
     expect(screen.getAllByText('Ping, median')).toHaveLength(4);
     // The which-window qualifiers are present in the document — a `<details>` keeps its
-    // children — and on screen nowhere until a row is opened.
+    // children — and on screen nowhere until a tile is opened.
     for (const name of ['Ping, last check', 'Ping, mean']) {
       for (const found of screen.getAllByText(name)) {
         expect(found).not.toBeVisible();
@@ -161,53 +191,80 @@ describe('NetworkPage', () => {
     }
   });
 
-  it('folds a clean row to one line, and opens it on request', () => {
+  it('folds a clean tile to one line, and opens it on request', () => {
     // Twenty-three rows each carrying a strip and three figures per endpoint turns "which of
     // these is red" into a scrolling task.
     show();
 
-    const steam = screen.getByText('Steam').closest('details');
-    if (!(steam instanceof HTMLDetailsElement)) throw new Error('Steam is not a folding row');
-    expect(steam).not.toHaveAttribute('open');
+    const ea = screen.getByText('EA').closest('details');
+    if (!(ea instanceof HTMLDetailsElement)) throw new Error('EA is not a folding tile');
+    expect(ea).not.toHaveAttribute('open');
     // Closed: a name, a state, a strip, a round trip. Nothing else.
-    expect(within(steam).queryByText('api.steampowered.com')).not.toBeVisible();
+    expect(within(ea).queryByText('api.steampowered.com')).not.toBeVisible();
 
-    steam.open = true;
-    expect(within(steam).getByText('api.steampowered.com')).toBeVisible();
-    expect(within(steam).getByText('Ping, last check')).toBeVisible();
+    ea.open = true;
+    expect(within(ea).getByText('api.steampowered.com')).toBeVisible();
+    expect(within(ea).getByText('Ping, last check')).toBeVisible();
   });
 
-  it('opens a row that is worse than clean, without being asked', () => {
+  it('opens a tile that is worse than clean, without being asked', () => {
     show(
       snapshot({
         sections: [
           section('domestic', [row({ label: 'Yandex DNS' })]),
-          section('foreign', [row({ label: 'Steam', health: 'unreachable' })]),
-          section('gamingPlatform', []),
+          section('foreign', [row({ label: 'Steam' })]),
+          section('gamingPlatform', [
+            row({ key: 'services/ea', label: 'EA', health: 'unreachable' }),
+          ]),
           section('infrastructure', []),
         ],
       }),
     );
 
-    expect(screen.getByText('Steam').closest('details')).toHaveAttribute('open');
-    expect(screen.getByText('Yandex DNS').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('EA').closest('details')).toHaveAttribute('open');
   });
 
-  it('states the cadence of each section rather than one claim for the page', () => {
+  it('draws no heading at all for a group with nothing selected', () => {
+    // An empty `Infrastructure` heading with no rows under it would read as "nothing here is
+    // reachable" about a group the user simply unticked — item 4's rule, reused for the third
+    // group item 18 added.
+    show(
+      snapshot({
+        sections: [
+          section('domestic', [row({ label: 'Yandex DNS' })]),
+          section('foreign', [row({ label: 'Steam' })]),
+          section('gamingPlatform', [row({ key: 'services/ea', label: 'EA' })]),
+          section('infrastructure', []),
+          section('other', []),
+        ],
+      }),
+    );
+
+    const headings = [...document.querySelectorAll('.nm-section__title')].map(
+      (node) => node.textContent,
+    );
+    expect(headings).toEqual(['Gaming platforms']);
+  });
+
+  it('states the cadence of each tile section rather than one claim for the page', () => {
     // The cadence difference stopped being two subsystems and became a field on a target.
     show();
 
     const cadences = [...document.querySelectorAll('.nm-section__cadence p')].map(
       (node) => node.textContent,
     );
-    expect(cadences[0]).toContain('every 5 s');
-    expect(cadences[2]).toContain('every 45 s');
+    expect(cadences[0]).toContain('every 45 s');
   });
 
-  it('carries one legend for the whole page rather than one vocabulary per half', () => {
+  it('carries no page-level legend, because that explanation moved into the help', () => {
+    // The heading, the six named marks and the caveat paragraph were an explanation sitting
+    // above the page's own content — level one carrying prose, which the standing rule
+    // forbids. It is a help topic now, reachable from the general Help page rather than
+    // repeated here.
     show();
 
-    expect(screen.getAllByRole('list', { name: 'What a cell can say' })).toHaveLength(1);
+    expect(document.querySelector('.nm-status__legend')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'What a cell can say' })).not.toBeInTheDocument();
   });
 
   it('shows a count chip that is not a state badge', () => {
@@ -220,6 +277,59 @@ describe('NetworkPage', () => {
     // never picks up a pill's border by sharing it.
     expect(document.querySelectorAll('.nm-count.nm-health')).toHaveLength(0);
     expect(document.querySelectorAll('.nm-count.nm-token')).toHaveLength(0);
+  });
+
+  it('carries a tile-level chip only where its endpoints disagree', () => {
+    show(
+      snapshot({
+        sections: [
+          section('domestic', [row({ label: 'Yandex DNS' })]),
+          section('foreign', [row({ label: 'Steam' })]),
+          section('gamingPlatform', [
+            row({
+              key: 'services/ea',
+              label: 'EA',
+              // The row's own verdict stays clean here on purpose, so the tile starts
+              // folded and this test isolates the *summary* chip rather than the one the
+              // opened detail always shows for a multi-endpoint row.
+              health: 'ok',
+              counts: {
+                ok: 1,
+                degraded: 1,
+                unreachable: 0,
+                blocked: 0,
+                carryingTraffic: 0,
+                unknown: 0,
+              },
+              endpoints: [
+                endpoint({ key: 'a', health: 'ok' }),
+                endpoint({ key: 'b', health: 'degraded' }),
+              ],
+            }),
+          ]),
+          section('infrastructure', [row({ key: 'services/aws', label: 'Amazon Web Services' })]),
+        ],
+      }),
+    );
+
+    // `.nm-tile__chips` is the summary-level chip specifically — the detail below carries an
+    // unmarked distribution of its own whenever a row has more than one endpoint, open or
+    // not, and the two must not be confused with each other by this assertion.
+    const ea = screen.getByText('EA').closest('.nm-tile');
+    if (ea === null) throw new Error('EA is not a tile');
+    expect(ea.querySelectorAll('.nm-tile__chips')).toHaveLength(1);
+
+    const aws = screen.getByText('Amazon Web Services').closest('.nm-tile');
+    if (aws === null) throw new Error('Amazon Web Services is not a tile');
+    expect(aws.querySelectorAll('.nm-tile__chips')).toHaveLength(0);
+  });
+
+  it('offers an edit control, folded by default', () => {
+    show();
+
+    expect(screen.getByRole('button', { name: 'Edit…' })).toBeInTheDocument();
+    // Folded: no checklist is on screen until it is asked for.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('says the core stopped rather than showing a page that looks calm', () => {

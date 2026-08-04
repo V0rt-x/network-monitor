@@ -98,6 +98,45 @@ fn the_probe_interval_is_clamped_into_range() {
 }
 
 #[test]
+fn the_default_selection_is_everything_bundled() {
+    // `None` rather than a listed-out `Some(all_the_keys)`: a catalogue entry added in a
+    // later release must appear for an existing installation with no settings migration.
+    assert_eq!(Settings::default().network_selection, None);
+}
+
+#[test]
+fn an_unknown_catalogue_key_is_dropped_rather_than_rejected() {
+    // A release can rename or remove a bundled entry; a selection naming one that no longer
+    // exists must not be treated as a malformed file; it must simply lose that one entry.
+    let known = nm_app::targets::catalogue()
+        .expect("the bundled catalogue must parse")
+        .into_iter()
+        .next()
+        .expect("the bundled catalogue must not be empty")
+        .key;
+
+    let sane = Settings {
+        network_selection: Some(vec![known.clone(), "no-such-entry".to_owned()]),
+        ..Settings::default()
+    }
+    .sanitized();
+
+    assert_eq!(sane.network_selection, Some(vec![known]));
+}
+
+#[test]
+fn selecting_nothing_stays_nothing_rather_than_becoming_everything() {
+    // An empty selection is a real, distinct state — the user unticked every editable entry
+    // — and must not be confused with `None`, which means "everything bundled".
+    let sane = Settings {
+        network_selection: Some(Vec::new()),
+        ..Settings::default()
+    }
+    .sanitized();
+    assert_eq!(sane.network_selection, Some(Vec::new()));
+}
+
+#[test]
 fn the_interval_converts_to_a_duration() {
     let settings = Settings {
         baseline_interval_secs: 7,
@@ -127,6 +166,7 @@ fn settings_survive_a_round_trip_through_the_file() {
         autostart: true,
         remember_game_servers: false,
         name_networks: false,
+        network_selection: Some(vec!["services/ea".to_owned()]),
     };
 
     settings::store(&scratch.file(), &wanted).expect("the directory must be created");

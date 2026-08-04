@@ -27,11 +27,19 @@
       "foreign": "Foreign",
       "gamingPlatform": "Gaming platforms",
       "infrastructure": "Infrastructure",
-      "readByVerdict": "Read by the verdict"
+      "other": "Other"
     },
     "cadence": {
       "summary": "How often this is checked",
       "detail": "Each target here is probed every {{seconds}} s. The figures cover the last {{window}} s, which is also the stretch a full strip of {{checks}} checks reaches back."
+    },
+    "edit": {
+      "open": "Edit…",
+      "done": "Done",
+      "heading": "Choose what this page shows",
+      "hint": "Ticked entries are measured; the rest are not probed at all, so choosing fewer leaves more of the budget for the rest. There is no free-text entry — only the bundled catalogue below, which is the only thing this app ever probes on your behalf.",
+      "loading": "Reading the catalogue…",
+      "unavailable": "The catalogue could not be requested"
     }
   },
   "tray": {
@@ -436,7 +444,7 @@
       "checks": {
         "title": "The check strip",
         "short": "One cell is one check of that service, oldest on the left. Colour is never the only signal — every cell carries its word.",
-        "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. A cell is a fact rather than a verdict: it says what that single check produced — answered, answered slowly, no answer, refused, the probe was filtered, or your tunnel answered — and keeping those apart is the point, because a single colour on the card cannot. Pointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
+        "body": "Each service on this page is checked on a slow, fixed cadence, and every check leaves one cell. Oldest sits on the left, newest on the right, so the strip reads left to right like a sentence. These checks say only whether this machine can reach that service — a service you cannot reach may be running normally for everyone else, which is exactly the ambiguity the domestic and foreign evidence beside it exists to resolve.\n\nA cell is a fact rather than a verdict, and the six words it can say are not shades of the same thing: Answered is a clean reply. Answered slowly is still a reply, at or above 400 ms — slow enough to matter, never counted as a loss. No answer is silence: nothing came back at all. Refused is also an answer — the far end responded to say no, which is information rather than loss, and is kept apart from silence for exactly that reason. Probe filtered means something between here and there is discarding the probe itself; it is knowledge withheld, not a service being down, and a service can be filtered and healthy at once. Your tunnel answered means the round trip stopped inside this machine's own tunnel software before ever reaching the network — a fact about this machine's configuration, not about the service.\n\nPointing at a cell, or moving through the strip with the arrow keys, says when that check happened. What the strip is for is telling apart \"one packet went missing twenty minutes ago\" from \"nothing has answered since\", which is the difference between a service that is fine and one that is not."
       },
       "medianRtt": {
         "title": "Ping, median",
@@ -474,6 +482,7 @@
     "label": "What the measurements add up to",
     "about": "{{subject}}: {{verdict}}",
     "scope": "About {{affected}} of {{total}} endpoints",
+    "evidenceSummary": "What this is drawn from",
     "notEnoughEvidence": "Not enough measured yet to say",
     "nothingMeasurable": "Probes are being filtered — nothing could be measured",
     "clear": "Nothing points at a network-wide problem",
@@ -493,8 +502,6 @@
     "waiting": "Checking services…",
     "unavailable": "The core stopped sending service checks",
     "cadence": "Each service is checked every {{seconds}} s",
-    "caveat": "These checks say whether this machine can reach each service. A service you cannot reach may be running normally for everyone else.",
-    "noServices": "No services in this group",
     "distribution": "Endpoint states of {{service}}",
     "noChecks": "Not checked yet",
     "neverChecked": "Not checked yet",
@@ -517,9 +524,6 @@
       "answeredLocally": "Your tunnel answered"
     },
     "timeline": {
-      "heading": "What one cell is",
-      "note": "One check, oldest on the left. A full strip is the last {{count}} checks — about {{minutes}} min, which is also the window every mean and loss below covers.",
-      "legendLabel": "What a cell can say",
       "position": "Check {{index}} of {{count}}",
       "agedSeconds": "{{seconds}} s ago",
       "agedMinutes": "{{minutes}} min ago",

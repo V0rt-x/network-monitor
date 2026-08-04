@@ -209,8 +209,9 @@ pub struct NetworkSectionView {
     /// Whether a verdict is drawn from it.
     ///
     /// Sent rather than derived in the frontend, because it is the same judgement the
-    /// diagnosis engine makes and the page marks these sections so the banner above stays
-    /// checkable against the rows below.
+    /// diagnosis engine makes. It is what tells the page which sections belong inside the
+    /// verdict banner's own expander (`domestic`, `foreign`) and which are the user's own
+    /// editable tiles.
     pub read_by_verdict: bool,
     /// The headline verdict for the section.
     pub verdict: HealthView,
@@ -1398,6 +1399,33 @@ pub struct ApplicationListView {
     /// What went wrong, if anything. An empty list with no problem means the machine really
     /// is running nothing.
     pub problem: Option<ApplicationListProblem>,
+}
+
+/// One entry an edit chooser may offer.
+///
+/// Over the bundled catalogue only — there is no free-text address field anywhere in this
+/// product, because an address a user typed would be a target this app then probed on their
+/// behalf, and the bundled lists are auditable precisely because they are the only thing
+/// that is ever probed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkCatalogueEntryView {
+    /// Keyed exactly as the row it selects, so ticking an entry and finding it on the page
+    /// are the same identifier.
+    pub key: String,
+    /// The operator's name for it, shown as written.
+    pub label: String,
+    /// Which editable section it belongs to. Never `domestic` or `foreign`: those are the
+    /// verdict's own evidence, not a user's services.
+    pub section: Section,
+}
+
+/// The bundled catalogue an edit chooser may offer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkCatalogueView {
+    /// Every offerable entry, in bundled order.
+    pub entries: Vec<NetworkCatalogueEntryView>,
 }
 
 /// One endpoint's stored history, as far back as the ring reaches.

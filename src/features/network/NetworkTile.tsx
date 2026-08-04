@@ -10,37 +10,48 @@ import { probeKindKey } from '../dashboard/labels';
 import { MetricHelp } from '../help/MetricHelp';
 import { CheckTimeline } from '../status-page/CheckTimeline';
 
-interface NetworkRowProps {
+interface NetworkTileProps {
   readonly row: NetworkRowView;
   /** How often this row's section is checked, for the staleness rule. */
   readonly cadenceSecs: number;
 }
 
+/** How many of a row's endpoint states are actually present, for the disagreement rule below. */
+const distinctStates = (counts: NetworkRowView['counts']): number =>
+  Object.values(counts).filter((value) => value > 0).length;
+
 /**
- * One row of the Network page: a name, a state, its recent checks, and its round trip.
+ * One tile of the Network page: a name, a state, its recent checks, and its round trip.
+ *
+ * *Reverses Phase 6.7 item 28 for this page, on the user's instruction after reading the
+ * running build.* Folding twenty-three services into one-line rows made the page scannable
+ * and made it a spreadsheet: the strip is this page's only picture, and a page whose question
+ * is "which of these is red" reads faster as a grid of tiles than as a column of lines.
  *
  * **One component for the whole page.** A baseline target and a gaming platform were drawn
  * by two components in two visual languages — `GroupCard`+`TargetRow` beside
  * `ServiceCard`+`EndpointRow` — over two IPC shapes, with two distribution renderings that
- * shared their CSS. They are one object: a named thing with one or more addresses.
+ * shared their CSS. They are one object: a named thing with one or more addresses. It is also
+ * what the verdict banner's own evidence expander renders `Domestic` and `Foreign` with,
+ * since a tile is the same concept wherever it appears — the grid layout around it is what
+ * changes, not the tile itself.
  *
  * **The strip is what survived, and the sparkline is what went.** `Sparkline` drew round-trip
  * time over time and *stroked it in a colour that stated health*, which is the one rule about
  * colour this product does not break anywhere else. `CheckTimeline` draws one cell per check
- * and names six distinguishable outcomes in words. For a page whose question is "which of
- * these is red", the strip is strictly the better instrument, and it carries more rather than
- * less. Continuous round-trip reading belongs to the applications chart, where it already is.
+ * and names six distinguishable outcomes in words.
  *
- * **Folded to one line, and it says which line.** Twenty-three rows each carrying a strip and
- * three figures per endpoint turns "which of these is red" into a scrolling task. Closed: the
- * name, one word of state, the strip and `Ping (RTT)`. The endpoints, the badges and the
- * remaining figures are level two.
+ * **Folded to one line, and it says which line.** Closed: the name, one word of state, the
+ * strip, `Ping (RTT)` and — only where its endpoints disagree — a count chip. Agreeing
+ * endpoints already say everything the chip could add: the state token beside the name is a
+ * complete claim about all of them, and a chip there would repeat it. The endpoints, the
+ * badges and the remaining figures are level two.
  *
- * A row worse than clean starts open — as the *initial* state only. Re-applying that on every
+ * A tile worse than clean starts open — as the *initial* state only. Re-applying that on every
  * render is what made the applications page open and collapse under the reader, because the
  * value flips constantly on a weak link.
  */
-export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
+export const NetworkTile = ({ row, cadenceSecs }: NetworkTileProps) => {
   const { t } = useTranslation();
   const figures = useFigures();
   const [open, setOpen] = useState(row.health !== 'ok');
@@ -56,19 +67,32 @@ export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
   // The first endpoint's strip stands for the row when it is closed. A row with two of them
   // shows both once it is opened; picking one to summarise the other would be a claim.
   const summary = row.endpoints[0];
+  const disagreement = row.endpoints.length > 1 && distinctStates(row.counts) > 1;
 
   return (
     <details
-      className="nm-row"
+      className="nm-tile"
       open={open}
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
       }}
     >
-      <summary className="nm-row__head">
-        <span className="nm-row__label">{row.label}</span>
-        <StateToken health={row.health} />
-        <span className="nm-row__strip">
+      <summary className="nm-tile__head">
+        <span className="nm-tile__label">{row.label}</span>
+        <span className="nm-tile__state">
+          <StateToken health={row.health} />
+          {/* A distribution repeated here only when it says something the token beside it
+              does not: a storefront answering while the gateway does not is the finding, and
+              a chip on a row whose endpoints all agree would just restate the token. */}
+          {disagreement && (
+            <Distribution
+              counts={row.counts}
+              label={t('network.distribution', { row: row.label })}
+              className="nm-tile__chips"
+            />
+          )}
+        </span>
+        <span className="nm-tile__strip">
           {summary !== undefined && (
             <CheckTimeline
               checks={summary.checks}
@@ -82,10 +106,10 @@ export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
         {/* One of exactly two names this page gives a round trip. The other is
             `Ping, median` on a section heading; `Ping, last check` and `Ping, mean` are a
             *which window* qualifier and live a level down. There were five. */}
-        <span className="nm-row__rtt">{figures.ms(row.rttMs)}</span>
+        <span className="nm-tile__rtt">{figures.ms(row.rttMs)}</span>
       </summary>
 
-      <div className="nm-row__detail">
+      <div className="nm-tile__detail">
         <p className={stale ? 'nm-service__stale' : 'nm-service__checked'}>{lastChecked}</p>
 
         {/* Shown whenever the row has more than one endpoint: a storefront answering while
@@ -94,10 +118,10 @@ export const NetworkRow = ({ row, cadenceSecs }: NetworkRowProps) => {
           <Distribution counts={row.counts} label={t('network.distribution', { row: row.label })} />
         )}
 
-        <ul className="nm-row__endpoints">
+        <ul className="nm-tile__endpoints">
           {row.endpoints.map((endpoint) => (
-            <li key={endpoint.key} className="nm-row__endpoint">
-              <div className="nm-row__endpointhead">
+            <li key={endpoint.key} className="nm-tile__endpoint">
+              <div className="nm-tile__endpointhead">
                 <span className="nm-service__address" title={endpoint.resolvedAddress ?? undefined}>
                   {endpoint.writtenAddress}
                 </span>

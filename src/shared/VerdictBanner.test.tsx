@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import '../i18n';
@@ -102,5 +102,23 @@ describe('VerdictBanner', () => {
     expect(
       screen.getByText("The game's own reference servers are not answering from here"),
     ).toBeInTheDocument();
+  });
+
+  it('carries no evidence expander when none is given', () => {
+    // Every caller but the Network page has no baselines of its own to show, and an empty
+    // expander would be a second inventory beside the claim with nothing in it.
+    render(<VerdictBanner diagnosis={diagnosis()} />);
+    expect(screen.queryByText('What this is drawn from')).not.toBeInTheDocument();
+  });
+
+  it('folds the evidence it is given behind its own expander', () => {
+    render(<VerdictBanner diagnosis={diagnosis()} evidence={<p>Domestic and foreign, here</p>} />);
+
+    const expander = screen.getByText('What this is drawn from').closest('details');
+    if (!(expander instanceof HTMLDetailsElement)) {
+      throw new Error('the evidence is not a folding element');
+    }
+    expect(expander).not.toHaveAttribute('open');
+    expect(within(expander).getByText('Domestic and foreign, here')).toBeInTheDocument();
   });
 });

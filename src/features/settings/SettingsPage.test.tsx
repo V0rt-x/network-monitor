@@ -21,6 +21,7 @@ const view = (overrides: Partial<SettingsView> = {}): SettingsView => ({
     autostart: false,
     rememberGameServers: true,
     nameNetworks: true,
+    networkSelection: null,
   },
   problem: null,
   countries: ['ru', 'ir'],
@@ -60,6 +61,7 @@ describe('SettingsPage', () => {
       autostart: false,
       rememberGameServers: true,
       nameNetworks: true,
+      networkSelection: null,
     });
   });
 
@@ -84,6 +86,7 @@ describe('SettingsPage', () => {
           autostart: false,
           rememberGameServers: true,
           nameNetworks: true,
+          networkSelection: null,
         },
       }),
     );

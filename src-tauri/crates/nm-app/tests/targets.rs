@@ -17,8 +17,8 @@
 use std::collections::HashMap;
 
 use nm_app::targets::{
-    bundled, countries, domestic, foreign, has_country, refuse_duplicate_addresses, services,
-    ProbeKindHint, Section, TargetList, SLOW_CHECK_INTERVAL,
+    bundled, countries, domestic, foreign, has_country, is_selected, refuse_duplicate_addresses,
+    services, ProbeKindHint, ResolvedTarget, Section, TargetList, SLOW_CHECK_INTERVAL,
 };
 use nm_app::Error;
 
@@ -68,8 +68,16 @@ fn every_section_has_something_in_it() {
     // A page with an empty heading is a page that looks broken. More to the point, an empty
     // domestic or foreign section would leave the verdict with half its evidence and no way
     // to say so.
+    //
+    // `Other` is exempt on purpose: it exists for an entry that fits neither bundled group,
+    // and until a release adds one, an empty `Other` is the honest state rather than a
+    // fixture entry invented to satisfy this test — the page already draws no heading for a
+    // group with nothing in it (item 4's rule, reused for item 18's third group).
     let sections = sections();
     for section in Section::ALL {
+        if section == Section::Other {
+            continue;
+        }
         assert!(
             sections.contains(&section),
             "nothing is listed under {section:?}"
@@ -351,13 +359,15 @@ fn the_sections_a_verdict_reads_are_the_first_two() {
             Section::Domestic,
             Section::Foreign,
             Section::GamingPlatform,
-            Section::Infrastructure
+            Section::Infrastructure,
+            Section::Other,
         ]
     );
     assert!(Section::Domestic.read_by_verdict());
     assert!(Section::Foreign.read_by_verdict());
     assert!(!Section::GamingPlatform.read_by_verdict());
     assert!(!Section::Infrastructure.read_by_verdict());
+    assert!(!Section::Other.read_by_verdict());
 }
 
 #[test]
@@ -369,4 +379,90 @@ fn a_verdict_bearing_section_is_judged_by_a_window_and_the_rest_by_their_last_ch
     assert!(Section::Foreign.judged_by_window());
     assert!(!Section::GamingPlatform.judged_by_window());
     assert!(!Section::Infrastructure.judged_by_window());
+    assert!(!Section::Other.judged_by_window());
+}
+
+#[test]
+fn only_the_verdicts_own_evidence_is_uneditable() {
+    // `Domestic` and `Foreign` are not services and are not the user's to remove; the other
+    // three are the bundled catalogue an edit chooser may offer.
+    assert!(!Section::Domestic.editable());
+    assert!(!Section::Foreign.editable());
+    assert!(Section::GamingPlatform.editable());
+    assert!(Section::Infrastructure.editable());
+    assert!(Section::Other.editable());
+}
+
+#[test]
+fn the_catalogue_offers_no_verdict_evidence() {
+    // The chooser is over the bundled services list only. A stray `domestic` or `foreign`
+    // entry here would let a user untick evidence the verdict is still reading, silently
+    // breaking item 20's rule that editing changes what is shown, never what is measured.
+    let catalogue = nm_app::targets::catalogue().expect("the bundled catalogue must parse");
+    assert!(!catalogue.is_empty());
+    for entry in &catalogue {
+        assert!(
+            entry.section.editable(),
+            "{:?} is not editable and must not be offered",
+            entry.section
+        );
+    }
+}
+
+/// A resolved target with no endpoints, which is all `is_selected` ever looks at.
+fn resolved(key: &str, section: Section) -> ResolvedTarget {
+    ResolvedTarget {
+        key: key.to_owned(),
+        label: key.to_owned(),
+        section,
+        probe_kind: None,
+        endpoints: Vec::new(),
+    }
+}
+
+#[test]
+fn a_verdict_bearing_target_is_always_selected() {
+    // Item 20's rule: editing changes what is shown, never what is measured for the
+    // verdict. An empty selection would otherwise silently thin the domestic and foreign
+    // evidence the diagnosis reads.
+    let domestic = resolved("ru/yandex-dns", Section::Domestic);
+    let foreign = resolved("foreign/discord", Section::Foreign);
+    assert!(is_selected(&domestic, &None));
+    assert!(is_selected(&domestic, &Some(Vec::new())));
+    assert!(is_selected(&foreign, &Some(Vec::new())));
+}
+
+#[test]
+fn no_selection_at_all_measures_the_whole_catalogue() {
+    let target = resolved("services/ea", Section::GamingPlatform);
+    assert!(is_selected(&target, &None));
+}
+
+#[test]
+fn an_editable_target_is_measured_only_when_its_key_is_selected() {
+    let target = resolved("services/ea", Section::GamingPlatform);
+    assert!(is_selected(
+        &target,
+        &Some(vec!["services/ea".to_owned(), "services/aws".to_owned()])
+    ));
+    assert!(!is_selected(
+        &target,
+        &Some(vec!["services/aws".to_owned()])
+    ));
+    assert!(!is_selected(&target, &Some(Vec::new())));
+}
+
+#[test]
+fn every_catalogue_key_matches_a_resolved_target() {
+    // The selection is stored by key, and it must line up with the key the runtime actually
+    // registers, or a stored selection would silently select nothing.
+    let list = services().expect("the bundled service list must validate");
+    let catalogue = nm_app::targets::catalogue().expect("the bundled catalogue must parse");
+    let expected: Vec<String> = list
+        .targets
+        .iter()
+        .map(|target| format!("services/{}", target.id))
+        .collect();
+    let keys: Vec<String> = catalogue.into_iter().map(|entry| entry.key).collect();
+    assert_eq!(keys, expected);
 }

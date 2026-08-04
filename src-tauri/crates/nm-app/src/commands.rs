@@ -28,6 +28,7 @@ use crate::shell::TrayLabels;
 use crate::state::AppState;
 use crate::view::{
     ApplicationChoiceView, ApplicationListProblem, ApplicationListView, ChartHistoryView,
+    NetworkCatalogueEntryView, NetworkCatalogueView,
 };
 use crate::{applications, shell, targets};
 
@@ -281,6 +282,32 @@ pub fn forget_app(state: State<'_, AppState>, app: u32) {
 #[specta::specta]
 pub async fn chart_history(state: State<'_, AppState>, app: u32) -> Result<ChartHistoryView, ()> {
     Ok(state.chart_history(AppId::new(app)).await)
+}
+
+/// The bundled catalogue an edit chooser may offer for the Network page's editable groups.
+///
+/// **No free-text address field exists anywhere in this product.** An address a user typed
+/// would be a target this app then probed on their behalf, and the bundled lists are
+/// auditable precisely because they are the only thing that is ever probed. `Domestic` and
+/// `Foreign` never appear: they are the verdict's own evidence, not a user's services, and
+/// stay probed whether or not a selection includes them (see [`Section::editable`]).
+///
+/// [`Section::editable`]: crate::targets::Section::editable
+#[tauri::command]
+#[specta::specta]
+#[must_use]
+pub fn network_catalogue() -> NetworkCatalogueView {
+    let entries = targets::catalogue().unwrap_or_default();
+    NetworkCatalogueView {
+        entries: entries
+            .into_iter()
+            .map(|entry| NetworkCatalogueEntryView {
+                key: entry.key,
+                label: entry.label,
+                section: entry.section,
+            })
+            .collect(),
+    }
 }
 
 /// Gives the tray menu its labels, translated by the UI.

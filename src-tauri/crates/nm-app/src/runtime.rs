@@ -867,6 +867,9 @@ async fn build(
     // address twice, which is the failure the merge exists to end.
     for list in &targets::bundled(&settings.country)? {
         for target in &targets::resolve_list(list).await {
+            if !targets::is_selected(target, &settings.network_selection) {
+                continue;
+            }
             register(
                 registry,
                 &mut runner,

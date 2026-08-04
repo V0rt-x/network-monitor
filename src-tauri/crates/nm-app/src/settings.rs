@@ -84,6 +84,14 @@ pub struct Settings {
     /// might reasonably want to trade away on a machine where the game needs every
     /// megabyte. Switching it off frees that immediately rather than at the next restart.
     pub name_networks: bool,
+    /// Which of the bundled catalogue's gaming platforms and infrastructure the Network page
+    /// measures. `None` is everything bundled — the default, and what keeps an entry added
+    /// in a later release visible with no settings migration.
+    ///
+    /// `Domestic` and `Foreign` are never affected: they are the verdict's own evidence, not
+    /// a user's services, and stay probed regardless of this field (see
+    /// [`crate::targets::Section::editable`]).
+    pub network_selection: Option<Vec<String>>,
 }
 
 impl Default for Settings {
@@ -95,6 +103,7 @@ impl Default for Settings {
             autostart: false,
             remember_game_servers: true,
             name_networks: true,
+            network_selection: None,
         }
     }
 }
@@ -125,6 +134,19 @@ impl Settings {
             autostart: self.autostart,
             remember_game_servers: self.remember_game_servers,
             name_networks: self.name_networks,
+            // An identifier the current catalogue does not recognise is dropped rather than
+            // rejected outright: a release can rename or remove a bundled entry, and a
+            // hand-edited or outdated file must not be treated as malformed for naming one
+            // that no longer exists.
+            network_selection: self.network_selection.map(|selection| {
+                let known: std::collections::HashSet<String> = targets::catalogue()
+                    .map(|entries| entries.into_iter().map(|entry| entry.key).collect())
+                    .unwrap_or_default();
+                selection
+                    .into_iter()
+                    .filter(|key| known.contains(key))
+                    .collect()
+            }),
         }
     }
 
@@ -150,6 +172,10 @@ pub struct Stored {
     autostart: Option<bool>,
     remember_game_servers: Option<bool>,
     name_networks: Option<bool>,
+    // Absent, or explicitly `null`, both deserialize to `None` here — `Option<T>`'s ordinary
+    // behaviour, and exactly what "everything bundled" needs: a file written before this
+    // field existed must mean the same thing as a user who chose "select all".
+    network_selection: Option<Vec<String>>,
 }
 
 impl Stored {
@@ -167,6 +193,10 @@ impl Stored {
                 .remember_game_servers
                 .unwrap_or(defaults.remember_game_servers),
             name_networks: self.name_networks.unwrap_or(defaults.name_networks),
+            // Already `None` for both "the file predates this field" and "the file (or the
+            // user) chose everything" — the two cases [`Settings::default`] also treats the
+            // same way — so there is no separate gap to fill.
+            network_selection: self.network_selection.or(defaults.network_selection),
         }
     }
 }

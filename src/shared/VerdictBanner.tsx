@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MetricHelp } from '../features/help/MetricHelp';
@@ -9,6 +10,15 @@ interface VerdictBannerProps {
   readonly diagnosis: DiagnosisView;
   /** What the verdict is about, when it is about one application. */
   readonly subject?: string;
+  /**
+   * "What this is drawn from", folded inside the banner's own expander.
+   *
+   * Only the Network page passes this: `Domestic` and `Foreign` are not services and are not
+   * the user's to remove, so the evidence they add up to stays one level down from the claim
+   * it supports rather than a second inventory beside it. Left undefined on every other
+   * banner — an application's verdict has no baselines of its own to show.
+   */
+  readonly evidence?: ReactNode;
 }
 
 /**
@@ -28,8 +38,12 @@ interface VerdictBannerProps {
  * **The advice is separate from the finding.** What was observed and what to try about it
  * are different claims: the app can see that the evidence points past the border, and it
  * cannot see whether a VPN would help.
+ *
+ * **The evidence is one click away, never a second inventory beside the claim.** The Network
+ * page's own baselines pass their state, distribution and members as `evidence`; every other
+ * caller of this component has none to show and the expander is simply absent.
  */
-export const VerdictBanner = ({ diagnosis, subject }: VerdictBannerProps) => {
+export const VerdictBanner = ({ diagnosis, subject, evidence }: VerdictBannerProps) => {
   const { t, i18n } = useTranslation();
   const advice = verdictAdviceKey(diagnosis.verdict);
 
@@ -67,6 +81,12 @@ export const VerdictBanner = ({ diagnosis, subject }: VerdictBannerProps) => {
         </p>
       )}
       {advice !== null && <p className="nm-verdict__advice">{t(advice)}</p>}
+      {evidence !== undefined && (
+        <details className="nm-verdict__evidence">
+          <summary>{t('verdict.evidenceSummary')}</summary>
+          {evidence}
+        </details>
+      )}
     </section>
   );
 };

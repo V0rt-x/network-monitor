@@ -96,7 +96,7 @@ describe('the design system', () => {
     for (const card of [
       '.nm-appcard',
       '.nm-picker',
-      '.nm-row__detail',
+      '.nm-tile__detail',
       '.nm-section',
       '.nm-help-page__section',
     ]) {
@@ -162,9 +162,9 @@ describe('the design system', () => {
       '.nm-apps__empty',
       '.nm-appcard',
       '.nm-primary',
-      '.nm-row',
+      '.nm-tile',
       '.nm-verdict',
-      '.nm-status__legend',
+      '.nm-editcatalogue',
       '.nm-help-page__contents',
       '.nm-help-page__section',
       '.nm-path,\n.nm-flow',

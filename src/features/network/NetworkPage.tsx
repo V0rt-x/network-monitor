@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { StateToken } from '../../shared/StateToken';
@@ -6,45 +7,44 @@ import { useFigures } from '../../shared/useFigures';
 import { Distribution } from '../app-monitor/Distribution';
 import { CoreStatusPanel } from '../dashboard/CoreStatusPanel';
 import { MetricHelp } from '../help/MetricHelp';
-import { CHECK_MARKS, checkMarkKey, checkModifier } from '../status-page/labels';
 import { sectionKey } from './labels';
-import { NetworkRow } from './NetworkRow';
+import { NetworkCatalogueEditor } from './NetworkCatalogueEditor';
+import { NetworkTile } from './NetworkTile';
 import { useNetwork } from './useNetwork';
 
 /**
  * One page, one list, for the one question: *is it me, my country's border, or that service?*
  *
- * It was two halves — the baselines and the service cards — and the previous phase left them
- * as two compositions on purpose. Read on a running build, that was wrong: we measured the
- * same thing and drew it twice, and the duplication went deeper than the drawing. Two of the
- * four foreign baseline targets, `discord.com` and `api.steampowered.com`, were *the same
- * addresses* as two service endpoints — half of one baseline was a second probe of a row
- * already on the page, in another visual language, under another name, spending the probe
- * budget twice for one fact.
- *
- * **What a baseline actually is: a tag, not a list.** "Domestic" and "foreign" are roles a
- * target plays — which is exactly why two of them turned out to be copies — so there is one
- * inventory, one row component, one history component and one legend. The two sections a
- * verdict is drawn from say so, which is what keeps the banner at the top checkable against
- * the rows below it.
+ * **Network becomes the user's own page again.** *Phase 6.8 items 17–20, reversing and
+ * refining Phase 6.7 item 27 after the user read the running build.* The previous phase
+ * folded the verdict's own baselines and the user's services into four headings under one
+ * banner; read on screen, `Domestic` and `Foreign` crowded out the thing a player actually
+ * came to edit. They are not services and are not the user's to remove, so they moved one
+ * level down — inside the banner's own "what this is drawn from" expander — and what remains
+ * on the page is the user's own catalogue, in tiles, with an `Edit` control over it.
  *
  * **The measurement layer did not merge.** `nm_core::health`'s window and `nm_core::status`'s
  * reaction rule answer different questions, and a figure computed across both would be
  * exactly the smoothing the previous phase forbade. Which rule judges a section is a property
  * of the section; each states its own cadence at level two.
  *
- * **Five names for one round trip became two.** `Ping, median` on a section heading and
- * `Ping (RTT)` on a row. *Last check* versus *mean* is a which-window qualifier and lives one
- * level down, where the distinction is made and where both still explain themselves.
+ * **Editing changes what is shown, never what is measured for the verdict.** `Domestic` and
+ * `Foreign` are probed and reported whatever the catalogue selection says, because thinning
+ * the verdict's own sample by unticking a tile that happens to double as evidence — Steam and
+ * Discord are both a gaming platform and foreign evidence — would be exactly the kind of
+ * silent measurement change this product exists not to make. Rust enforces this; the page
+ * only ever asks Rust which sections those are.
  *
- * The order is the argument's order: the verdict, then what a cell means, then the evidence.
- * What the core itself is doing goes last — a fact about the app rather than about the
- * network, and the only thing on this page a reader never needs during a match.
+ * The order is the argument's order: the verdict and its evidence, then the user's own
+ * services, grouped and tiled. What the core itself is doing goes last — a fact about the app
+ * rather than about the network, and the only thing on this page a reader never needs during
+ * a match.
  */
 export const NetworkPage = () => {
   const { t } = useTranslation();
   const figures = useFigures();
   const state = useNetwork();
+  const [editing, setEditing] = useState(false);
 
   if (state.kind === 'waiting') {
     return <p className="nm-state--pending">{t('dashboard.waiting')}</p>;
@@ -58,45 +58,54 @@ export const NetworkPage = () => {
   }
 
   const { snapshot } = state;
+  const evidenceSections = snapshot.sections.filter(
+    (section) => section.readByVerdict && section.rows.length > 0,
+  );
+  const tileSections = snapshot.sections.filter(
+    (section) => !section.readByVerdict && section.rows.length > 0,
+  );
 
   return (
     <div className="nm-network">
-      <VerdictBanner diagnosis={snapshot.diagnosis} />
+      <VerdictBanner
+        diagnosis={snapshot.diagnosis}
+        evidence={
+          evidenceSections.length === 0 ? undefined : (
+            <div className="nm-verdict__evidencelist">
+              {evidenceSections.map((section) => (
+                <div key={section.section} className="nm-verdict__evidencesection">
+                  <header className="nm-verdict__evidencehead">
+                    <h3 className="nm-verdict__evidencetitle">{t(sectionKey(section.section))}</h3>
+                    <StateToken health={section.verdict} />
+                    <span className="nm-verdict__evidencertt">
+                      <span className="nm-section__rttlabel">
+                        <MetricHelp topic="medianRtt">{t('status.metric.median')}</MetricHelp>
+                      </span>{' '}
+                      {figures.ms(section.rttMs)}
+                    </span>
+                  </header>
+                  <Distribution
+                    counts={section.counts}
+                    label={t('network.distribution', { row: t(sectionKey(section.section)) })}
+                  />
+                  <div className="nm-verdict__evidencerows">
+                    {section.rows.map((row) => (
+                      <NetworkTile key={row.key} row={row} cadenceSecs={section.cadenceSecs} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        }
+      />
 
-      {/* One legend for the whole page, where there were two histories with two
-          vocabularies. It carries the three facts a reader needs about every strip — one
-          cell is one check, oldest on the left, and what a cell can say — and it is where
-          colour stops being the only channel, since each state is named beside its colour. */}
-      <section className="nm-status__legend">
-        <h2 className="nm-status__legendtitle">
-          <MetricHelp topic="checks">{t('status.timeline.heading')}</MetricHelp>
-        </h2>
-        <ul className="nm-status__marks" aria-label={t('status.timeline.legendLabel')}>
-          {CHECK_MARKS.map((mark) => (
-            <li key={mark} className="nm-status__mark">
-              <span className={`nm-check ${checkModifier(mark)}`} aria-hidden="true" />
-              {t(checkMarkKey(mark))}
-            </li>
-          ))}
-        </ul>
-        <p className="nm-status__legendnote">{t('status.caveat')}</p>
-      </section>
+      <NetworkCatalogueEditor open={editing} onOpenChange={setEditing} />
 
-      {snapshot.sections.map((section) => (
+      {tileSections.map((section) => (
         <section key={section.section} className="nm-section">
           <header className="nm-section__head">
             <h2 className="nm-section__title">{t(sectionKey(section.section))}</h2>
-            {/* The marker that keeps the banner above checkable against the rows below:
-                these are the sections the conclusion was drawn from, and the other two are
-                not. Rust decides it, because it is the same judgement the diagnosis engine
-                makes. */}
-            {section.readByVerdict && (
-              <span className="nm-section__evidence">
-                <MetricHelp topic="verdictEvidence">
-                  {t('network.section.readByVerdict')}
-                </MetricHelp>
-              </span>
-            )}
             <StateToken health={section.verdict} />
             <span className="nm-section__rtt">
               <span className="nm-section__rttlabel">
@@ -125,15 +134,11 @@ export const NetworkPage = () => {
             </p>
           </details>
 
-          {section.rows.length === 0 ? (
-            <p className="nm-state--pending">{t('status.noServices')}</p>
-          ) : (
-            <div className="nm-section__rows">
-              {section.rows.map((row) => (
-                <NetworkRow key={row.key} row={row} cadenceSecs={section.cadenceSecs} />
-              ))}
-            </div>
-          )}
+          <div className="nm-network__tiles">
+            {section.rows.map((row) => (
+              <NetworkTile key={row.key} row={row} cadenceSecs={section.cadenceSecs} />
+            ))}
+          </div>
         </section>
       ))}
 

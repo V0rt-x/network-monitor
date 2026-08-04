@@ -739,6 +739,69 @@ body {
 }
 
 /*
+ * The Network page is edited, not fixed: a checklist over the bundled catalogue, nothing more.
+ * No free-text field exists here — see `NetworkCatalogueEditor`'s own documentation for why.
+ */
+.nm-editcatalogue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-3);
+  border-radius: var(--nm-radius-lg);
+  background: var(--nm-surface);
+  padding: var(--nm-space-4);
+}
+
+.nm-editcatalogue__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nm-space-4);
+}
+
+.nm-editcatalogue__title {
+  margin: 0;
+  font-size: var(--nm-text-md);
+}
+
+.nm-editcatalogue__hint {
+  margin: 0;
+  color: var(--nm-muted);
+  font-size: var(--nm-text-sm);
+}
+
+.nm-editcatalogue__group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+}
+
+.nm-editcatalogue__legend {
+  padding: 0;
+  font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nm-text-secondary);
+}
+
+.nm-editcatalogue__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--nm-col-name), 1fr));
+  gap: var(--nm-space-1) var(--nm-space-3);
+}
+
+.nm-editcatalogue__entry label {
+  display: flex;
+  align-items: center;
+  gap: var(--nm-space-2);
+}
+
+/*
  * A card sets the distances inside it, once.
  *
  * It was a plain block whose children each chose their own top margin — 1.1rem, 1rem,
@@ -1415,13 +1478,6 @@ details.nm-endpointgroup > summary {
   color: var(--nm-text-secondary);
 }
 
-/* What keeps the banner at the top checkable against the rows below: these are the sections
-   the conclusion was drawn from, and the other two are not. */
-.nm-section__evidence {
-  font-size: var(--nm-text-xs);
-  color: var(--nm-accent);
-}
-
 .nm-section__rtt {
   margin-inline-start: auto;
   font-variant-numeric: tabular-nums;
@@ -1445,25 +1501,35 @@ details.nm-endpointgroup > summary {
   margin: var(--nm-space-1) 0 0;
 }
 
-.nm-section__rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-1);
+/*
+ * The grid of tiles a section draws its rows in.
+ *
+ * *Reverses Phase 6.7 item 28 for this page.* Twenty-three services folded to one-line rows
+ * made the page a spreadsheet; the strip is this page's only picture, and a page whose
+ * question is "which of these is red" reads faster as a grid than as a column of lines. The
+ * same two breakpoints as everywhere else on the page, never a third.
+ */
+.nm-network__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--nm-col-name), 1fr));
+  gap: var(--nm-space-2);
+  align-items: start;
 }
 
 /*
- * One row, folded.
+ * One tile, folded.
  *
- * Twenty-three rows each carrying a strip and three figures per endpoint turns "which of
- * these is red" into a scrolling task. Closed it is a name, a state, the strip and the round
- * trip; everything else is one click away.
+ * Closed it is a name, a state, the strip and the round trip; everything else is one click
+ * away. The same component draws a `Domestic` or `Foreign` member inside the verdict
+ * banner's own evidence expander — a tile is the same concept wherever it appears, and only
+ * the grid around it changes.
  */
-.nm-row {
+.nm-tile {
   border-radius: var(--nm-radius-lg);
   background: var(--nm-surface);
 }
 
-.nm-row__head {
+.nm-tile__head {
   display: grid;
   grid-template-columns: minmax(var(--nm-col-name), 1fr) auto minmax(var(--nm-col-strip), 2fr) auto;
   align-items: center;
@@ -1472,27 +1538,33 @@ details.nm-endpointgroup > summary {
   cursor: pointer;
 }
 
-.nm-row__label {
+.nm-tile__label {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nm-row__rtt {
+.nm-tile__state {
+  display: flex;
+  align-items: center;
+  gap: var(--nm-space-2);
+}
+
+.nm-tile__rtt {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.nm-row__detail {
+.nm-tile__detail {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-2);
   padding: 0 var(--nm-space-3) var(--nm-space-3);
 }
 
-.nm-row__endpoints {
+.nm-tile__endpoints {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1501,13 +1573,13 @@ details.nm-endpointgroup > summary {
   gap: var(--nm-space-3);
 }
 
-.nm-row__endpoint {
+.nm-tile__endpoint {
   display: flex;
   flex-direction: column;
   gap: var(--nm-space-1);
 }
 
-.nm-row__endpointhead {
+.nm-tile__endpointhead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1527,58 +1599,6 @@ details.nm-endpointgroup > summary {
 .nm-service__stale {
   color: var(--nm-degraded);
   font-size: var(--nm-text-xs);
-}
-
-/*
- * The strip's legend, once for the page rather than once per card.
- *
- * It carries the three facts a reader needs about every strip on the page — one cell is one
- * check, oldest is on the left, and this is how far back a full one reaches — and it is
- * where colour stops being the only channel, since each state is named beside its colour.
- */
-.nm-status__legend {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nm-space-1);
-  padding: var(--nm-space-2) var(--nm-space-3);
-  border-radius: var(--nm-radius-lg);
-  background: var(--nm-surface);
-}
-
-.nm-status__legendtitle {
-  margin: 0;
-  font-size: var(--nm-text-sm);
-  font-weight: 600;
-}
-
-.nm-status__legendnote {
-  margin: 0;
-  color: var(--nm-muted);
-  font-size: var(--nm-text-xs);
-}
-
-.nm-status__marks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--nm-space-1) var(--nm-space-3);
-  font-size: var(--nm-text-xs);
-  color: var(--nm-text-secondary);
-}
-
-.nm-status__mark {
-  display: flex;
-  align-items: center;
-  gap: var(--nm-space-1);
-}
-
-/* The swatch is the same cell the strip draws, at a size a legend can carry. */
-.nm-status__mark .nm-check {
-  flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
 }
 
 .nm-service__address {
@@ -1727,6 +1747,53 @@ details.nm-endpointgroup > summary {
 
 .nm-verdict--gameServersUnreachable {
   border-left-color: var(--nm-blocked);
+}
+
+.nm-verdict__evidence {
+  font-size: var(--nm-text-sm);
+  color: var(--nm-muted);
+}
+
+.nm-verdict__evidence > summary {
+  cursor: pointer;
+}
+
+.nm-verdict__evidencelist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-3);
+  margin-top: var(--nm-space-2);
+}
+
+.nm-verdict__evidencesection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-2);
+}
+
+.nm-verdict__evidencehead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--nm-space-2) var(--nm-space-3);
+}
+
+.nm-verdict__evidencetitle {
+  margin: 0;
+  font-size: var(--nm-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nm-verdict__evidencertt {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.nm-verdict__evidencerows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nm-space-1);
 }
 
 /* The commonest outcome there is, said in one muted line rather than in a bordered,

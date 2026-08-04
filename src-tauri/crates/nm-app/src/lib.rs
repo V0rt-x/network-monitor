@@ -52,9 +52,9 @@ pub use shell::TrayLabels;
 pub use view::{
     AppView, ApplicationChoiceView, ApplicationListProblem, ApplicationListView, CheckMarkView,
     CheckView, EndpointAgeKindView, EndpointAgeView, EndpointGroupView, EndpointView,
-    FlowStatusView, FlowView, HealthCountsView, HealthView, LivenessView, NetworkRowView,
-    NetworkSectionView, PassiveRttView, ProbeKindView, ProbingView, RowEndpointView, TransportView,
-    VerdictView,
+    FlowStatusView, FlowView, HealthCountsView, HealthView, LivenessView,
+    NetworkCatalogueEntryView, NetworkCatalogueView, NetworkRowView, NetworkSectionView,
+    PassiveRttView, ProbeKindView, ProbingView, RowEndpointView, TransportView, VerdictView,
 };
 
 use std::path::PathBuf;
@@ -83,6 +83,7 @@ pub fn ipc_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::monitor_app,
             commands::forget_app,
             commands::chart_history,
+            commands::network_catalogue,
             commands::apply_tray_labels,
         ])
         .events(collect_events![

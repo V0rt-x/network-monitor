@@ -68,9 +68,13 @@ const DOMESTIC_JSON: &[(&str, &str)] = &[
 
 /// Which section of the Network page a target is listed under.
 ///
-/// One list, four headings, in the order the page shows them. The first two are the ones a
-/// verdict is drawn from, and they say so on the page so the banner above stays checkable
-/// against the rows below.
+/// One list, five sections, in the order [`Section::ALL`] states them. The first two are the
+/// verdict's own evidence — [`Section::read_by_verdict`] — and since Phase 6.8 item 20 they
+/// are drawn inside the verdict banner's own expander rather than as headings on the page:
+/// they are not the user's services, and moving them one level down is what makes the
+/// evidence one click from the claim it supports rather than a second inventory beside it.
+/// The remaining three ([`Section::editable`]) are the tiles the page itself now shows, and
+/// the only ones an edit chooser may offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Section {
@@ -86,22 +90,26 @@ pub enum Section {
     /// storefront being unreachable is that storefront's problem, while three clouds going
     /// quiet at once is the user's route out.
     Infrastructure,
+    /// A service worth watching that is neither a storefront nor cloud infrastructure.
+    Other,
 }
 
 impl Section {
     /// Every section, in the order the page shows them.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Domestic,
         Self::Foreign,
         Self::GamingPlatform,
         Self::Infrastructure,
+        Self::Other,
     ];
 
     /// Whether a verdict is drawn from this section.
     ///
     /// The comparison between the first two is the whole diagnosis — it is what separates
     /// "my provider is broken" from "the way out of the country is" — and the page marks
-    /// them so that the banner above can be checked against the rows below.
+    /// them so the verdict banner's own expander can show exactly this evidence and nothing
+    /// else.
     #[must_use]
     pub const fn read_by_verdict(self) -> bool {
         matches!(self, Self::Domestic | Self::Foreign)
@@ -130,10 +138,20 @@ impl Section {
         match self {
             Self::Domestic => nm_core::target::TargetTag::DomesticBaseline,
             Self::Foreign => nm_core::target::TargetTag::ForeignBaseline,
-            Self::GamingPlatform | Self::Infrastructure => {
+            Self::GamingPlatform | Self::Infrastructure | Self::Other => {
                 nm_core::target::TargetTag::StatusService
             }
         }
+    }
+
+    /// Whether an edit chooser may offer this section.
+    ///
+    /// `Domestic` and `Foreign` are the verdict's own evidence, not the user's services —
+    /// item 20's rule is that editing changes what is *shown*, never what is *measured* for
+    /// the verdict, so those two never appear in a catalogue a user could untick.
+    #[must_use]
+    pub const fn editable(self) -> bool {
+        !self.read_by_verdict()
     }
 }
 
@@ -337,6 +355,46 @@ pub fn services() -> Result<TargetList, Error> {
     TargetList::parse("services", SERVICES_JSON)
 }
 
+/// One entry an edit chooser may offer, over the bundled catalogue only.
+///
+/// No free-text entry exists anywhere in this product: an address a user typed would be a
+/// target this app then probed on their behalf, and the bundled lists are auditable
+/// precisely because they are the only thing that is ever probed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogueEntry {
+    /// Keyed exactly as [`ResolvedTarget::key`], so a stored selection lines up with the
+    /// rows it selects without a translation step.
+    pub key: String,
+    /// The operator's name for it, shown as written.
+    pub label: String,
+    /// Which editable section it belongs to.
+    pub section: Section,
+}
+
+/// Every entry an edit chooser may offer: the services list's targets, grouped by section.
+///
+/// `Domestic` and `Foreign` never appear here — see [`Section::editable`] — because they are
+/// the verdict's own evidence rather than a user's services.
+///
+/// # Errors
+///
+/// Returns [`Error::TargetList`] if the bundled `services.json` does not validate.
+pub fn catalogue() -> Result<Vec<CatalogueEntry>, Error> {
+    let list = services()?;
+    Ok(list
+        .targets
+        .iter()
+        .map(|target| CatalogueEntry {
+            key: format!("{}/{}", list.id, target.id),
+            label: target.label.clone(),
+            section: target
+                .section
+                .or(list.section)
+                .unwrap_or(Section::Infrastructure),
+        })
+        .collect())
+}
+
 /// Every bundled list for one country, in the order the page shows their sections.
 ///
 /// # Errors
@@ -501,3 +559,24 @@ pub fn interval_for(section: Section, baseline: Duration) -> Duration {
 
 /// How often a target no verdict reads is checked.
 pub const SLOW_CHECK_INTERVAL: Duration = Duration::from_secs(45);
+
+/// Whether a resolved target is measured this session, given the user's edit to the catalogue.
+///
+/// **The rule that must hold: editing changes what is *shown*, never what is *measured* for
+/// the verdict.** A target the diagnosis reads is probed and reported whether or not the
+/// user's selection includes it, so unticking a tile can never thin the sample the verdict is
+/// drawn from — `Domestic` and `Foreign` bypass the selection entirely rather than merely
+/// being defaulted into every one. Everything else costs real probe budget only when it is
+/// actually wanted: an entry the user did not tick is not registered at all, which is what
+/// lets ticking *fewer* buy the rest a shorter cadence rather than spending the same traffic
+/// on rows nobody asked to see.
+#[must_use]
+pub fn is_selected(target: &ResolvedTarget, selection: &Option<Vec<String>>) -> bool {
+    if target.section.read_by_verdict() {
+        return true;
+    }
+    match selection {
+        None => true,
+        Some(keys) => keys.iter().any(|key| key == &target.key),
+    }
+}

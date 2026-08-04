@@ -68,6 +68,18 @@ export const commands = {
 	 */
 	chartHistory: (app: number) => typedError<ChartHistoryView, null>(__TAURI_INVOKE("chart_history", { app })),
 	/**
+	 *  The bundled catalogue an edit chooser may offer for the Network page's editable groups.
+	 * 
+	 *  **No free-text address field exists anywhere in this product.** An address a user typed
+	 *  would be a target this app then probed on their behalf, and the bundled lists are
+	 *  auditable precisely because they are the only thing that is ever probed. `Domestic` and
+	 *  `Foreign` never appear: they are the verdict's own evidence, not a user's services, and
+	 *  stay probed whether or not a selection includes them (see [`Section::editable`]).
+	 * 
+	 *  [`Section::editable`]: crate::targets::Section::editable
+	 */
+	networkCatalogue: () => __TAURI_INVOKE<NetworkCatalogueView>("network_catalogue"),
+	/**
 	 *  Gives the tray menu its labels, translated by the UI.
 	 * 
 	 *  Returns whether the menu is now in place. It is deliberately not an error type: a tray
@@ -811,6 +823,35 @@ export type LivenessView =
 "idle";
 
 /**
+ *  One entry an edit chooser may offer.
+ * 
+ *  Over the bundled catalogue only — there is no free-text address field anywhere in this
+ *  product, because an address a user typed would be a target this app then probed on their
+ *  behalf, and the bundled lists are auditable precisely because they are the only thing
+ *  that is ever probed.
+ */
+export type NetworkCatalogueEntryView = {
+	/**
+	 *  Keyed exactly as the row it selects, so ticking an entry and finding it on the page
+	 *  are the same identifier.
+	 */
+	key: string,
+	/**  The operator's name for it, shown as written. */
+	label: string,
+	/**
+	 *  Which editable section it belongs to. Never `domestic` or `foreign`: those are the
+	 *  verdict's own evidence, not a user's services.
+	 */
+	section: Section,
+};
+
+/**  The bundled catalogue an edit chooser may offer. */
+export type NetworkCatalogueView = {
+	/**  Every offerable entry, in bundled order. */
+	entries: NetworkCatalogueEntryView[],
+};
+
+/**
  *  One row of the Network page: a named thing and its endpoints.
  * 
  *  The single row shape for the whole page. A baseline target and a gaming platform were two
@@ -856,8 +897,9 @@ export type NetworkSectionView = {
 	 *  Whether a verdict is drawn from it.
 	 * 
 	 *  Sent rather than derived in the frontend, because it is the same judgement the
-	 *  diagnosis engine makes and the page marks these sections so the banner above stays
-	 *  checkable against the rows below.
+	 *  diagnosis engine makes. It is what tells the page which sections belong inside the
+	 *  verdict banner's own expander (`domestic`, `foreign`) and which are the user's own
+	 *  editable tiles.
 	 */
 	readByVerdict: boolean,
 	/**  The headline verdict for the section. */
@@ -1184,9 +1226,13 @@ export type RowEndpointView = {
 /**
  *  Which section of the Network page a target is listed under.
  * 
- *  One list, four headings, in the order the page shows them. The first two are the ones a
- *  verdict is drawn from, and they say so on the page so the banner above stays checkable
- *  against the rows below.
+ *  One list, five sections, in the order [`Section::ALL`] states them. The first two are the
+ *  verdict's own evidence — [`Section::read_by_verdict`] — and since Phase 6.8 item 20 they
+ *  are drawn inside the verdict banner's own expander rather than as headings on the page:
+ *  they are not the user's services, and moving them one level down is what makes the
+ *  evidence one click from the claim it supports rather than a second inventory beside it.
+ *  The remaining three ([`Section::editable`]) are the tiles the page itself now shows, and
+ *  the only ones an edit chooser may offer.
  */
 export type Section = 
 /**  Expected to be reachable inside the user's country. */
@@ -1202,7 +1248,9 @@ export type Section =
  *  storefront being unreachable is that storefront's problem, while three clouds going
  *  quiet at once is the user's route out.
  */
-"infrastructure";
+"infrastructure" | 
+/**  A service worth watching that is neither a storefront nor cloud infrastructure. */
+"other";
 
 /**
  *  Everything the user can configure.
@@ -1246,6 +1294,16 @@ export type Settings = {
 	 *  megabyte. Switching it off frees that immediately rather than at the next restart.
 	 */
 	nameNetworks: boolean,
+	/**
+	 *  Which of the bundled catalogue's gaming platforms and infrastructure the Network page
+	 *  measures. `None` is everything bundled — the default, and what keeps an entry added
+	 *  in a later release visible with no settings migration.
+	 * 
+	 *  `Domestic` and `Foreign` are never affected: they are the verdict's own evidence, not
+	 *  a user's services, and stay probed regardless of this field (see
+	 *  [`crate::targets::Section::editable`]).
+	 */
+	networkSelection: string[] | null,
 };
 
 /**

@@ -17,5 +17,7 @@ export const sectionKey = (section: Section) => {
       return 'network.section.gamingPlatform' as const;
     case 'infrastructure':
       return 'network.section.infrastructure' as const;
+    case 'other':
+      return 'network.section.other' as const;
   }
 };

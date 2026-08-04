@@ -7,6 +7,7 @@ import type {
   ChartHistoryView,
   CoreHeartbeat,
   CoreStatus,
+  NetworkCatalogueView,
   NetworkSnapshot,
   Settings,
   SettingsView,
@@ -44,6 +45,8 @@ export type {
   HealthCountsView,
   HealthView,
   LivenessView,
+  NetworkCatalogueEntryView,
+  NetworkCatalogueView,
   NetworkRowView,
   NetworkSectionView,
   NetworkSnapshot,
@@ -102,6 +105,16 @@ export const storeSettings = (settings: Settings): Promise<SettingsView> =>
 
 export const registerTrayLabels = (labels: TrayLabels): Promise<boolean> =>
   commands.applyTrayLabels(labels);
+
+/**
+ * The bundled catalogue an edit chooser may offer over the Network page's editable groups.
+ *
+ * Over the bundled list only — there is no free-text address field anywhere in this product.
+ * `domestic` and `foreign` never appear: they are the verdict's own evidence, not a user's
+ * services, and stay probed whether or not a selection includes them.
+ */
+export const fetchNetworkCatalogue = (): Promise<NetworkCatalogueView> =>
+  commands.networkCatalogue();
 
 /**
  * One application's chart history, as far back as the hour Rust keeps.

@@ -2498,17 +2498,28 @@ by surface (12), a picker of named applications only (15), and the evidence insi
 
 ### P5 — Network becomes the user's own page again
 
-- [ ] **17. Rows become tiles with their check strips.** *Reverses Phase 6.7 item 28 for this
+- [x] **17. Rows become tiles with their check strips.** *Reverses Phase 6.7 item 28 for this
       page.* Folding twenty-three services into one-line rows made the page scannable and made
       it a spreadsheet: the strip is this page's only picture, and a page whose question is
       "which of these is red" reads faster as a grid of tiles than as a column of lines. A tile
       is the service's name, its state, its strip, `Ping (RTT)`, and a count chip where its
       endpoints disagree; endpoints and the remaining figures stay at level two, in the tile's
       own expander. Level three is the group heading, once per group, as 6.7 established.
-- [ ] **18. Three groups: `Gaming platforms`, `Infrastructure`, `Other`.** `Section` gains
+      — `NetworkRow` is `NetworkTile` now, and it is the one component the verdict's own
+      evidence expander draws `Domestic`/`Foreign` with too (item 20): a tile is the same
+      concept wherever it appears, and only the grid or list around it changes. The summary
+      chip is a second `Distribution`, shown only when a row's own counts name more than one
+      state — an agreeing row already says everything the chip could add via the token beside
+      its name, and showing it unconditionally would have repeated that claim on every
+      multi-endpoint row exactly as 6.7's `⓵`-per-figure mistake did.
+- [x] **18. Three groups: `Gaming platforms`, `Infrastructure`, `Other`.** `Section` gains
       `Other` for an entry that fits neither, and the bundled lists say which group each entry
       belongs to as they already do. An empty group is not drawn, for item 4's reason.
-- [ ] **19. The page is edited, not fixed.** A user starts with a bundled set and an `Edit`
+      — no bundled entry needs `Other` yet, and a test (`every_section_has_something_in_it`)
+      says so explicitly rather than by omission: `Other` is exempted from "every section has
+      something in it" with a comment recording why, so the schema is ready without a fixture
+      entry invented to satisfy a test that does not apply to it.
+- [x] **19. The page is edited, not fixed.** A user starts with a bundled set and an `Edit`
       control on the page opens a chooser over the **bundled catalogue** — a checklist, grouped
       the same three ways, with no free-text address field. That restriction is deliberate and
       is a privacy decision as much as a scope one: an address a user types is a target this app
@@ -2517,7 +2528,17 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       there), an unknown identifier in a stored selection is ignored rather than fatal, and the
       probe budget is enforced against the *selection*, so a user who ticks everything gets a
       longer cadence rather than more traffic.
-- [ ] **20. The verdict's evidence moves inside the verdict's own expander.** *Variant B, chosen
+      — `Settings.network_selection: Option<Vec<String>>`; `None` is "everything bundled", the
+      default, and what keeps a catalogue entry a later release adds visible with no settings
+      migration. An unticked entry is not merely hidden — `runtime::build` skips registering it
+      at all via `targets::is_selected`, so the existing global-rate-cap scheduler in
+      `nm_probes::runner` is what actually buys the rest a shorter cadence; no new budget logic
+      was needed; only fewer targets to share the existing cap with. The editor collapses the
+      selection back to `null` the moment every bundled entry is ticked again, for the same
+      forward-compatibility reason `None` is the default rather than a listed-out array. A new
+      `network_catalogue` command lists the bundled entries; `Domestic`/`Foreign` never appear
+      in it (`Section::editable`).
+- [x] **20. The verdict's evidence moves inside the verdict's own expander.** *Variant B, chosen
       by the user on 2026-08-04.* `Domestic` and `Foreign` are not services and are not the
       user's to remove: the banner at the top of the page is drawn from them, and 6.7 item 27
       went to some trouble to keep it checkable against the rows below. It stays checkable, one
@@ -2532,7 +2553,14 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       platforms after the 6.7 merge, so unticking a tile must not thin the sample the VPN advice
       is drawn from. `Section::read_by_verdict` already marks exactly those targets; the
       selection applies to the other sections only.
-- [ ] **21. "What one cell is" moves into the help, with the numbers it never carried.** The
+      — `VerdictBanner` takes the evidence as a plain `ReactNode` rather than network-specific
+      types, so the shared component stays free of a dependency on the page that happens to be
+      its only caller with any to show; `NetworkPage` builds the actual markup from the two
+      `readByVerdict` sections. `targets::is_selected` bypasses the selection entirely for a
+      `read_by_verdict` target before it ever reaches the catalogue filter — tested directly
+      (`a_verdict_bearing_target_is_always_selected`) rather than trusted to fall out of the
+      rest of the logic.
+- [x] **21. "What one cell is" moves into the help, with the numbers it never carried.** The
       legend block is a heading, six named marks and a paragraph, above the page's own content —
       an explanation at level one, which the standing rule forbids. In the help it becomes a
       topic that can afford to be exact: what a check is, that a strip is oldest-on-the-left and
@@ -2546,6 +2574,12 @@ by surface (12), a picker of named applications only (15), and the evidence insi
       differ in shape as well as in colour (item 10's rule, applied to the strip), and the group
       heading's count chips still name the states in words. The help topic and the marks read from one list,
       as `CLAUDE.md` requires, so a mark can never point at a section that does not exist.
+      — the `checks` topic already existed (Phase 6.7); this rewrote its body rather than
+      adding a second one, since the page's own legend and the help topic were always meant to
+      be the same explanation and duplicating it would have left two texts to keep in step.
+      `status.timeline.heading`/`.note`/`.legendLabel` and `status.caveat`/`.noServices` are
+      removed rather than left orphaned, along with the `.nm-status__legend*` CSS they styled
+      and the now-redundant `network.section.readByVerdict` badge item 20 made unreachable.
 
 - **Accept**: no `<td>` in the stylesheet is a flex container and a row with badges is the same
   height as one without; an explanation panel opened at any corner of the window stays inside it

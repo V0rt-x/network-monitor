@@ -73,6 +73,7 @@ impl AppState {
         if previous.country != sane.country
             || previous.baseline_interval_secs != sane.baseline_interval_secs
             || previous.name_networks != sane.name_networks
+            || previous.network_selection != sane.network_selection
         {
             self.monitor
                 .send(MonitorCommand::Reconfigure(Box::new(sane.clone())));
